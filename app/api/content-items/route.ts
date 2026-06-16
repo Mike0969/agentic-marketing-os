@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { makeActivity } from "@/lib/activity";
 import { appendLocalContentItems } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { ContentItem, GeneratedContentPlanItem } from "@/lib/types";
@@ -15,6 +16,9 @@ export async function POST(request: Request) {
       const { data, error } = await supabase.from("content_items").insert(contentItems).select("*");
 
       if (!error) {
+        await supabase
+          .from("activity")
+          .insert(makeActivity("Crina created content ideas", `${data?.length ?? contentItems.length} weekly content plan items entered the pipeline as Idea or Brief.`));
         return NextResponse.json({ created: data?.length ?? contentItems.length, items: data ?? contentItems });
       }
     }

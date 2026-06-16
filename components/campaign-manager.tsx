@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { CampaignStatusBadge } from "@/components/status";
 import { buttonClass, inputClass, Panel } from "@/components/ui";
 import type { Brand, Campaign } from "@/lib/types";
 
 export function CampaignManager({ brands, campaigns }: { brands: Brand[]; campaigns: Campaign[] }) {
+  const router = useRouter();
   const [items, setItems] = useState(campaigns);
+  const [isCreating, setIsCreating] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState({
     brand_id: brands[0]?.id ?? "",
     title: "",
@@ -17,18 +21,31 @@ export function CampaignManager({ brands, campaigns }: { brands: Brand[]; campai
     end_date: "2026-07-16"
   });
 
-  function createCampaign() {
+  async function createCampaign() {
     if (!form.title.trim()) return;
-    setItems((current) => [
-      {
-        id: `campaign-${Date.now()}`,
-        status: "planning",
-        ...form
-      },
-      ...current
-    ]);
-    setForm((current) => ({ ...current, title: "", objective: "", target_audience: "" }));
-    // TODO: Replace local state with Supabase insert and trigger Crina planning workflow through n8n.
+    setIsCreating(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+
+      if (!response.ok) throw new Error("Could not create campaign.");
+
+      const result = (await response.json()) as { campaign: Campaign };
+      setItems((current) => [result.campaign, ...current]);
+      setForm((current) => ({ ...current, title: "", objective: "", target_audience: "" }));
+      setMessage(`${result.campaign.title} created.`);
+      router.refresh();
+      // TODO: Trigger Crina campaign planning through Hermes or n8n after campaign creation.
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not create campaign.");
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   return (
@@ -72,10 +89,11 @@ export function CampaignManager({ brands, campaigns }: { brands: Brand[]; campai
               <input type="date" className={`${inputClass} mt-2`} value={form.end_date} onChange={(event) => setForm({ ...form, end_date: event.target.value })} />
             </label>
           </div>
-          <button type="button" className={buttonClass} onClick={createCampaign} disabled={!form.title.trim()}>
+          <button type="button" className={buttonClass} onClick={createCampaign} disabled={!form.title.trim() || isCreating}>
             <Plus className="mr-2 h-4 w-4" />
-            Create campaign
+            {isCreating ? "Creating..." : "Create campaign"}
           </button>
+          {message ? <div className="rounded-md bg-slate-100 p-3 text-sm font-medium text-slate-700 dark:bg-slate-950 dark:text-slate-200">{message}</div> : null}
         </div>
       </Panel>
 

@@ -63,11 +63,20 @@ create table if not exists approvals (
   created_at timestamptz not null default now()
 );
 
+create table if not exists activity (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  detail text not null,
+  timestamp text not null default 'Just now',
+  created_at timestamptz not null default now()
+);
+
 alter table brands enable row level security;
 alter table agents enable row level security;
 alter table campaigns enable row level security;
 alter table content_items enable row level security;
 alter table approvals enable row level security;
+alter table activity enable row level security;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on brands to anon, authenticated;
@@ -75,6 +84,7 @@ grant select, insert, update, delete on agents to anon, authenticated;
 grant select, insert, update, delete on campaigns to anon, authenticated;
 grant select, insert, update, delete on content_items to anon, authenticated;
 grant select, insert, update, delete on approvals to anon, authenticated;
+grant select, insert, update, delete on activity to anon, authenticated;
 
 drop policy if exists "mvp read brands" on brands;
 drop policy if exists "mvp write brands" on brands;
@@ -86,6 +96,8 @@ drop policy if exists "mvp read content_items" on content_items;
 drop policy if exists "mvp write content_items" on content_items;
 drop policy if exists "mvp read approvals" on approvals;
 drop policy if exists "mvp write approvals" on approvals;
+drop policy if exists "mvp read activity" on activity;
+drop policy if exists "mvp write activity" on activity;
 
 -- MVP policy: anon + authenticated access keeps the dashboard functional with the public anon key.
 -- TODO: replace with user/team scoped policies once Supabase Auth is added.
@@ -99,6 +111,8 @@ create policy "mvp read content_items" on content_items for select to anon, auth
 create policy "mvp write content_items" on content_items for all to anon, authenticated using (true) with check (true);
 create policy "mvp read approvals" on approvals for select to anon, authenticated using (true);
 create policy "mvp write approvals" on approvals for all to anon, authenticated using (true) with check (true);
+create policy "mvp read activity" on activity for select to anon, authenticated using (true);
+create policy "mvp write activity" on activity for all to anon, authenticated using (true) with check (true);
 
 notify pgrst, 'reload schema';
 
@@ -252,3 +266,22 @@ on conflict (id) do update set
   decision = excluded.decision,
   feedback = excluded.feedback,
   decided_at = excluded.decided_at;
+
+insert into activity (id, label, detail, timestamp)
+values
+  (
+    '88888888-8888-4888-8888-888888888888',
+    'Crina requested approval',
+    'GridFactory LinkedIn founder post moved to approval.',
+    'Today, 09:10'
+  ),
+  (
+    '99999999-9999-4999-8999-999999999999',
+    'Analytics Agent summarized performance',
+    'NexRide market note produced strong fleet-partner intent signals.',
+    'Yesterday, 18:40'
+  )
+on conflict (id) do update set
+  label = excluded.label,
+  detail = excluded.detail,
+  timestamp = excluded.timestamp;

@@ -9,7 +9,7 @@ if (!url || !publicKey) {
 }
 
 const supabase = createClient(url, publicKey);
-const tables = ["brands", "agents", "campaigns", "content_items", "approvals"];
+const tables = ["brands", "agents", "campaigns", "content_items", "approvals", "activity"];
 const results = {};
 let hasError = false;
 

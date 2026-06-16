@@ -145,3 +145,22 @@ on conflict (id) do update set
   decision = excluded.decision,
   feedback = excluded.feedback,
   decided_at = excluded.decided_at;
+
+insert into activity (id, label, detail, timestamp)
+values
+  (
+    '88888888-8888-4888-8888-888888888888',
+    'Crina requested approval',
+    'GridFactory LinkedIn founder post moved to approval.',
+    'Today, 09:10'
+  ),
+  (
+    '99999999-9999-4999-8999-999999999999',
+    'Analytics Agent summarized performance',
+    'NexRide market note produced strong fleet-partner intent signals.',
+    'Yesterday, 18:40'
+  )
+on conflict (id) do update set
+  label = excluded.label,
+  detail = excluded.detail,
+  timestamp = excluded.timestamp;

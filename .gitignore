@@ -4,3 +4,5 @@ out
 .env*.local
 *.tsbuildinfo
 data/local-dashboard.json
+.agents
+skills-lock.json

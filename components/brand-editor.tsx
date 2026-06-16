@@ -1,12 +1,40 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
 import { buttonClass, inputClass, Panel } from "@/components/ui";
 import type { Brand } from "@/lib/types";
 
 export function BrandEditor({ brands }: { brands: Brand[] }) {
+  const router = useRouter();
   const [items, setItems] = useState(brands);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function saveBrand(brand: Brand) {
+    setSavingId(brand.id);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/brands/${brand.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(brand)
+      });
+
+      if (!response.ok) throw new Error("Could not save brand profile.");
+
+      const result = (await response.json()) as { brand: Brand };
+      setItems(updateBrand(items, brand.id, result.brand));
+      setMessage(`${result.brand.name} saved.`);
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save brand profile.");
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -57,14 +85,16 @@ export function BrandEditor({ brands }: { brands: Brand[] }) {
             <button
               type="button"
               className={buttonClass}
-              onClick={() => alert("Mock save complete. Connect Supabase update mutation here.")}
+              onClick={() => saveBrand(brand)}
+              disabled={savingId === brand.id}
             >
               <Save className="mr-2 h-4 w-4" />
-              Save profile
+              {savingId === brand.id ? "Saving..." : "Save profile"}
             </button>
           </div>
         </Panel>
       ))}
+      {message ? <div className="xl:col-span-2 rounded-md bg-slate-100 p-3 text-sm font-medium text-slate-700 dark:bg-slate-900 dark:text-slate-200">{message}</div> : null}
     </div>
   );
 }

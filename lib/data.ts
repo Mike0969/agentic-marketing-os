@@ -17,12 +17,13 @@ export async function getDashboardData(): Promise<DashboardData> {
     return seedData;
   }
 
-  const [brands, agents, campaigns, contentItems, approvals] = await Promise.all([
+  const [brands, agents, campaigns, contentItems, approvals, activity] = await Promise.all([
     supabase.from("brands").select("*").order("name"),
     supabase.from("agents").select("*").order("name"),
     supabase.from("campaigns").select("*").order("start_date", { ascending: false }),
     supabase.from("content_items").select("*").order("scheduled_at", { ascending: false, nullsFirst: false }),
-    supabase.from("approvals").select("*").order("decided_at", { ascending: false, nullsFirst: false })
+    supabase.from("approvals").select("*").order("decided_at", { ascending: false, nullsFirst: false }),
+    supabase.from("activity").select("*").order("created_at", { ascending: false }).limit(20)
   ]);
 
   if (brands.error || agents.error || campaigns.error || contentItems.error || approvals.error) {
@@ -39,7 +40,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     campaigns: campaigns.data ?? seedData.campaigns,
     contentItems: contentItems.data ?? seedData.contentItems,
     approvals: approvals.data ?? seedData.approvals,
-    activity: seedData.activity
+    activity: activity.error ? seedData.activity : activity.data ?? seedData.activity
   };
 }
 
