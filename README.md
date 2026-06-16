@@ -20,6 +20,7 @@ Copy `.env.example` to `.env.local` and add Supabase values when ready:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
 ```
 
 Without those values, the dashboard uses `lib/seed.ts`.
@@ -29,10 +30,15 @@ Generated local workflow output is stored in `data/local-dashboard.json`, which 
 ## Supabase setup
 
 1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the SQL editor.
-3. Run `supabase/seed.sql` in the SQL editor.
-4. Add environment values to `.env.local`.
-5. Verify the connection with `npm run check:supabase`.
+2. Run `supabase/setup.sql` in the SQL editor.
+3. Add environment values to `.env.local`.
+4. Verify the connection with `npm run check:supabase`.
+
+You can also seed through the app connection after running `schema.sql`:
+
+```bash
+npm run seed:supabase
+```
 
 ## Included pages
 

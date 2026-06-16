@@ -1,6 +1,8 @@
 # Supabase Setup
 
-Run these files in the Supabase SQL editor, in order:
+Fast path: run `setup.sql` once in the Supabase SQL editor. It creates the tables, MVP policies, and seed records.
+
+Alternative: run these files in order:
 
 1. `schema.sql`
 2. `seed.sql`

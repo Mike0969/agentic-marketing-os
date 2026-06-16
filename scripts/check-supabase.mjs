@@ -1,37 +1,23 @@
-import { existsSync, readFileSync } from "fs";
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseEnv } from "./env-loader.mjs";
 
-const envPath = ".env.local";
+const { url, publicKey } = getSupabaseEnv();
 
-if (existsSync(envPath)) {
-  const raw = readFileSync(envPath, "utf8");
-
-  raw.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) return;
-
-    const [key, ...valueParts] = trimmed.split("=");
-    const value = valueParts.join("=").replace(/^["']|["']$/g, "");
-    process.env[key] = value;
-  });
-}
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!url || !anonKey) {
-  console.log("Supabase local env: missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+if (!url || !publicKey) {
+  console.log("Supabase local env: missing NEXT_PUBLIC_SUPABASE_URL and either NEXT_PUBLIC_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY");
   process.exit(1);
 }
 
-const supabase = createClient(url, anonKey);
+const supabase = createClient(url, publicKey);
 const tables = ["brands", "agents", "campaigns", "content_items", "approvals"];
 const results = {};
+let hasError = false;
 
 for (const table of tables) {
-  const { count, error } = await supabase.from(table).select("*", { count: "exact", head: true });
+  const { count, error } = await supabase.from(table).select("id", { count: "exact" }).limit(1);
 
   if (error) {
+    hasError = true;
     results[table] = `error: ${error.message}`;
   } else {
     results[table] = count ?? 0;
@@ -40,3 +26,8 @@ for (const table of tables) {
 
 console.log("Supabase connection: OK");
 console.log(JSON.stringify(results, null, 2));
+
+if (hasError) {
+  console.log("Supabase schema: missing or not exposed. Run supabase/setup.sql in the Supabase SQL editor.");
+  process.exit(1);
+}
