@@ -91,3 +91,40 @@ export type DashboardData = {
   approvals: Approval[];
   activity: Activity[];
 };
+
+export type WeeklyContentPlanBrandSelection = "gridfactory" | "gulf-el" | "both";
+export type WeeklyContentIntensity = "light" | "normal" | "aggressive";
+export type WeeklyContentPlatform = "LinkedIn" | "X" | "Instagram" | "Facebook" | "Blog";
+
+export type WeeklyContentPlanInput = {
+  brand: WeeklyContentPlanBrandSelection;
+  campaignObjective: string;
+  targetAudience: string;
+  weekStartDate: string;
+  platforms: WeeklyContentPlatform[];
+  contentIntensity: WeeklyContentIntensity;
+  humanNotes: string;
+};
+
+export type GeneratedContentPlanItem = {
+  id: string;
+  brand_id: string;
+  brandName: string;
+  campaign_id: string;
+  platform: WeeklyContentPlatform;
+  content_type: string;
+  title: string;
+  hook: string;
+  body: string;
+  CTA: string;
+  assigned_agent: string;
+  status: Extract<ContentStatus, "idea" | "brief">;
+};
+
+export type WeeklyContentPlanOutput = {
+  workflowName: "Generate Weekly Content Plan";
+  generatedBy: "Crina";
+  weekStartDate: string;
+  summary: string;
+  items: GeneratedContentPlanItem[];
+};

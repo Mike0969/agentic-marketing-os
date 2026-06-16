@@ -5,6 +5,7 @@ const settings = [
   "OpenAI",
   "Anthropic",
   "DeepSeek",
+  "Hermes Agent Runtime",
   "n8n webhook",
   "Telegram",
   "LinkedIn",

@@ -12,7 +12,8 @@ import {
   Megaphone,
   Moon,
   Settings,
-  Sun
+  Sun,
+  Wand2
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { clsx } from "clsx";
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/brands", label: "Brands", icon: BriefcaseBusiness },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/workflows/weekly-content-plan", label: "Workflows", icon: Wand2 },
   { href: "/content-pipeline", label: "Pipeline", icon: Layers3 },
   { href: "/approvals", label: "Approvals", icon: CheckSquare },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },

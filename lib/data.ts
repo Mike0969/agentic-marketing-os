@@ -1,10 +1,14 @@
 import { seedData } from "@/lib/seed";
+import { unstable_noStore as noStore } from "next/cache";
 import type { DashboardData } from "@/lib/types";
+import { readLocalDashboardData } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export async function getDashboardData(): Promise<DashboardData> {
+  noStore();
+
   if (!isSupabaseConfigured()) {
-    return seedData;
+    return readLocalDashboardData();
   }
 
   const supabase = await createClient();
