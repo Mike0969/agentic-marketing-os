@@ -69,14 +69,26 @@ alter table campaigns enable row level security;
 alter table content_items enable row level security;
 alter table approvals enable row level security;
 
--- MVP policy: authenticated users can operate the dashboard.
-create policy "authenticated read brands" on brands for select to authenticated using (true);
-create policy "authenticated write brands" on brands for all to authenticated using (true) with check (true);
-create policy "authenticated read agents" on agents for select to authenticated using (true);
-create policy "authenticated write agents" on agents for all to authenticated using (true) with check (true);
-create policy "authenticated read campaigns" on campaigns for select to authenticated using (true);
-create policy "authenticated write campaigns" on campaigns for all to authenticated using (true) with check (true);
-create policy "authenticated read content_items" on content_items for select to authenticated using (true);
-create policy "authenticated write content_items" on content_items for all to authenticated using (true) with check (true);
-create policy "authenticated read approvals" on approvals for select to authenticated using (true);
-create policy "authenticated write approvals" on approvals for all to authenticated using (true) with check (true);
+drop policy if exists "mvp read brands" on brands;
+drop policy if exists "mvp write brands" on brands;
+drop policy if exists "mvp read agents" on agents;
+drop policy if exists "mvp write agents" on agents;
+drop policy if exists "mvp read campaigns" on campaigns;
+drop policy if exists "mvp write campaigns" on campaigns;
+drop policy if exists "mvp read content_items" on content_items;
+drop policy if exists "mvp write content_items" on content_items;
+drop policy if exists "mvp read approvals" on approvals;
+drop policy if exists "mvp write approvals" on approvals;
+
+-- MVP policy: anon + authenticated access keeps the dashboard functional with the public anon key.
+-- TODO: replace with user/team scoped policies once Supabase Auth is added.
+create policy "mvp read brands" on brands for select to anon, authenticated using (true);
+create policy "mvp write brands" on brands for all to anon, authenticated using (true) with check (true);
+create policy "mvp read agents" on agents for select to anon, authenticated using (true);
+create policy "mvp write agents" on agents for all to anon, authenticated using (true) with check (true);
+create policy "mvp read campaigns" on campaigns for select to anon, authenticated using (true);
+create policy "mvp write campaigns" on campaigns for all to anon, authenticated using (true) with check (true);
+create policy "mvp read content_items" on content_items for select to anon, authenticated using (true);
+create policy "mvp write content_items" on content_items for all to anon, authenticated using (true) with check (true);
+create policy "mvp read approvals" on approvals for select to anon, authenticated using (true);
+create policy "mvp write approvals" on approvals for all to anon, authenticated using (true) with check (true);

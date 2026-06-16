@@ -30,8 +30,9 @@ Generated local workflow output is stored in `data/local-dashboard.json`, which 
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the SQL editor.
-3. Add environment values to `.env.local`.
-4. Seed the default brands, agents, campaigns, content items, and approvals from `lib/seed.ts` or create a small seed script.
+3. Run `supabase/seed.sql` in the SQL editor.
+4. Add environment values to `.env.local`.
+5. Verify the connection with `npm run check:supabase`.
 
 ## Included pages
 

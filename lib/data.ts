@@ -26,7 +26,11 @@ export async function getDashboardData(): Promise<DashboardData> {
   ]);
 
   if (brands.error || agents.error || campaigns.error || contentItems.error || approvals.error) {
-    return seedData;
+    return readLocalDashboardData();
+  }
+
+  if (!brands.data?.length || !agents.data?.length || !campaigns.data?.length) {
+    return readLocalDashboardData();
   }
 
   return {
