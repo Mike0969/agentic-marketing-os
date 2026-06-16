@@ -69,6 +69,13 @@ alter table campaigns enable row level security;
 alter table content_items enable row level security;
 alter table approvals enable row level security;
 
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on brands to anon, authenticated;
+grant select, insert, update, delete on agents to anon, authenticated;
+grant select, insert, update, delete on campaigns to anon, authenticated;
+grant select, insert, update, delete on content_items to anon, authenticated;
+grant select, insert, update, delete on approvals to anon, authenticated;
+
 drop policy if exists "mvp read brands" on brands;
 drop policy if exists "mvp write brands" on brands;
 drop policy if exists "mvp read agents" on agents;
@@ -92,6 +99,8 @@ create policy "mvp read content_items" on content_items for select to anon, auth
 create policy "mvp write content_items" on content_items for all to anon, authenticated using (true) with check (true);
 create policy "mvp read approvals" on approvals for select to anon, authenticated using (true);
 create policy "mvp write approvals" on approvals for all to anon, authenticated using (true) with check (true);
+
+notify pgrst, 'reload schema';
 
 
 -- Seed data
