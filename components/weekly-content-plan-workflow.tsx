@@ -30,6 +30,7 @@ export function WeeklyContentPlanWorkflow() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createdCount, setCreatedCount] = useState<number | null>(null);
+  const [executionMode, setExecutionMode] = useState<string>("deterministic fallback");
   const [error, setError] = useState<string | null>(null);
 
   const groupedItems = useMemo(() => {
@@ -55,6 +56,7 @@ export function WeeklyContentPlanWorkflow() {
 
       if (!response.ok) throw new Error("Could not generate the weekly plan.");
 
+      setExecutionMode(response.headers.get("x-agent-fallback") === "true" ? "deterministic fallback" : response.headers.get("x-agent-provider") ?? "agent runtime");
       setPlan((await response.json()) as WeeklyContentPlanOutput);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not generate the weekly plan.");
@@ -204,6 +206,9 @@ export function WeeklyContentPlanWorkflow() {
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
                 Crina creates ideas and briefs only. Nothing is scheduled or published automatically.
               </p>
+              <div className="mt-2">
+                <Badge tone={executionMode.includes("fallback") ? "amber" : "green"}>{executionMode}</Badge>
+              </div>
             </div>
             <button type="button" className={buttonClass} onClick={createContentItems} disabled={!plan || isCreating}>
               <Plus className="mr-2 h-4 w-4" />

@@ -71,12 +71,80 @@ create table if not exists activity (
   created_at timestamptz not null default now()
 );
 
+create table if not exists admin_users (
+  id uuid primary key default gen_random_uuid(),
+  email text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists integration_configs (
+  id uuid primary key default gen_random_uuid(),
+  provider text not null unique,
+  display_name text not null,
+  status text not null default 'not_configured' check (status in ('not_configured', 'configured', 'connected', 'error', 'testable')),
+  metadata jsonb not null default '{}'::jsonb,
+  configured boolean not null default false,
+  secret_ref text,
+  last_checked_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists agent_runs (
+  id uuid primary key default gen_random_uuid(),
+  agent_name text not null,
+  workflow_name text not null,
+  provider text not null,
+  status text not null check (status in ('success', 'fallback', 'error')),
+  input jsonb not null default '{}'::jsonb,
+  output jsonb,
+  error text,
+  created_at timestamptz not null default now()
+);
+
 alter table brands enable row level security;
 alter table agents enable row level security;
 alter table campaigns enable row level security;
 alter table content_items enable row level security;
 alter table approvals enable row level security;
 alter table activity enable row level security;
+alter table admin_users enable row level security;
+alter table integration_configs enable row level security;
+alter table agent_runs enable row level security;
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.admin_users
+    where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+$$;
+
+create or replace function public.schema_health()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'brands', (select count(*) from public.brands),
+    'agents', (select count(*) from public.agents),
+    'campaigns', (select count(*) from public.campaigns),
+    'content_items', (select count(*) from public.content_items),
+    'approvals', (select count(*) from public.approvals),
+    'activity', (select count(*) from public.activity),
+    'admin_users', (select count(*) from public.admin_users),
+    'integration_configs', (select count(*) from public.integration_configs),
+    'agent_runs', (select count(*) from public.agent_runs)
+  );
+$$;
 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on brands to anon, authenticated;
@@ -85,6 +153,10 @@ grant select, insert, update, delete on campaigns to anon, authenticated;
 grant select, insert, update, delete on content_items to anon, authenticated;
 grant select, insert, update, delete on approvals to anon, authenticated;
 grant select, insert, update, delete on activity to anon, authenticated;
+grant select, insert, update, delete on admin_users to authenticated;
+grant select, insert, update, delete on integration_configs to authenticated;
+grant select, insert, update, delete on agent_runs to authenticated;
+grant execute on function public.schema_health() to anon, authenticated;
 
 drop policy if exists "mvp read brands" on brands;
 drop policy if exists "mvp write brands" on brands;
@@ -98,20 +170,42 @@ drop policy if exists "mvp read approvals" on approvals;
 drop policy if exists "mvp write approvals" on approvals;
 drop policy if exists "mvp read activity" on activity;
 drop policy if exists "mvp write activity" on activity;
+drop policy if exists "admin read brands" on brands;
+drop policy if exists "admin write brands" on brands;
+drop policy if exists "admin read agents" on agents;
+drop policy if exists "admin write agents" on agents;
+drop policy if exists "admin read campaigns" on campaigns;
+drop policy if exists "admin write campaigns" on campaigns;
+drop policy if exists "admin read content_items" on content_items;
+drop policy if exists "admin write content_items" on content_items;
+drop policy if exists "admin read approvals" on approvals;
+drop policy if exists "admin write approvals" on approvals;
+drop policy if exists "admin read activity" on activity;
+drop policy if exists "admin write activity" on activity;
+drop policy if exists "admin self read" on admin_users;
+drop policy if exists "admin manage admins" on admin_users;
+drop policy if exists "admin read integration_configs" on integration_configs;
+drop policy if exists "admin write integration_configs" on integration_configs;
+drop policy if exists "admin read agent_runs" on agent_runs;
+drop policy if exists "admin write agent_runs" on agent_runs;
 
--- MVP policy: anon + authenticated access keeps the dashboard functional with the public anon key.
--- TODO: replace with user/team scoped policies once Supabase Auth is added.
-create policy "mvp read brands" on brands for select to anon, authenticated using (true);
-create policy "mvp write brands" on brands for all to anon, authenticated using (true) with check (true);
-create policy "mvp read agents" on agents for select to anon, authenticated using (true);
-create policy "mvp write agents" on agents for all to anon, authenticated using (true) with check (true);
-create policy "mvp read campaigns" on campaigns for select to anon, authenticated using (true);
-create policy "mvp write campaigns" on campaigns for all to anon, authenticated using (true) with check (true);
-create policy "mvp read content_items" on content_items for select to anon, authenticated using (true);
-create policy "mvp write content_items" on content_items for all to anon, authenticated using (true) with check (true);
-create policy "mvp read approvals" on approvals for select to anon, authenticated using (true);
-create policy "mvp write approvals" on approvals for all to anon, authenticated using (true) with check (true);
-create policy "mvp read activity" on activity for select to anon, authenticated using (true);
-create policy "mvp write activity" on activity for all to anon, authenticated using (true) with check (true);
+create policy "admin read brands" on brands for select to authenticated using (public.is_admin());
+create policy "admin write brands" on brands for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read agents" on agents for select to authenticated using (public.is_admin());
+create policy "admin write agents" on agents for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read campaigns" on campaigns for select to authenticated using (public.is_admin());
+create policy "admin write campaigns" on campaigns for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read content_items" on content_items for select to authenticated using (public.is_admin());
+create policy "admin write content_items" on content_items for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read approvals" on approvals for select to authenticated using (public.is_admin());
+create policy "admin write approvals" on approvals for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read activity" on activity for select to authenticated using (public.is_admin());
+create policy "admin write activity" on activity for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin self read" on admin_users for select to authenticated using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')) or public.is_admin());
+create policy "admin manage admins" on admin_users for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read integration_configs" on integration_configs for select to authenticated using (public.is_admin());
+create policy "admin write integration_configs" on integration_configs for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read agent_runs" on agent_runs for select to authenticated using (public.is_admin());
+create policy "admin write agent_runs" on agent_runs for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 notify pgrst, 'reload schema';

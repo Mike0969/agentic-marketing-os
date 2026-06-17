@@ -26,8 +26,8 @@ export const agents: Agent[] = [
     id: "agent-crina",
     name: "Crina",
     role: "Marketing CEO Agent",
-    description: "Owns strategy, channel orchestration, approval routing, and weekly executive reporting.",
-    model_preference: "GPT-5 / Claude Opus",
+    description: "Hermes-first marketing CEO agent for strategy, channel orchestration, content planning, approval routing, and weekly executive reporting.",
+    model_preference: "Hermes / GPT-5 / Claude Opus",
     status: "active",
     brand_scope: "All brands"
   },

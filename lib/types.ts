@@ -83,6 +83,47 @@ export type Activity = {
   timestamp: string;
 };
 
+export type IntegrationProvider =
+  | "openai"
+  | "anthropic"
+  | "deepseek"
+  | "hermes"
+  | "n8n"
+  | "telegram"
+  | "linkedin"
+  | "x"
+  | "tiktok"
+  | "instagram"
+  | "facebook"
+  | "google-search-console"
+  | "ga4";
+
+export type IntegrationStatus = "not_configured" | "configured" | "connected" | "error" | "testable";
+
+export type IntegrationConfig = {
+  id: string;
+  provider: IntegrationProvider;
+  display_name: string;
+  status: IntegrationStatus;
+  metadata: Record<string, string>;
+  configured: boolean;
+  last_checked_at: string | null;
+};
+
+export type AgentRunStatus = "success" | "fallback" | "error";
+
+export type AgentRun = {
+  id: string;
+  agent_name: string;
+  workflow_name: string;
+  provider: string;
+  status: AgentRunStatus;
+  input: Record<string, unknown>;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  created_at: string;
+};
+
 export type DashboardData = {
   brands: Brand[];
   agents: Agent[];
@@ -90,6 +131,8 @@ export type DashboardData = {
   contentItems: ContentItem[];
   approvals: Approval[];
   activity: Activity[];
+  integrationConfigs?: IntegrationConfig[];
+  agentRuns?: AgentRun[];
 };
 
 export type WeeklyContentPlanBrandSelection = "gridfactory" | "gulf-el" | "both";

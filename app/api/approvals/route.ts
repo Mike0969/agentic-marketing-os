@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { decideLocalApproval } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -12,6 +13,9 @@ type ApprovalInput = {
 };
 
 export async function POST(request: Request) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   const input = (await request.json()) as ApprovalInput;
   const decidedAt = new Date().toISOString();
   const contentPatch = {

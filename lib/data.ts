@@ -1,6 +1,6 @@
 import { seedData } from "@/lib/seed";
 import { unstable_noStore as noStore } from "next/cache";
-import type { DashboardData } from "@/lib/types";
+import type { AgentRun, DashboardData } from "@/lib/types";
 import { readLocalDashboardData } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -46,4 +46,37 @@ export async function getDashboardData(): Promise<DashboardData> {
 
 export function byId<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
+}
+
+export async function getAgentRuns(agentName?: string): Promise<AgentRun[]> {
+  noStore();
+
+  if (!isSupabaseConfigured()) {
+    const data = await readLocalDashboardData();
+    return (data.agentRuns ?? []).filter((run) => !agentName || run.agent_name === agentName);
+  }
+
+  const supabase = await createClient();
+
+  if (!supabase) {
+    return [];
+  }
+
+  let query = supabase
+    .from("agent_runs")
+    .select("id, agent_name, workflow_name, provider, status, input, output, error, created_at")
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (agentName) {
+    query = query.eq("agent_name", agentName);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return [];
+  }
+
+  return (data ?? []) as AgentRun[];
 }

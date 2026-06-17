@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { updateLocalBrand } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -9,6 +10,9 @@ type Context = {
 };
 
 export async function PATCH(request: Request, context: Context) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   const { id } = await context.params;
   const body = (await request.json()) as Partial<Brand>;
   const patch = compact({

@@ -16,6 +16,9 @@ Core data model:
 - `content_items`
 - `approvals`
 - `activity`
+- `admin_users`
+- `integration_configs`
+- `agent_runs`
 
 Read path:
 
@@ -28,6 +31,15 @@ Write path:
 - Campaign creation: `POST /api/campaigns`
 - Content item creation: `POST /api/content-items`
 - Approval decisions: `POST /api/approvals`
+- Integration settings: `GET/POST /api/integrations`
+- Integration tests: `POST /api/integrations/[provider]/test`
+- Crina agent run: `POST /api/agents/crina/weekly-content-plan`
+
+Auth path:
+
+- `/login` uses Supabase Auth email/password.
+- `middleware.ts` redirects unauthenticated or non-admin users away from protected dashboard routes.
+- `POST /api/auth/logout` signs out the current Supabase session.
 
 Supabase setup:
 
@@ -37,5 +49,6 @@ Supabase setup:
 
 Security status:
 
-- MVP RLS policies currently allow anon/authenticated CRUD so the dashboard is usable before auth.
-- Production should replace MVP policies with organization/user scoped access and move provider secrets behind server-only routes.
+- RLS is enabled on dashboard tables and scoped to authenticated admin users.
+- The current access model is Single Admin by email through `admin_users` or local `ADMIN_EMAIL`.
+- Integration secrets are not returned to the browser. The current implementation stores metadata plus a `secret_ref` placeholder; enabling Supabase Vault/RPC is the next security hardening step.

@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { appendLocalContentItems } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { ContentItem, GeneratedContentPlanItem } from "@/lib/types";
 
 export async function POST(request: Request) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   const { items } = (await request.json()) as { items: GeneratedContentPlanItem[] };
 
   const contentItems = items.map(toContentItem);

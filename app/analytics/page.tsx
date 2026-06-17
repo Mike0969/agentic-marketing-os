@@ -1,5 +1,6 @@
 import { BarChart3, MousePointerClick, TrendingDown, TrendingUp, Users } from "lucide-react";
-import { PageHeader, Panel, StatCard } from "@/components/ui";
+import { Badge, PageHeader, Panel, StatCard } from "@/components/ui";
+import { listIntegrationConfigs } from "@/lib/integration-store";
 
 const bars = [
   { label: "GridFactory LinkedIn", value: 82 },
@@ -8,7 +9,10 @@ const bars = [
   { label: "NexRide Instagram", value: 43 }
 ];
 
-export default function AnalyticsPage() {
+export default async function AnalyticsPage() {
+  const integrations = await listIntegrationConfigs();
+  const analyticsConnectors = integrations.filter((item) => ["ga4", "google-search-console", "linkedin", "x", "tiktok", "instagram", "facebook"].includes(item.provider));
+
   return (
     <>
       <PageHeader
@@ -76,6 +80,31 @@ export default function AnalyticsPage() {
           <Users className="h-5 w-5 text-command" />
           <h2 className="mt-3 text-lg font-semibold">Lead Quality</h2>
           <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">Placeholder for CRM scoring and agent-generated follow-up recommendations.</p>
+        </Panel>
+      </div>
+
+      <div className="mt-6">
+        <Panel>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Connector Readiness</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Analytics will read from these connectors when live API pulls are enabled.</p>
+            </div>
+            <Badge tone="blue">read scaffold</Badge>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {analyticsConnectors.map((connector) => (
+              <div key={connector.provider} className="rounded-md border border-slate-200 p-3 dark:border-slate-800">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium">{connector.display_name}</div>
+                  <Badge tone={connector.configured ? "green" : "neutral"}>{connector.configured ? connector.status : "not configured"}</Badge>
+                </div>
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Last checked: {connector.last_checked_at ? new Date(connector.last_checked_at).toLocaleString() : "Never"}
+                </div>
+              </div>
+            ))}
+          </div>
         </Panel>
       </div>
     </>

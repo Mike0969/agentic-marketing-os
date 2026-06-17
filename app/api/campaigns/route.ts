@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { createLocalCampaign } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -7,6 +8,9 @@ import type { Campaign } from "@/lib/types";
 type CampaignInput = Omit<Campaign, "id" | "status">;
 
 export async function POST(request: Request) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   const input = (await request.json()) as CampaignInput;
   const payload = {
     brand_id: input.brand_id,

@@ -9,6 +9,7 @@ import {
   CheckSquare,
   Gauge,
   Layers3,
+  LogOut,
   Megaphone,
   Moon,
   Settings,
@@ -30,13 +31,31 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+const publicAuthPaths = ["/login", "/forgot-password", "/reset-password", "/auth/callback"];
+
+type ShellAuth = {
+  supabaseConfigured: boolean;
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  email: string | null;
+};
+
+export function AppShell({ children, auth }: { children: React.ReactNode; auth: ShellAuth }) {
   const pathname = usePathname();
   const [dark, setDark] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
   }, [dark]);
+
+  if (publicAuthPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))) {
+    return <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">{children}</div>;
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-100">
@@ -78,14 +97,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <div className="truncate text-lg font-semibold">AI agent workflows ready for integration</div>
             </div>
-            <button
-              type="button"
-              onClick={() => setDark((value) => !value)}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-panel hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
-              aria-label="Toggle dark mode"
-            >
-              {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="hidden rounded-md border border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300 md:block">
+                <span className="font-semibold">{auth.supabaseConfigured ? "Supabase" : "Local fallback"}</span>
+                {auth.email ? <span className="ml-2 text-slate-400">{auth.email}</span> : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDark((value) => !value)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-panel hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                aria-label="Toggle dark mode"
+              >
+                {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              {auth.supabaseConfigured ? (
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-panel hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                  aria-label="Log out"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
           </div>
           <nav className="flex gap-2 overflow-x-auto px-4 pb-3 lg:hidden">
             {navItems.map((item) => {
