@@ -3,6 +3,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import type { AgentRun, DashboardData } from "@/lib/types";
 import { readLocalDashboardData } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export async function getDashboardData(): Promise<DashboardData> {
   noStore();
@@ -48,25 +49,29 @@ export function byId<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
 }
 
-export async function getAgentRuns(agentName?: string): Promise<AgentRun[]> {
+export async function getAgentRuns(agentName?: string, limit = 10): Promise<AgentRun[]> {
   noStore();
 
   if (!isSupabaseConfigured()) {
     const data = await readLocalDashboardData();
-    return (data.agentRuns ?? []).filter((run) => !agentName || run.agent_name === agentName);
+    return (data.agentRuns ?? []).filter((run) => !agentName || run.agent_name === agentName).slice(0, limit);
   }
 
-  const supabase = await createClient();
+  // Prefer the service-role client so the report/observability reads work for
+  // token-triggered (no session) callers too.
+  const supabase = createServiceClient() ?? (await createClient());
 
   if (!supabase) {
     return [];
   }
 
+  // select("*") so newly added observability columns are returned when present
+  // but a DB that has not yet run the migration does not error.
   let query = supabase
     .from("agent_runs")
-    .select("id, agent_name, workflow_name, provider, status, input, output, error, created_at")
+    .select("*")
     .order("created_at", { ascending: false })
-    .limit(10);
+    .limit(limit);
 
   if (agentName) {
     query = query.eq("agent_name", agentName);

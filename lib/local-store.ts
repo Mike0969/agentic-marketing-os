@@ -4,6 +4,8 @@ import { seedData } from "@/lib/seed";
 import type {
   Activity,
   AgentRun,
+  AgentSetting,
+  AgentTarget,
   Approval,
   ApprovalDecision,
   Brand,
@@ -246,6 +248,67 @@ function withDefaults(data: DashboardData): DashboardData {
   return {
     ...data,
     integrationConfigs: data.integrationConfigs ?? [],
-    agentRuns: data.agentRuns ?? []
+    agentRuns: data.agentRuns ?? [],
+    agentSettings: data.agentSettings ?? [],
+    agentTargets: data.agentTargets ?? []
   };
+}
+
+export async function readLocalAgentSettings() {
+  const data = await readLocalDashboardData();
+  return data.agentSettings ?? [];
+}
+
+export async function upsertLocalAgentSetting(setting: { agent_id: string; model: string | null; enabled?: boolean }) {
+  const data = await readLocalDashboardData();
+  const settings = data.agentSettings ?? [];
+  const existing = settings.find((item) => item.agent_id === setting.agent_id);
+  const next: AgentSetting = {
+    agent_id: setting.agent_id,
+    model: setting.model,
+    enabled: setting.enabled ?? existing?.enabled ?? true,
+    updated_at: new Date().toISOString()
+  };
+  const nextSettings = existing
+    ? settings.map((item) => (item.agent_id === setting.agent_id ? next : item))
+    : [next, ...settings];
+  await writeFile(dataFile, JSON.stringify({ ...data, agentSettings: nextSettings }, null, 2));
+  return next;
+}
+
+export async function readLocalAgentTargets() {
+  const data = await readLocalDashboardData();
+  return data.agentTargets ?? [];
+}
+
+export async function addLocalAgentTarget(input: { label: string; type: AgentTarget["type"]; notes?: string }) {
+  const data = await readLocalDashboardData();
+  const targets = data.agentTargets ?? [];
+  const target: AgentTarget = {
+    id: `target-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    label: input.label,
+    type: input.type,
+    active: true,
+    notes: input.notes ?? "",
+    created_at: new Date().toISOString()
+  };
+  await writeFile(dataFile, JSON.stringify({ ...data, agentTargets: [target, ...targets] }, null, 2));
+  return target;
+}
+
+export async function updateLocalAgentTarget(id: string, patch: Partial<Pick<AgentTarget, "active" | "label" | "notes" | "type">>) {
+  const data = await readLocalDashboardData();
+  const targets = data.agentTargets ?? [];
+  const existing = targets.find((item) => item.id === id);
+  if (!existing) return null;
+  const updated = { ...existing, ...patch, id };
+  await writeFile(dataFile, JSON.stringify({ ...data, agentTargets: targets.map((item) => (item.id === id ? updated : item)) }, null, 2));
+  return updated;
+}
+
+export async function removeLocalAgentTarget(id: string) {
+  const data = await readLocalDashboardData();
+  const targets = data.agentTargets ?? [];
+  await writeFile(dataFile, JSON.stringify({ ...data, agentTargets: targets.filter((item) => item.id !== id) }, null, 2));
+  return true;
 }

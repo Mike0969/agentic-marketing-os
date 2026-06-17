@@ -32,6 +32,24 @@ export async function requireAdmin(): Promise<AdminCheck> {
   return { ok: false, response: NextResponse.json({ error: "Admin access required." }, { status: 403 }), status: 403 };
 }
 
+/**
+ * Access check for machine-to-machine triggers (Hermes / n8n / Telegram).
+ * Accepts a bearer token matching AGENT_TRIGGER_TOKEN, otherwise falls back to
+ * the normal admin session check. If AGENT_TRIGGER_TOKEN is unset, only an admin
+ * session is accepted (secure default).
+ */
+export async function requireAgentAccess(request: Request): Promise<AdminCheck> {
+  const token = process.env.AGENT_TRIGGER_TOKEN;
+  if (token) {
+    const header = request.headers.get("authorization") || "";
+    const provided = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (provided && provided === token) {
+      return { ok: true, mode: "local", email: null };
+    }
+  }
+  return requireAdmin();
+}
+
 export async function getShellAuthStatus() {
   if (!isSupabaseConfigured()) {
     return { supabaseConfigured: false, isAuthenticated: true, isAdmin: true, email: null };

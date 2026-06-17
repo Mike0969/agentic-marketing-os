@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Bot,
+  BrainCircuit,
   BriefcaseBusiness,
   CheckSquare,
   Gauge,
@@ -13,6 +14,7 @@ import {
   Megaphone,
   Moon,
   Settings,
+  Share2,
   Sun,
   Wand2
 } from "lucide-react";
@@ -23,6 +25,8 @@ const navItems = [
   { href: "/", label: "Home", icon: Gauge },
   { href: "/brands", label: "Brands", icon: BriefcaseBusiness },
   { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/agent-brain", label: "Agent Brain", icon: BrainCircuit },
+  { href: "/system-map", label: "System Map", icon: Share2 },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/workflows/weekly-content-plan", label: "Workflows", icon: Wand2 },
   { href: "/content-pipeline", label: "Pipeline", icon: Layers3 },

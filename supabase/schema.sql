@@ -102,6 +102,19 @@ create table if not exists agent_runs (
   created_at timestamptz not null default now()
 );
 
+-- Observability fields (nullable; Hermes may not return token usage yet).
+alter table agent_runs add column if not exists agent_id text;
+alter table agent_runs add column if not exists model text;
+alter table agent_runs add column if not exists backup_model text;
+alter table agent_runs add column if not exists tokens_prompt integer;
+alter table agent_runs add column if not exists tokens_completion integer;
+alter table agent_runs add column if not exists tokens_total integer;
+alter table agent_runs add column if not exists duration_ms integer;
+alter table agent_runs add column if not exists brain_resources_used jsonb;
+alter table agent_runs add column if not exists handoff_from text;
+alter table agent_runs add column if not exists handoff_to text;
+alter table agent_runs add column if not exists provider_response_status integer;
+
 alter table brands enable row level security;
 alter table agents enable row level security;
 alter table campaigns enable row level security;
@@ -207,5 +220,38 @@ create policy "admin read integration_configs" on integration_configs for select
 create policy "admin write integration_configs" on integration_configs for all to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "admin read agent_runs" on agent_runs for select to authenticated using (public.is_admin());
 create policy "admin write agent_runs" on agent_runs for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+-- Per-agent model overrides and editable team targets list.
+create table if not exists agent_settings (
+  agent_id text primary key,
+  model text,
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists agent_targets (
+  id uuid primary key default gen_random_uuid(),
+  label text not null,
+  type text not null default 'competitor' check (type in ('competitor', 'topic', 'platform', 'brand')),
+  active boolean not null default true,
+  notes text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table agent_settings enable row level security;
+alter table agent_targets enable row level security;
+
+grant select, insert, update, delete on agent_settings to authenticated;
+grant select, insert, update, delete on agent_targets to authenticated;
+
+drop policy if exists "admin read agent_settings" on agent_settings;
+drop policy if exists "admin write agent_settings" on agent_settings;
+drop policy if exists "admin read agent_targets" on agent_targets;
+drop policy if exists "admin write agent_targets" on agent_targets;
+
+create policy "admin read agent_settings" on agent_settings for select to authenticated using (public.is_admin());
+create policy "admin write agent_settings" on agent_settings for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "admin read agent_targets" on agent_targets for select to authenticated using (public.is_admin());
+create policy "admin write agent_targets" on agent_targets for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
 notify pgrst, 'reload schema';

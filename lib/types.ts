@@ -122,6 +122,36 @@ export type AgentRun = {
   output: Record<string, unknown> | null;
   error: string | null;
   created_at: string;
+  // Observability fields. All nullable because Hermes may not return usage yet.
+  agent_id?: string | null;
+  model?: string | null;
+  backup_model?: string | null;
+  tokens_prompt?: number | null;
+  tokens_completion?: number | null;
+  tokens_total?: number | null;
+  duration_ms?: number | null;
+  brain_resources_used?: string[] | null;
+  handoff_from?: string | null;
+  handoff_to?: string | null;
+  provider_response_status?: number | null;
+};
+
+export type AgentSetting = {
+  agent_id: string;
+  model: string | null;
+  enabled: boolean;
+  updated_at?: string;
+};
+
+export type AgentTargetType = "competitor" | "topic" | "platform" | "brand";
+
+export type AgentTarget = {
+  id: string;
+  label: string;
+  type: AgentTargetType;
+  active: boolean;
+  notes: string;
+  created_at?: string;
 };
 
 export type DashboardData = {
@@ -133,6 +163,8 @@ export type DashboardData = {
   activity: Activity[];
   integrationConfigs?: IntegrationConfig[];
   agentRuns?: AgentRun[];
+  agentSettings?: AgentSetting[];
+  agentTargets?: AgentTarget[];
 };
 
 export type WeeklyContentPlanBrandSelection = "gridfactory" | "gulf-el" | "both";

@@ -1,58 +1,132 @@
 import { generateWeeklyContentPlan } from "@/lib/workflows/weekly-content-plan";
-import { makeActivity } from "@/lib/activity";
-import { listIntegrationConfigs } from "@/lib/integration-store";
-import { appendLocalAgentRun } from "@/lib/local-store";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { recordAgentRun } from "@/lib/agents/agent-runs";
+import { resolveAgentModel } from "@/lib/agents/agent-config-store";
+import { resolveHermesEndpoint } from "@/lib/agents/hermes-client";
+import { buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
 import type { DashboardData, GeneratedContentPlanItem, WeeklyContentPlanInput, WeeklyContentPlanOutput } from "@/lib/types";
+
+const CRINA_AGENT_ID = "agent-crina";
+const WORKFLOW_NAME = "Generate Weekly Content Plan";
+const HANDOFF_TO = "Content Pipeline (Idea/Brief)";
+
+type HermesUsage = { prompt: number | null; completion: number | null; total: number | null };
 
 export async function runCrinaWeeklyContentPlan(input: WeeklyContentPlanInput, data: DashboardData) {
   const endpoint = await resolveHermesEndpoint();
+  const profile = await getHermesAgentProfile(CRINA_AGENT_ID);
+  const brain = await buildBrainContext();
+  const primaryModel = await resolveAgentModel(CRINA_AGENT_ID, process.env.HERMES_AGENT_MODEL || "gpt-5.5");
+  const backupModel = process.env.HERMES_AGENT_BACKUP_MODEL || null;
+  const startedAt = Date.now();
 
   if (endpoint) {
     try {
-      const response = await callHermesWithBackup(endpoint, input, data);
+      const { response, modelUsed } = await callHermesWithBackup(endpoint, input, data, profile, brain.text, primaryModel);
+      const status = response.status;
 
       if (!response.ok) {
         throw new Error(`Hermes returned HTTP ${response.status}`);
       }
 
       const raw = (await response.json()) as unknown;
+      const usage = extractUsage(raw);
       const candidate = endpoint.includes("/v1/chat/completions") ? parseOpenAiCompatibleResponse(raw) : raw;
       const plan = validatePlan(candidate, input, data);
-      await recordAgentRun({ provider: "hermes", status: "success", input, output: plan, error: null });
+
+      await recordAgentRun({
+        agentName: "Crina",
+        agentId: CRINA_AGENT_ID,
+        workflowName: WORKFLOW_NAME,
+        provider: "hermes",
+        status: "success",
+        input,
+        output: plan as unknown as Record<string, unknown>,
+        error: null,
+        model: modelUsed,
+        backupModel,
+        tokensPrompt: usage.prompt,
+        tokensCompletion: usage.completion,
+        tokensTotal: usage.total,
+        durationMs: Date.now() - startedAt,
+        brainResourcesUsed: brain.resourcesUsed,
+        handoffTo: HANDOFF_TO,
+        providerResponseStatus: status
+      });
       return { plan, provider: "hermes", fallback: false };
     } catch (error) {
       const plan = generateWeeklyContentPlan(input, data);
       const message = error instanceof Error ? error.message : "Hermes failed.";
-      await recordAgentRun({ provider: "hermes", status: "fallback", input, output: plan, error: message });
+      await recordAgentRun({
+        agentName: "Crina",
+        agentId: CRINA_AGENT_ID,
+        workflowName: WORKFLOW_NAME,
+        provider: "hermes",
+        status: "fallback",
+        input,
+        output: plan as unknown as Record<string, unknown>,
+        error: message,
+        model: primaryModel,
+        backupModel,
+        durationMs: Date.now() - startedAt,
+        brainResourcesUsed: brain.resourcesUsed,
+        handoffTo: HANDOFF_TO
+      });
       return { plan, provider: "deterministic", fallback: true, error: message };
     }
   }
 
   const plan = generateWeeklyContentPlan(input, data);
-  await recordAgentRun({ provider: "deterministic", status: "fallback", input, output: plan, error: "HERMES_AGENT_ENDPOINT is not configured." });
+  await recordAgentRun({
+    agentName: "Crina",
+    agentId: CRINA_AGENT_ID,
+    workflowName: WORKFLOW_NAME,
+    provider: "deterministic",
+    status: "fallback",
+    input,
+    output: plan as unknown as Record<string, unknown>,
+    error: "HERMES_AGENT_ENDPOINT is not configured.",
+    model: null,
+    backupModel,
+    durationMs: Date.now() - startedAt,
+    brainResourcesUsed: brain.resourcesUsed,
+    handoffTo: HANDOFF_TO
+  });
   return { plan, provider: "deterministic", fallback: true };
 }
 
-async function callHermesWithBackup(endpoint: string, input: WeeklyContentPlanInput, data: DashboardData) {
-  const primaryModel = process.env.HERMES_AGENT_MODEL || "gpt-5.5";
+async function callHermesWithBackup(
+  endpoint: string,
+  input: WeeklyContentPlanInput,
+  data: DashboardData,
+  profile: HermesAgentProfile | null,
+  brainText: string,
+  primaryModel: string
+) {
   const backupModel = process.env.HERMES_AGENT_BACKUP_MODEL;
-  const primary = await callHermes(endpoint, input, data, primaryModel);
+  const primary = await callHermes(endpoint, input, data, profile, brainText, primaryModel);
 
   if (primary.ok || !backupModel || backupModel === primaryModel || !endpoint.includes("/v1/chat/completions")) {
-    return primary;
+    return { response: primary, modelUsed: primaryModel };
   }
 
-  return callHermes(endpoint, input, data, backupModel);
+  const backup = await callHermes(endpoint, input, data, profile, brainText, backupModel);
+  return { response: backup, modelUsed: backupModel };
 }
 
-function callHermes(endpoint: string, input: WeeklyContentPlanInput, data: DashboardData, model?: string) {
+function callHermes(
+  endpoint: string,
+  input: WeeklyContentPlanInput,
+  data: DashboardData,
+  profile: HermesAgentProfile | null,
+  brainText: string,
+  model?: string
+) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (process.env.HERMES_AGENT_TOKEN) headers.Authorization = `Bearer ${process.env.HERMES_AGENT_TOKEN}`;
 
   const body = endpoint.includes("/v1/chat/completions")
-    ? buildOpenAiCompatiblePayload(input, data, model)
-    : buildDirectHermesPayload(input, data);
+    ? buildOpenAiCompatiblePayload(input, data, profile, brainText, model)
+    : buildDirectHermesPayload(input, data, profile, brainText);
 
   return fetch(endpoint, {
     method: "POST",
@@ -62,18 +136,45 @@ function callHermes(endpoint: string, input: WeeklyContentPlanInput, data: Dashb
   });
 }
 
-function buildDirectHermesPayload(input: WeeklyContentPlanInput, data: DashboardData) {
+function buildDirectHermesPayload(input: WeeklyContentPlanInput, data: DashboardData, profile: HermesAgentProfile | null, brainText: string) {
   return {
-    agent: "Crina",
-    agentId: "agent-crina",
-    workflow: "Generate Weekly Content Plan",
+    agent: profile?.name ?? "Crina",
+    agentId: CRINA_AGENT_ID,
+    role: profile?.role ?? "Marketing CEO Agent",
+    allowedActions: profile?.allowed_actions ?? [],
+    blockedActions: profile?.blocked_actions ?? [],
+    workflow: WORKFLOW_NAME,
     expectedOutput: "WeeklyContentPlanOutput JSON with items array. Item status must be idea or brief.",
     input,
+    sharedBrainContext: brainText,
     context: getHermesContext(data)
   };
 }
 
-function buildOpenAiCompatiblePayload(input: WeeklyContentPlanInput, data: DashboardData, model = process.env.HERMES_AGENT_MODEL || "gpt-5.5") {
+function buildCrinaSystemPrompt(profile: HermesAgentProfile | null, brainText: string) {
+  const allowed = profile?.allowed_actions?.length ? `Allowed actions: ${profile.allowed_actions.join("; ")}.` : "";
+  const blocked = profile?.blocked_actions?.length ? `Blocked actions: ${profile.blocked_actions.join("; ")}.` : "";
+
+  return [
+    `You are ${profile?.name ?? "Crina"} (agentId: ${CRINA_AGENT_ID}), the ${profile?.role ?? "Marketing CEO Agent"} for GridFactory.io and Gulf-EL.com / NexRide.`,
+    profile?.purpose ? `Purpose: ${profile.purpose}` : "",
+    "This endpoint does not natively route to your agent id; you are addressed via a generic OpenAI-compatible call, so honor this identity and these constraints.",
+    allowed,
+    blocked,
+    "Return only valid JSON matching the requested WeeklyContentPlanOutput schema. Never include markdown. Never publish, schedule, or approve content.",
+    brainText ? `Relevant shared brain context:\n${brainText}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildOpenAiCompatiblePayload(
+  input: WeeklyContentPlanInput,
+  data: DashboardData,
+  profile: HermesAgentProfile | null,
+  brainText: string,
+  model = process.env.HERMES_AGENT_MODEL || "gpt-5.5"
+) {
   return {
     model,
     temperature: 0.4,
@@ -81,15 +182,14 @@ function buildOpenAiCompatiblePayload(input: WeeklyContentPlanInput, data: Dashb
     messages: [
       {
         role: "system",
-        content:
-          "You are Crina, the Marketing CEO Agent for GridFactory.io and Gulf-EL.com / NexRide. Return only valid JSON matching the requested WeeklyContentPlanOutput schema. Never include markdown. Never publish, schedule, or approve content."
+        content: buildCrinaSystemPrompt(profile, brainText)
       },
       {
         role: "user",
         content: JSON.stringify({
-          workflow: "Generate Weekly Content Plan",
+          workflow: WORKFLOW_NAME,
           outputSchema: {
-            workflowName: "Generate Weekly Content Plan",
+            workflowName: WORKFLOW_NAME,
             generatedBy: "Crina",
             weekStartDate: "YYYY-MM-DD",
             summary: "string",
@@ -138,6 +238,16 @@ function getHermesContext(data: DashboardData) {
   };
 }
 
+function extractUsage(raw: unknown): HermesUsage {
+  const usage = (raw as { usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown } })?.usage;
+  const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  return {
+    prompt: num(usage?.prompt_tokens),
+    completion: num(usage?.completion_tokens),
+    total: num(usage?.total_tokens)
+  };
+}
+
 function parseOpenAiCompatibleResponse(raw: unknown) {
   const response = raw as { choices?: Array<{ message?: { content?: string } }> };
   const content = response.choices?.[0]?.message?.content;
@@ -166,7 +276,7 @@ function validatePlan(candidate: unknown, input: WeeklyContentPlanInput, data: D
   const items = output.items.map((item, index) => validateItem(item, fallback.items[index] ?? fallback.items[0]));
 
   return {
-    workflowName: "Generate Weekly Content Plan",
+    workflowName: WORKFLOW_NAME,
     generatedBy: "Crina",
     weekStartDate: typeof output.weekStartDate === "string" ? output.weekStartDate : input.weekStartDate,
     summary:
@@ -195,52 +305,4 @@ function validateItem(candidate: unknown, fallback: GeneratedContentPlanItem): G
     assigned_agent: typeof item.assigned_agent === "string" ? item.assigned_agent : fallback.assigned_agent,
     status
   };
-}
-
-async function recordAgentRun(input: {
-  provider: string;
-  status: "success" | "fallback" | "error";
-  input: WeeklyContentPlanInput;
-  output: WeeklyContentPlanOutput;
-  error: string | null;
-}) {
-  if (isSupabaseConfigured()) {
-    const supabase = await createClient();
-
-    if (supabase) {
-      await supabase.from("agent_runs").insert({
-        agent_name: "Crina",
-        workflow_name: "Generate Weekly Content Plan",
-        provider: input.provider,
-        status: input.status,
-        input: input.input,
-        output: input.output,
-        error: input.error
-      });
-      if (input.status === "fallback") {
-        await supabase
-          .from("activity")
-          .insert(makeActivity("Crina used deterministic fallback", input.error ?? "Hermes is unavailable, so deterministic planning was used."));
-      }
-      return;
-    }
-  }
-
-  await appendLocalAgentRun({
-    agent_name: "Crina",
-    workflow_name: "Generate Weekly Content Plan",
-    provider: input.provider,
-    status: input.status,
-    input: input.input as unknown as Record<string, unknown>,
-    output: input.output as unknown as Record<string, unknown>,
-    error: input.error
-  });
-}
-
-async function resolveHermesEndpoint() {
-  if (process.env.HERMES_AGENT_ENDPOINT) return process.env.HERMES_AGENT_ENDPOINT;
-
-  const integrations = await listIntegrationConfigs();
-  const hermes = integrations.find((integration) => integration.provider === "hermes");
-  return hermes?.metadata?.endpoint || null;
 }
