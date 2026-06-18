@@ -93,6 +93,7 @@ export function IntegrationSettings({ initialIntegrations }: { initialIntegratio
                   <div className="flex items-center gap-2">
                     <PlugZap className="h-4 w-4 text-command" />
                     <h2 className="font-semibold">{provider.displayName}</h2>
+                    {provider.recommended ? <Badge tone="green">Recommended</Badge> : null}
                   </div>
                   <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">{provider.description}</p>
                 </div>

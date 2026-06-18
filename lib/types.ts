@@ -179,6 +179,23 @@ export type ModelRegistryEntry = {
   created_at?: string;
 };
 
+export type GscRow = {
+  keys: string[];
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+};
+
+export type GscResult = {
+  connected: boolean;
+  site: string | null;
+  range?: { start: string; end: string };
+  rows: GscRow[];
+  totals?: { clicks: number; impressions: number; ctr: number; position: number };
+  reason?: string;
+};
+
 export type DashboardData = {
   brands: Brand[];
   agents: Agent[];

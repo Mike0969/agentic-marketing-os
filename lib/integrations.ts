@@ -6,6 +6,7 @@ export const integrationProviders: Array<{
   category: "Agent Models" | "Automation" | "Social" | "Analytics";
   description: string;
   secretLabel: string;
+  recommended?: boolean;
 }> = [
   { provider: "openai", displayName: "OpenAI", category: "Agent Models", description: "Prepared model adapter for future specialist agents.", secretLabel: "API key" },
   { provider: "anthropic", displayName: "Anthropic", category: "Agent Models", description: "Prepared Claude adapter for editorial and strategy work.", secretLabel: "API key" },
@@ -22,10 +23,18 @@ export const integrationProviders: Array<{
     provider: "google-search-console",
     displayName: "Google Search Console",
     category: "Analytics",
-    description: "Search performance connector scaffold.",
-    secretLabel: "Service credentials"
+    description:
+      "Recommended first analytics connector — read-only Search performance (clicks, impressions, CTR, position), one per brand (GridFactory.io and Gulf-EL.com). Tokens + sites are set server-side per brand via GOOGLE_SEARCH_CONSOLE_TOKEN_GRIDFACTORY / _GULF_EL (+ _SITE_…). No write scopes, no posting.",
+    secretLabel: "OAuth access token (read-only)",
+    recommended: true
   },
-  { provider: "ga4", displayName: "GA4", category: "Analytics", description: "Web analytics connector scaffold.", secretLabel: "Service credentials" }
+  {
+    provider: "ga4",
+    displayName: "GA4",
+    category: "Analytics",
+    description: "Planned next, after Search Console. Read-only web analytics — not wired yet.",
+    secretLabel: "Service credentials"
+  }
 ];
 
 export function normalizeProvider(provider: string): IntegrationProvider | null {

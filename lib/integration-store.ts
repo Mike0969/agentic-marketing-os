@@ -1,4 +1,5 @@
 import { makeActivity } from "@/lib/activity";
+import { gscConnectionSummary } from "@/lib/analytics/search-console";
 import { getIntegrationDisplayName, mergeIntegrationDefaults } from "@/lib/integrations";
 import { markLocalIntegrationTested, readLocalIntegrations, upsertLocalIntegration } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -85,6 +86,12 @@ export async function testIntegration(provider: IntegrationProvider) {
         message = error instanceof Error ? error.message : "Hermes test failed.";
       }
     }
+  }
+
+  if (provider === "google-search-console") {
+    const summary = await gscConnectionSummary();
+    status = summary.anyConnected ? "connected" : "not_configured";
+    message = summary.lines.length ? summary.lines.join(" ") : "Set per-brand Search Console tokens (server-side) to enable read-only pulls.";
   }
 
   if (isSupabaseConfigured()) {

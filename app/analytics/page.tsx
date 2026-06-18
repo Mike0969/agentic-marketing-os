@@ -1,6 +1,10 @@
-import { BarChart3, MousePointerClick, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { BarChart3, MousePointerClick, Search, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { Badge, PageHeader, Panel, StatCard } from "@/components/ui";
 import { listIntegrationConfigs } from "@/lib/integration-store";
+import { getSearchPerformanceForBrand } from "@/lib/analytics/search-console";
+import { getDashboardData } from "@/lib/data";
+
+export const dynamic = "force-dynamic";
 
 const bars = [
   { label: "GridFactory LinkedIn", value: 82 },
@@ -10,16 +14,91 @@ const bars = [
 ];
 
 export default async function AnalyticsPage() {
-  const integrations = await listIntegrationConfigs();
+  const [integrations, { brands }] = await Promise.all([listIntegrationConfigs(), getDashboardData()]);
   const analyticsConnectors = integrations.filter((item) => ["ga4", "google-search-console", "linkedin", "x", "tiktok", "instagram", "facebook"].includes(item.provider));
+  const gscByBrand = await Promise.all(brands.map((brand) => getSearchPerformanceForBrand(brand.name)));
 
   return (
     <>
       <PageHeader
         eyebrow="Performance"
         title="Analytics"
-        description="Mock reporting cards for impressions, engagement, clicks, leads, top content, and weak content. Connect GA4, Search Console, and social APIs here."
+        description="Google Search Console is the first real read-only connector — one per brand (GridFactory.io and Gulf-EL.com). Cards below remain sample data until each source is connected; no live posting anywhere."
       />
+
+      <div className="mb-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-command" />
+          <h2 className="text-lg font-semibold">Search Console — per brand</h2>
+          <Badge tone="blue">read-only</Badge>
+        </div>
+        {gscByBrand.map((gsc) => (
+          <Panel key={gsc.brand} className="border-l-4 border-l-command">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">{gsc.brand}</h3>
+                <Badge tone={gsc.connected ? "green" : "neutral"}>{gsc.connected ? "live" : "not connected"}</Badge>
+              </div>
+              {gsc.connected && gsc.range ? (
+                <span className="text-xs text-slate-500">
+                  {gsc.site} · {gsc.range.start} → {gsc.range.end}
+                </span>
+              ) : null}
+            </div>
+
+            {gsc.connected ? (
+              <>
+                <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <StatCard label="Clicks" value={gsc.totals?.clicks ?? 0} detail="Last 28 days (GSC)" />
+                  <StatCard label="Impressions" value={gsc.totals?.impressions ?? 0} detail="Last 28 days (GSC)" />
+                  <StatCard label="Avg CTR" value={`${((gsc.totals?.ctr ?? 0) * 100).toFixed(1)}%`} detail="Top queries" />
+                  <StatCard label="Avg position" value={(gsc.totals?.position ?? 0).toFixed(1)} detail="Top queries" />
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="text-xs uppercase tracking-[0.12em] text-slate-500">
+                      <tr>
+                        <th className="py-2 pr-3">Query</th>
+                        <th className="py-2 pr-3 text-right">Clicks</th>
+                        <th className="py-2 pr-3 text-right">Impr.</th>
+                        <th className="py-2 pr-3 text-right">CTR</th>
+                        <th className="py-2 text-right">Pos.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gsc.rows.map((row) => (
+                        <tr key={row.keys.join("|")} className="border-t border-slate-100 dark:border-slate-800">
+                          <td className="py-2 pr-3 font-medium">{row.keys[0]}</td>
+                          <td className="py-2 pr-3 text-right">{row.clicks}</td>
+                          <td className="py-2 pr-3 text-right">{row.impressions}</td>
+                          <td className="py-2 pr-3 text-right">{(row.ctr * 100).toFixed(1)}%</td>
+                          <td className="py-2 text-right">{row.position.toFixed(1)}</td>
+                        </tr>
+                      ))}
+                      {gsc.rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-3 text-sm text-slate-500">
+                            No query rows returned for this window.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600 dark:border-slate-700 dark:text-slate-400">
+                {gsc.reason ?? "Not connected."} Set this brand&apos;s server-side token + site
+                (<code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">GOOGLE_SEARCH_CONSOLE_TOKEN_…</code> /{" "}
+                <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">_SITE_…</code>), e.g. site{" "}
+                <code className="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">sc-domain:gridfactory.io</code>.
+              </div>
+            )}
+          </Panel>
+        ))}
+      </div>
+
+      <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Sample data (until connectors are live)</div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Impressions" value="42.8k" detail="+18% mock week over week" />
         <StatCard label="Engagement" value="5.6%" detail="Investor posts outperforming baseline" />
