@@ -67,7 +67,7 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
     }
   }
 
-  async function rejectPlan(item: ContentItem) {
+  async function routePlanBack(item: ContentItem, decision: "changes_requested" | "rejected") {
     setSavingId(item.id);
     setMessage(null);
 
@@ -77,23 +77,30 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: item.id,
-          approval_status: "changes_requested",
+          approval_status: decision,
           status: "brief",
           workflow_stage: "rework",
           current_owner: "Crina",
           human_feedback_tags: feedbackTags[item.id] ?? [],
           feedback: feedback[item.id] ?? "",
-          performance_summary: feedback[item.id] ? `Human sent plan back: ${feedback[item.id]}` : "Human sent plan back for rework."
+          performance_summary:
+            decision === "rejected"
+              ? feedback[item.id]
+                ? `Human rejected Crina plan: ${feedback[item.id]}`
+                : "Human rejected Crina plan."
+              : feedback[item.id]
+                ? `Human requested Crina plan changes: ${feedback[item.id]}`
+                : "Human requested Crina plan changes."
         })
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? "Could not request changes.");
+      if (!response.ok) throw new Error(result.error ?? "Could not route plan back to Crina.");
 
       setItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
-      setMessage(`${item.title} sent back for rework.`);
+      setMessage(decision === "rejected" ? `${item.title} rejected and routed to Crina learning.` : `${item.title} sent back to Crina for changes.`);
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not request changes.");
+      setMessage(error instanceof Error ? error.message : "Could not route plan back to Crina.");
     } finally {
       setSavingId(null);
     }
@@ -217,11 +224,20 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
                   <button
                     type="button"
                     className="inline-flex h-10 items-center justify-center rounded-md border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
-                    onClick={() => rejectPlan(selectedItem)}
+                    onClick={() => routePlanBack(selectedItem, "changes_requested")}
                     disabled={savingId === selectedItem.id}
                   >
                     <MessageSquare className="mr-2 h-4 w-4" />
-                    Send back
+                    Request changes to Crina
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center justify-center rounded-md bg-rose-700 px-4 text-sm font-semibold text-white hover:bg-rose-800"
+                    onClick={() => routePlanBack(selectedItem, "rejected")}
+                    disabled={savingId === selectedItem.id}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Reject plan
                   </button>
                 </>
               ) : (
