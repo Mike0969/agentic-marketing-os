@@ -27,13 +27,6 @@ export const integrationProviders: Array<{
       "Recommended first analytics connector — read-only Search performance (clicks, impressions, CTR, position), one per brand (GridFactory.io and Gulf-EL.com). Durable auth via a service account (added as a user on each property) that self-mints tokens; static tokens supported for quick tests. Per-brand sites via GOOGLE_SEARCH_CONSOLE_SITE_GRIDFACTORY / _GULF_EL. Server-side only, no write scopes, no posting.",
     secretLabel: "Service account (read-only)",
     recommended: true
-  },
-  {
-    provider: "ga4",
-    displayName: "GA4",
-    category: "Analytics",
-    description: "Planned next, after Search Console. Read-only web analytics — not wired yet.",
-    secretLabel: "Service credentials"
   }
 ];
 

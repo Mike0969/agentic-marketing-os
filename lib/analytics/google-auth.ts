@@ -52,6 +52,45 @@ export function hasServiceAccountEnv(brandKey?: string | null): boolean {
   return Boolean(perBrand || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.GOOGLE_APPLICATION_CREDENTIALS);
 }
 
+/**
+ * OAuth installed/web client refresh-token flow. Uses a client id + secret +
+ * refresh token (per-brand or shared) to mint short-lived access tokens, cached.
+ * Reuses the OAuth client you already created; you obtain the refresh token once
+ * (e.g. via the Google OAuth Playground using your own client id/secret with the
+ * webmasters.readonly scope).
+ */
+export function hasOAuthRefreshEnv(brandKey?: string | null): boolean {
+  const id = (brandKey ? process.env[`GOOGLE_CLIENT_ID_${brandKey}`] : "") || process.env.GOOGLE_CLIENT_ID || "";
+  const secret = (brandKey ? process.env[`GOOGLE_CLIENT_SECRET_${brandKey}`] : "") || process.env.GOOGLE_CLIENT_SECRET || "";
+  const refresh = (brandKey ? process.env[`GOOGLE_REFRESH_TOKEN_${brandKey}`] : "") || process.env.GOOGLE_REFRESH_TOKEN || "";
+  return Boolean(id && secret && refresh);
+}
+
+export async function getOAuthAccessToken(brandKey?: string | null): Promise<string | null> {
+  const clientId = (brandKey ? process.env[`GOOGLE_CLIENT_ID_${brandKey}`] : "") || process.env.GOOGLE_CLIENT_ID || "";
+  const clientSecret = (brandKey ? process.env[`GOOGLE_CLIENT_SECRET_${brandKey}`] : "") || process.env.GOOGLE_CLIENT_SECRET || "";
+  const refreshToken = (brandKey ? process.env[`GOOGLE_REFRESH_TOKEN_${brandKey}`] : "") || process.env.GOOGLE_REFRESH_TOKEN || "";
+  if (!clientId || !clientSecret || !refreshToken) return null;
+
+  const now = Date.now();
+  const cacheKey = `oauth:${clientId}:${refreshToken.slice(0, 12)}`;
+  const cached = tokenCache.get(cacheKey);
+  if (cached && cached.expiresAt > now + 60_000) return cached.token;
+
+  const response = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error(`OAuth refresh exchange returned HTTP ${response.status}.`);
+  const data = (await response.json()) as { access_token?: string; expires_in?: number };
+  if (!data.access_token) throw new Error("OAuth refresh did not return an access_token.");
+
+  tokenCache.set(cacheKey, { token: data.access_token, expiresAt: now + (data.expires_in ?? 3600) * 1000 });
+  return data.access_token;
+}
+
 /** Mint (or reuse a cached) read-only access token for the service account. */
 export async function getServiceAccountToken(brandKey?: string | null): Promise<string | null> {
   const sa = await loadServiceAccount(brandKey);

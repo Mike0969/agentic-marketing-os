@@ -1,5 +1,5 @@
 import type { GscResult, GscRow } from "@/lib/types";
-import { getServiceAccountToken, hasServiceAccountEnv } from "@/lib/analytics/google-auth";
+import { getOAuthAccessToken, getServiceAccountToken, hasOAuthRefreshEnv, hasServiceAccountEnv } from "@/lib/analytics/google-auth";
 
 /**
  * Google Search Console — READ-ONLY analytics connector, PER BRAND.
@@ -23,7 +23,7 @@ const GSC_BASE = "https://searchconsole.googleapis.com/webmasters/v3";
 const TIMEOUT_MS = 10000;
 
 export type BrandGscKey = "GRIDFACTORY" | "GULF_EL";
-export type AuthSource = "service_account" | "token" | "none";
+export type AuthSource = "service_account" | "oauth" | "token" | "none";
 export type BrandCredentials = { token: string; site: string; source: AuthSource };
 
 export const GSC_BRANDS: { name: string; key: BrandGscKey }[] = [
@@ -36,6 +36,20 @@ export function brandGscKey(brandName: string): BrandGscKey | null {
   if (name.includes("gridfactory")) return "GRIDFACTORY";
   if (name.includes("gulf") || name.includes("nexride")) return "GULF_EL";
   return null;
+}
+
+/**
+ * Cheap, env-only check (no network): is at least one brand configured with a
+ * usable auth source (service account / OAuth refresh / static token) + a site?
+ * Used to show the real "configured" state in Settings + Connector Readiness.
+ */
+export function isGscConfigured(): boolean {
+  return GSC_BRANDS.some(({ name }) => {
+    const key = brandGscKey(name);
+    const site = resolveBrandSite(name);
+    const hasAuth = hasServiceAccountEnv(key) || hasOAuthRefreshEnv(key) || Boolean(resolveStaticToken(name));
+    return Boolean(site && hasAuth);
+  });
 }
 
 function resolveBrandSite(brandName: string): string {
@@ -56,6 +70,11 @@ export async function getBrandCredentials(brandName: string): Promise<BrandCrede
   if (hasServiceAccountEnv(key)) {
     const token = await getServiceAccountToken(key);
     if (token) return { token, site, source: "service_account" };
+  }
+
+  if (hasOAuthRefreshEnv(key)) {
+    const token = await getOAuthAccessToken(key);
+    if (token) return { token, site, source: "oauth" };
   }
 
   const staticToken = resolveStaticToken(brandName);
@@ -156,7 +175,7 @@ export async function gscConnectionSummary(): Promise<{ anyConnected: boolean; l
     }
     try {
       const sites = await gscListSites(creds.token);
-      const via = creds.source === "service_account" ? "service account" : "token";
+      const via = creds.source === "service_account" ? "service account" : creds.source === "oauth" ? "OAuth refresh token" : "token";
       if (!creds.site) lines.push(`${name}: ${via} valid, site not set (${sites.length} available).`);
       else if (sites.includes(creds.site)) {
         lines.push(`${name}: connected to ${creds.site} via ${via}.`);

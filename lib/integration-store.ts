@@ -1,9 +1,30 @@
 import { makeActivity } from "@/lib/activity";
-import { gscConnectionSummary } from "@/lib/analytics/search-console";
+import { gscConnectionSummary, isGscConfigured } from "@/lib/analytics/search-console";
 import { getIntegrationDisplayName, mergeIntegrationDefaults } from "@/lib/integrations";
 import { markLocalIntegrationTested, readLocalIntegrations, upsertLocalIntegration } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { IntegrationConfig, IntegrationProvider, IntegrationStatus } from "@/lib/types";
+
+/**
+ * Some connectors are wired via env (server-side), not via secrets saved in the
+ * Settings form: Hermes (HERMES_AGENT_ENDPOINT) and Google Search Console
+ * (service account / OAuth / token). Reflect their real readiness so the badges
+ * are truthful even when nothing was saved through the form.
+ */
+function withEnvBackedConnectors(configs: IntegrationConfig[]): IntegrationConfig[] {
+  const gscReady = isGscConfigured();
+  const hermesReady = Boolean(process.env.HERMES_AGENT_ENDPOINT);
+
+  return configs.map((config) => {
+    if (config.provider === "google-search-console" && gscReady && !config.configured) {
+      return { ...config, configured: true, status: config.status === "connected" || config.status === "error" ? config.status : "configured" };
+    }
+    if (config.provider === "hermes" && hermesReady && !config.configured) {
+      return { ...config, configured: true, status: config.status === "connected" || config.status === "error" ? config.status : "configured" };
+    }
+    return config;
+  });
+}
 
 type SaveIntegrationInput = {
   provider: IntegrationProvider;
@@ -18,11 +39,11 @@ export async function listIntegrationConfigs() {
 
     if (supabase) {
       const { data, error } = await supabase.from("integration_configs").select(safeColumns).order("provider");
-      if (!error) return mergeIntegrationDefaults((data ?? []) as IntegrationConfig[]);
+      if (!error) return withEnvBackedConnectors(mergeIntegrationDefaults((data ?? []) as IntegrationConfig[]));
     }
   }
 
-  return mergeIntegrationDefaults(await readLocalIntegrations());
+  return withEnvBackedConnectors(mergeIntegrationDefaults(await readLocalIntegrations()));
 }
 
 export async function saveIntegrationConfig(input: SaveIntegrationInput) {
