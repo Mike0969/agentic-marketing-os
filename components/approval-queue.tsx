@@ -10,6 +10,13 @@ import type { Brand, ContentItem } from "@/lib/types";
 type Decision = "approved" | "rejected" | "changes_requested";
 const feedbackTagOptions = ["Content weak", "Hook weak", "Wrong tone", "Wrong platform", "Add platform", "Remove platform", "Visual weak", "Timing wrong", "CTA weak", "Needs proof"];
 
+function splitContentPackage(body: string | null | undefined) {
+  const text = body ?? "";
+  const [copyPart, visualPart] = text.split(/\n\n---\n\nVISUAL \/ VIDEO DIRECTION\n/);
+  const copy = copyPart.replace(/^COPY DRAFT\n/, "").trim();
+  return { copy: copy || text, visual: visualPart?.trim() ?? "" };
+}
+
 export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; contentItems: ContentItem[] }) {
   const router = useRouter();
   const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
@@ -20,6 +27,7 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
   const [savingId, setSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const selectedItem = (selectedId ? items.find((item) => item.id === selectedId) : null) ?? items[0] ?? null;
+  const selectedPackage = splitContentPackage(selectedItem?.body);
   const planItems = items.filter(isCrinaProposal);
   const draftItems = items.filter((item) => !isCrinaProposal(item));
 
@@ -200,8 +208,17 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
             <div className="mt-5 rounded-md bg-slate-50 p-4 dark:bg-slate-950">
               <div className="text-sm font-semibold">Hook</div>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{selectedItem.hook}</p>
-              <div className="mt-4 text-sm font-semibold">{isCrinaProposal(selectedItem) ? "Plan context" : "Draft body"}</div>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-400">{selectedItem.body}</p>
+              <div className="mt-4 text-sm font-semibold">{isCrinaProposal(selectedItem) ? "Plan context" : "Copy draft"}</div>
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-400">{selectedPackage.copy}</p>
+              {!isCrinaProposal(selectedItem) && selectedPackage.visual ? (
+                <div className="mt-4 rounded-md border border-teal-200 bg-teal-50 p-3 text-teal-950 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em]">Visual / video direction</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{selectedPackage.visual}</p>
+                  <p className="mt-3 text-xs text-teal-700 dark:text-teal-200">
+                    This is a production brief for the visual. Actual image/video rendering is not connected yet.
+                  </p>
+                </div>
+              ) : null}
               <div className="mt-4 text-sm font-semibold">CTA</div>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{selectedItem.CTA}</p>
             </div>

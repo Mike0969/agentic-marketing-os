@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, RotateCcw, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui";
@@ -63,9 +63,18 @@ type ReworkResponse = {
   error: string | null;
 };
 
+function splitContentPackage(body: string | null | undefined) {
+  const text = body ?? "";
+  const [copyPart, visualPart] = text.split(/\n\n---\n\nVISUAL \/ VIDEO DIRECTION\n/);
+  const copy = copyPart.replace(/^COPY DRAFT\n/, "").trim();
+  return { copy: copy || text, visual: visualPart?.trim() ?? "" };
+}
+
 export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; brandNames: Record<string, string> }) {
   const router = useRouter();
+  const autoStartedRef = useRef<Set<string>>(new Set());
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [autopilotId, setAutopilotId] = useState<string | null>(null);
   const [savingPlatformId, setSavingPlatformId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "green" | "amber"; text: string } | null>(null);
@@ -91,6 +100,7 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
     rework: activeItems.filter((item) => item.workflow_stage === "rework" || item.approval_status === "rejected" || item.approval_status === "changes_requested")
   };
   const selectedItem = (selectedId ? activeItems.find((item) => item.id === selectedId) : null) ?? activeItems[0] ?? null;
+  const selectedPackage = splitContentPackage(selectedItem?.body);
 
   function getDecisionLabel(item: ContentItem) {
     if (item.workflow_stage === "content_creation") return `With ${item.current_owner ?? item.assigned_agent}`;
@@ -137,10 +147,10 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
     }
   }
 
-  async function dispatch(item: ContentItem) {
+  const dispatch = useCallback(async (item: ContentItem, options?: { automatic?: boolean }) => {
     setBusyId(item.id);
     setError(null);
-    setNotice(null);
+    if (!options?.automatic) setNotice(null);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 190_000);
     try {
@@ -173,11 +183,26 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
       window.clearTimeout(timeout);
       setBusyId(null);
     }
-  }
+  }, [router]);
 
   function canContinueWorkflow(item: ContentItem) {
     return Boolean(item.workflow_stage && resumableStages.has(item.workflow_stage));
   }
+
+  useEffect(() => {
+    if (busyId) return;
+
+    const next = activeItems.find((item) => canContinueWorkflow(item));
+    if (!next || !next.workflow_stage) return;
+
+    const key = `${next.id}:${next.workflow_stage}`;
+    if (autoStartedRef.current.has(key)) return;
+
+    autoStartedRef.current.add(key);
+    setAutopilotId(next.id);
+    setNotice({ tone: "green", text: `${next.title} is on autopilot. The internal chain is continuing now.` });
+    void dispatch(next, { automatic: true }).finally(() => setAutopilotId(null));
+  }, [activeItems, busyId, dispatch]);
 
   async function startCrinaRevision(item: ContentItem) {
     setBusyId(item.id);
@@ -312,6 +337,7 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
                               <span className="rounded bg-white px-1.5 py-0.5 text-[11px] text-slate-500 dark:bg-slate-950">{getDecisionLabel(item)}</span>
                               <span className="rounded bg-white px-1.5 py-0.5 text-[11px] text-slate-500 dark:bg-slate-950">{item.assigned_agent}</span>
                             </div>
+                            {autopilotId === item.id ? <div className="mt-2 text-xs font-semibold text-command">Autopilot running…</div> : null}
                             {item.performance_summary ? <div className="mt-2 line-clamp-1 text-xs text-slate-500">{item.performance_summary}</div> : null}
                           </button>
                         );
@@ -403,10 +429,20 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
                 </div>
               ) : null}
 
-              {selectedItem.body ? (
+              {selectedPackage.copy ? (
                 <div className="mt-4 rounded-md border border-slate-200 p-3 dark:border-slate-800">
-                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Agent output / draft</div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">{selectedItem.body}</p>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Copy draft</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">{selectedPackage.copy}</p>
+                </div>
+              ) : null}
+
+              {selectedPackage.visual ? (
+                <div className="mt-4 rounded-md border border-teal-200 bg-teal-50 p-3 text-teal-950 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em]">Visual / video direction</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{selectedPackage.visual}</p>
+                  <p className="mt-3 text-xs text-teal-700 dark:text-teal-200">
+                    This is the production direction from Visual & Video Agent. Actual image/video generation is the next connector step.
+                  </p>
                 </div>
               ) : null}
 
@@ -486,7 +522,7 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
               {busyId === selectedItem.id ? (
                 <div className="mt-3 flex items-start gap-2 rounded-md bg-blue-50 p-2 text-xs text-blue-800 dark:bg-blue-950 dark:text-blue-200">
                   <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Hermes/model run in progress. This can take 30-120 seconds; output will return to this card.
+                  {autopilotId === selectedItem.id ? "Autopilot is continuing the internal chain." : "Hermes/model run in progress."} This can take 30-120 seconds; output will return to this card.
                 </div>
               ) : null}
             </article>
