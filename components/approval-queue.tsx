@@ -70,6 +70,8 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
   async function routePlanBack(item: ContentItem, decision: "changes_requested" | "rejected") {
     setSavingId(item.id);
     setMessage(null);
+    const note = feedback[item.id] ?? "";
+    const tags = feedbackTags[item.id] ?? [];
 
     try {
       const response = await fetch("/api/content-items", {
@@ -78,31 +80,52 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
         body: JSON.stringify({
           id: item.id,
           approval_status: decision,
-          status: "brief",
-          workflow_stage: "rework",
-          current_owner: "Crina",
-          human_feedback_tags: feedbackTags[item.id] ?? [],
-          feedback: feedback[item.id] ?? "",
+          status: decision === "rejected" ? "analyzed" : "brief",
+          workflow_stage: decision === "rejected" ? "done" : "rework",
+          current_owner: decision === "rejected" ? "None" : "Crina",
+          next_owner: decision === "rejected" ? "Archive" : "Human",
+          human_feedback_tags: tags,
+          feedback: note,
           performance_summary:
             decision === "rejected"
-              ? feedback[item.id]
-                ? `Human rejected Crina plan: ${feedback[item.id]}`
+              ? note
+                ? `Human rejected Crina plan: ${note}`
                 : "Human rejected Crina plan."
-              : feedback[item.id]
-                ? `Human requested Crina plan changes: ${feedback[item.id]}`
-                : "Human requested Crina plan changes."
+              : note
+                ? `Crina is revising plan from feedback: ${note}`
+                : "Crina is revising plan from human feedback."
         })
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Could not route plan back to Crina.");
 
       setItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
-      setMessage(decision === "rejected" ? `${item.title} rejected and routed to Crina learning.` : `${item.title} sent back to Crina for changes.`);
+      setMessage(decision === "rejected" ? `${item.title} rejected and routed to Crina learning.` : `${item.title} sent to Crina for revision. It will return here as a revised plan.`);
       router.refresh();
+
+      if (decision === "changes_requested") {
+        setSavingId(null);
+        void fetch("/api/agents/crina/rework-plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contentItemId: item.id, feedback: note, feedbackTags: tags })
+        })
+          .then(async (response) => {
+            const result = (await response.json().catch(() => ({}))) as { error?: string };
+            if (!response.ok) throw new Error(result.error ?? "Crina could not revise the plan.");
+            setMessage(`${item.title} revised by Crina and returned to Plan decisions.`);
+            router.refresh();
+          })
+          .catch((error) => {
+            setMessage(error instanceof Error ? error.message : "Crina could not revise the plan.");
+            router.refresh();
+          });
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not route plan back to Crina.");
-    } finally {
       setSavingId(null);
+    } finally {
+      if (decision === "rejected") setSavingId(null);
     }
   }
 
