@@ -5,6 +5,8 @@ import type {
   Activity,
   AgentRun,
   AgentSetting,
+  AgentSignal,
+  AgentSignalStatus,
   AgentTarget,
   Approval,
   ApprovalDecision,
@@ -13,7 +15,8 @@ import type {
   ContentItem,
   DashboardData,
   IntegrationConfig,
-  IntegrationProvider
+  IntegrationProvider,
+  ModelRegistryEntry
 } from "@/lib/types";
 
 const dataDir = path.join(process.cwd(), "data");
@@ -55,6 +58,22 @@ export async function appendLocalContentItems(items: ContentItem[]) {
   await writeFile(dataFile, JSON.stringify(nextData, null, 2));
 
   return newItems;
+}
+
+export async function updateLocalContentItem(id: string, patch: Partial<ContentItem>, activityLabel?: string, activityDetail?: string) {
+  const data = await readLocalDashboardData();
+  const existing = data.contentItems.find((item) => item.id === id);
+  if (!existing) return null;
+
+  const updated: ContentItem = { ...existing, ...patch, id };
+  const nextData: DashboardData = {
+    ...data,
+    contentItems: data.contentItems.map((item) => (item.id === id ? updated : item)),
+    activity: activityLabel ? [createActivity(activityLabel, activityDetail ?? ""), ...data.activity] : data.activity
+  };
+
+  await writeFile(dataFile, JSON.stringify(nextData, null, 2));
+  return updated;
 }
 
 export async function updateLocalBrand(id: string, patch: Partial<Brand>) {
@@ -250,8 +269,62 @@ function withDefaults(data: DashboardData): DashboardData {
     integrationConfigs: data.integrationConfigs ?? [],
     agentRuns: data.agentRuns ?? [],
     agentSettings: data.agentSettings ?? [],
-    agentTargets: data.agentTargets ?? []
+    agentTargets: data.agentTargets ?? [],
+    agentSignals: data.agentSignals ?? [],
+    modelRegistry: data.modelRegistry ?? []
   };
+}
+
+export async function readLocalAgentSignals() {
+  const data = await readLocalDashboardData();
+  return data.agentSignals ?? [];
+}
+
+export async function appendLocalAgentSignal(signal: Omit<AgentSignal, "id" | "created_at">) {
+  const data = await readLocalDashboardData();
+  const entry: AgentSignal = {
+    id: `signal-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    created_at: new Date().toISOString(),
+    ...signal
+  };
+  await writeFile(dataFile, JSON.stringify({ ...data, agentSignals: [entry, ...(data.agentSignals ?? [])] }, null, 2));
+  return entry;
+}
+
+export async function updateLocalAgentSignal(id: string, status: AgentSignalStatus) {
+  const data = await readLocalDashboardData();
+  const signals = data.agentSignals ?? [];
+  const existing = signals.find((item) => item.id === id);
+  if (!existing) return null;
+  const updated: AgentSignal = { ...existing, status, resolved_at: status === "resolved" ? new Date().toISOString() : existing.resolved_at ?? null };
+  await writeFile(dataFile, JSON.stringify({ ...data, agentSignals: signals.map((item) => (item.id === id ? updated : item)) }, null, 2));
+  return updated;
+}
+
+export async function readLocalModelRegistry() {
+  const data = await readLocalDashboardData();
+  return data.modelRegistry ?? [];
+}
+
+export async function addLocalModel(input: { name: string; provider: string; notes?: string }) {
+  const data = await readLocalDashboardData();
+  const entry: ModelRegistryEntry = {
+    id: `model-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: input.name,
+    provider: input.provider,
+    notes: input.notes ?? "",
+    enabled: true,
+    created_at: new Date().toISOString()
+  };
+  await writeFile(dataFile, JSON.stringify({ ...data, modelRegistry: [entry, ...(data.modelRegistry ?? [])] }, null, 2));
+  return entry;
+}
+
+export async function removeLocalModel(id: string) {
+  const data = await readLocalDashboardData();
+  const registry = data.modelRegistry ?? [];
+  await writeFile(dataFile, JSON.stringify({ ...data, modelRegistry: registry.filter((item) => item.id !== id) }, null, 2));
+  return true;
 }
 
 export async function readLocalAgentSettings() {

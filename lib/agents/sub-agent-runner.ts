@@ -1,4 +1,5 @@
 import { recordAgentRun } from "@/lib/agents/agent-runs";
+import { emitRunSignals } from "@/lib/agents/agent-signals";
 import { runHermesAgent } from "@/lib/agents/hermes-client";
 
 /**
@@ -90,6 +91,7 @@ export async function runSubAgent(config: SubAgentConfig, input: unknown): Promi
       providerResponseStatus: result.status
     });
 
+    await emitRunSignals({ agentId: config.agentId, agentName: config.agentName, fallback: false, tokensTotal: result.usage.tokensTotal, output, error: null });
     return { agent: config.agentName, agentId: config.agentId, provider: "hermes", fallback: false, output, error: null, observability };
   }
 
@@ -112,5 +114,6 @@ export async function runSubAgent(config: SubAgentConfig, input: unknown): Promi
     providerResponseStatus: result.status
   });
 
+  await emitRunSignals({ agentId: config.agentId, agentName: config.agentName, fallback: true, tokensTotal: result.usage.tokensTotal, output, error: result.error });
   return { agent: config.agentName, agentId: config.agentId, provider: "deterministic", fallback: true, output, error: result.error, observability };
 }

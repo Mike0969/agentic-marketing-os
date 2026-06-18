@@ -1,10 +1,12 @@
 import { IntegrationSettings } from "@/components/integration-settings";
+import { ModelsManager } from "@/components/models-manager";
 import { Badge, PageHeader } from "@/components/ui";
 import { listIntegrationConfigs } from "@/lib/integration-store";
+import { listModels } from "@/lib/agents/model-registry";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 
 export default async function SettingsPage() {
-  const integrations = await listIntegrationConfigs();
+  const [integrations, models] = await Promise.all([listIntegrationConfigs(), listModels()]);
   const configuredCount = integrations.filter((item) => item.configured).length;
 
   return (
@@ -21,6 +23,7 @@ export default async function SettingsPage() {
           </div>
         }
       />
+      <ModelsManager initialModels={models} />
       <IntegrationSettings initialIntegrations={integrations} />
     </>
   );

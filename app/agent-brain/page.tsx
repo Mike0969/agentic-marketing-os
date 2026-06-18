@@ -18,10 +18,10 @@ import {
 import { Badge, PageHeader, Panel, StatCard } from "@/components/ui";
 import { getAgentRuns } from "@/lib/data";
 import { readHermesRegistry, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
-import { listAgentSettings, listAgentTargets } from "@/lib/agents/agent-config-store";
-import { getLatestTeamReport } from "@/lib/agents/team-runner";
-import { TeamControl } from "@/components/team-control";
+import { listAgentSettings } from "@/lib/agents/agent-config-store";
+import { listModelNames } from "@/lib/agents/model-registry";
 import { AgentModelPicker } from "@/components/agent-model-picker";
+import { AgentMemoryEditor } from "@/components/agent-memory-editor";
 import type { AgentRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -56,12 +56,11 @@ function runsForAgent(runs: AgentRun[], profile: HermesAgentProfile) {
 }
 
 export default async function AgentBrainPage() {
-  const [registry, runs, settings, targets, latestReport] = await Promise.all([
+  const [registry, runs, settings, modelNames] = await Promise.all([
     readHermesRegistry(),
     getAgentRuns(undefined, 100),
     listAgentSettings(),
-    listAgentTargets(),
-    getLatestTeamReport()
+    listModelNames()
   ]);
 
   const endpoint = registry.team?.apiTargeting.endpoint || process.env.HERMES_AGENT_ENDPOINT || "";
@@ -73,7 +72,6 @@ export default async function AgentBrainPage() {
 
   const agents = registry.team?.agents ?? [];
   const settingsByAgent = new Map(settings.map((setting) => [setting.agent_id, setting]));
-  const modelSuggestions = Array.from(new Set([defaultModel, backupModelRaw, "gpt-5.5", "deepseek-v4-flash"].filter(Boolean)));
   const successRuns = runs.filter((run) => run.status === "success").length;
   const fallbackRuns = runs.filter((run) => run.status === "fallback").length;
   const errorRuns = runs.filter((run) => run.status === "error").length;
@@ -214,16 +212,6 @@ export default async function AgentBrainPage() {
         </p>
       </Panel>
 
-      {/* Team run + targets */}
-      <div className="mb-6">
-        <div className="mb-3 flex items-center gap-2">
-          <Workflow className="h-4 w-4 text-command" />
-          <h3 className="font-semibold">Team control</h3>
-          <Badge tone="neutral">parallel fan-out → synthesis</Badge>
-        </div>
-        <TeamControl initialTargets={targets} initialReport={latestReport} />
-      </div>
-
       {/* Shared brain */}
       <Panel className="mb-6">
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -314,14 +302,15 @@ export default async function AgentBrainPage() {
                 </div>
               </div>
 
-              {/* Per-agent model override */}
-              <div className="mt-4">
+              {/* Per-agent model override + memory */}
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <AgentModelPicker
                   agentId={agent.id}
                   currentModel={setting?.model ?? null}
                   defaultModel={agent.default_model || defaultModel}
-                  suggestions={modelSuggestions}
+                  models={modelNames}
                 />
+                <AgentMemoryEditor agentId={agent.id} />
               </div>
 
               {/* Observability strip */}

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
-import { decideLocalApproval } from "@/lib/local-store";
+import { decideLocalApproval, updateLocalContentItem } from "@/lib/local-store";
+import { getContentItem } from "@/lib/content-store";
+import { suggestPostTimes, type MarketKey } from "@/lib/scheduling/post-timing";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { ApprovalDecision } from "@/lib/types";
 
@@ -12,15 +14,36 @@ type ApprovalInput = {
   requestedByAgent: string;
 };
 
+function deriveMarket(brandName: string | undefined): MarketKey {
+  const name = (brandName ?? "").toLowerCase();
+  if (name.includes("gulf") || name.includes("nexride")) return "gcc";
+  return "global";
+}
+
 export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
 
   const input = (await request.json()) as ApprovalInput;
   const decidedAt = new Date().toISOString();
+
+  // On approval, attach a market-aware SUGGESTED post time. This never posts —
+  // scheduled_at is a proposal for manual publishing.
+  let suggestedAt: string | null = null;
+  if (input.decision === "approved") {
+    const item = await getContentItem(input.contentItemId);
+    if (item) {
+      const { getDashboardData } = await import("@/lib/data");
+      const data = await getDashboardData();
+      const brand = data.brands.find((b) => b.id === item.brand_id);
+      suggestedAt = suggestPostTimes(deriveMarket(brand?.name), [item.platform])[0]?.isoUtc ?? null;
+    }
+  }
+
   const contentPatch = {
     approval_status: input.decision,
-    status: input.decision === "approved" ? "scheduled" : "draft"
+    status: input.decision === "approved" ? "scheduled" : "draft",
+    ...(input.decision === "approved" && suggestedAt ? { scheduled_at: suggestedAt } : {})
   };
 
   if (isSupabaseConfigured()) {
@@ -62,6 +85,11 @@ export async function POST(request: Request) {
 
   if (!result) {
     return NextResponse.json({ error: "Content item not found" }, { status: 404 });
+  }
+
+  if (input.decision === "approved" && suggestedAt) {
+    const patched = await updateLocalContentItem(input.contentItemId, { scheduled_at: suggestedAt });
+    if (patched) result.contentItem = patched;
   }
 
   return NextResponse.json(result);

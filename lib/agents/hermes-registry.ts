@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "fs/promises";
+import { readFile, readdir, stat, writeFile } from "fs/promises";
 import path from "path";
 
 /**
@@ -228,4 +228,33 @@ export async function buildBrainContext(only?: string[]): Promise<BrainContext> 
   }
 
   return { text: chunks.join("\n\n"), resourcesUsed };
+}
+
+/** Per-agent memory file name in the shared brain dir, e.g. agent-seo-memory.md */
+export function agentMemoryFileName(agentId: string) {
+  const safe = agentId.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  return `${safe}-memory.md`;
+}
+
+/** Read an agent's own memory file. Returns "" if missing. Never throws. */
+export async function readAgentMemory(agentId: string): Promise<string> {
+  const snapshot = await readHermesRegistry();
+  if (!snapshot.brainPath) return "";
+  try {
+    return await readFile(path.join(snapshot.brainPath, agentMemoryFileName(agentId)), "utf8");
+  } catch {
+    return "";
+  }
+}
+
+/** Write an agent's own memory file into the shared brain dir. */
+export async function writeAgentMemory(agentId: string, content: string): Promise<boolean> {
+  const snapshot = await readHermesRegistry();
+  if (!snapshot.brainPath) return false;
+  try {
+    await writeFile(path.join(snapshot.brainPath, agentMemoryFileName(agentId)), content, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
 }

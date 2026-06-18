@@ -154,6 +154,31 @@ export type AgentTarget = {
   created_at?: string;
 };
 
+export type AgentSignalSeverity = "info" | "warning" | "critical";
+export type AgentSignalStatus = "open" | "ack" | "resolved" | "needs_approval";
+
+export type AgentSignal = {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  kind: string;
+  severity: AgentSignalSeverity;
+  message: string;
+  status: AgentSignalStatus;
+  run_id?: string | null;
+  created_at: string;
+  resolved_at?: string | null;
+};
+
+export type ModelRegistryEntry = {
+  id: string;
+  name: string;
+  provider: string;
+  notes: string;
+  enabled: boolean;
+  created_at?: string;
+};
+
 export type DashboardData = {
   brands: Brand[];
   agents: Agent[];
@@ -165,6 +190,8 @@ export type DashboardData = {
   agentRuns?: AgentRun[];
   agentSettings?: AgentSetting[];
   agentTargets?: AgentTarget[];
+  agentSignals?: AgentSignal[];
+  modelRegistry?: ModelRegistryEntry[];
 };
 
 export type WeeklyContentPlanBrandSelection = "gridfactory" | "gulf-el" | "both";

@@ -6,3 +6,4 @@ out
 data/local-dashboard.json
 .agents
 skills-lock.json
+graphify-out

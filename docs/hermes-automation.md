@@ -1,5 +1,13 @@
 # Hermes automation — daily team run, Slack report, Telegram alerts
 
+> NOTE: The **primary** product flow is now Crina-first and approval-gated in the
+> dashboard (Crina plan → approve → per-item dispatch to the assigned specialist
+> → drafts → approve → draft package). The `/api/agents/team/run` endpoint below
+> is the **optional parallel research-report mode** (the Hermes-video pattern),
+> kept for ad-hoc Slack reports. It does NOT touch the content pipeline. Use it
+> only if you want a standalone competitor/market report.
+
+
 This is the Hermes-side wiring that drives the dashboard's parallel team run.
 The **schedule, memory, Slack send, and Telegram alerts live in Hermes** — the
 dashboard only exposes the run + report as data/outputs:

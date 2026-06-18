@@ -26,7 +26,7 @@ const navItems = [
   { href: "/brands", label: "Brands", icon: BriefcaseBusiness },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/agent-brain", label: "Agent Brain", icon: BrainCircuit },
-  { href: "/system-map", label: "System Map", icon: Share2 },
+  { href: "/system-map", label: "Live Brain", icon: Share2 },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
   { href: "/workflows/weekly-content-plan", label: "Workflows", icon: Wand2 },
   { href: "/content-pipeline", label: "Pipeline", icon: Layers3 },

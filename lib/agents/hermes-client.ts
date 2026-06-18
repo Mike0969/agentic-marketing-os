@@ -1,5 +1,5 @@
 import { resolveAgentModel } from "@/lib/agents/agent-config-store";
-import { buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
+import { agentMemoryFileName, buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
 import { listIntegrationConfigs } from "@/lib/integration-store";
 
 /**
@@ -186,7 +186,11 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
   }
 
   const profile = await getHermesAgentProfile(options.agentId);
-  const brain = await buildBrainContext(options.brainFiles);
+  // Always include this agent's own memory file alongside its assigned brain
+  // files. When no files are restricted, buildBrainContext reads all of them
+  // (which already includes the memory file).
+  const brainFiles = options.brainFiles ? Array.from(new Set([...options.brainFiles, agentMemoryFileName(options.agentId)])) : undefined;
+  const brain = await buildBrainContext(brainFiles);
   const systemPrompt = buildSystemPrompt(profile, options);
   const userPrompt = buildUserPrompt(options, brain.text);
   const temperature = options.temperature ?? 0.4;

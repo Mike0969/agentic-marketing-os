@@ -254,6 +254,48 @@ create policy "admin write agent_settings" on agent_settings for all to authenti
 create policy "admin read agent_targets" on agent_targets for select to authenticated using (public.is_admin());
 create policy "admin write agent_targets" on agent_targets for all to authenticated using (public.is_admin()) with check (public.is_admin());
 
+-- Inter-agent signals / escalations.
+create table if not exists agent_signals (
+  id uuid primary key default gen_random_uuid(),
+  agent_id text not null,
+  agent_name text not null,
+  kind text not null,
+  severity text not null default 'info' check (severity in ('info', 'warning', 'critical')),
+  message text not null,
+  status text not null default 'open' check (status in ('open', 'ack', 'resolved', 'needs_approval')),
+  run_id uuid,
+  created_at timestamptz not null default now(),
+  resolved_at timestamptz
+);
+
+create index if not exists agent_signals_status_idx on agent_signals (status, created_at desc);
+
+alter table agent_signals enable row level security;
+grant select, insert, update, delete on agent_signals to authenticated;
+
+drop policy if exists "admin read agent_signals" on agent_signals;
+drop policy if exists "admin write agent_signals" on agent_signals;
+create policy "admin read agent_signals" on agent_signals for select to authenticated using (public.is_admin());
+create policy "admin write agent_signals" on agent_signals for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+-- Managed list of models selectable per agent.
+create table if not exists model_registry (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  provider text not null default '',
+  notes text not null default '',
+  enabled boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+alter table model_registry enable row level security;
+grant select, insert, update, delete on model_registry to authenticated;
+
+drop policy if exists "admin read model_registry" on model_registry;
+drop policy if exists "admin write model_registry" on model_registry;
+create policy "admin read model_registry" on model_registry for select to authenticated using (public.is_admin());
+create policy "admin write model_registry" on model_registry for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
 notify pgrst, 'reload schema';
 
 

@@ -4,6 +4,8 @@ import { resolveAgentModel } from "@/lib/agents/agent-config-store";
 import { runHermesAgent } from "@/lib/agents/hermes-client";
 import { listAgentTargets } from "@/lib/agents/agent-config-store";
 import { runSubAgent, type SubAgentRunResult } from "@/lib/agents/sub-agent-runner";
+import { listSignals } from "@/lib/agents/agent-signals";
+import { suggestPostTimes, type MarketKey, type PostTimeSuggestion } from "@/lib/scheduling/post-timing";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import type { AgentRunStatus } from "@/lib/types";
 
@@ -30,6 +32,7 @@ export type TeamRunInput = {
   competitors?: string[];
   weekStartDate?: string | null;
   notes?: string;
+  market?: MarketKey;
 };
 
 export type AgentOutputSummary = {
@@ -53,6 +56,8 @@ export type TeamRunReport = {
   agentOutputs: AgentOutputSummary[];
   synthesis: Record<string, unknown> | null;
   synthesisProvider: "hermes" | "deterministic";
+  market: MarketKey;
+  schedulingSuggestions: PostTimeSuggestion[];
   observability: {
     totalDurationMs: number;
     totalTokens: number | null;
@@ -91,22 +96,30 @@ export async function runTeam(input: TeamRunInput = {}): Promise<TeamRunReport> 
   const targetCompetitors = targets.filter((target) => target.type === "competitor" && target.active).map((target) => target.label);
   const competitors = input.competitors?.length ? input.competitors : targetCompetitors;
 
+  const market: MarketKey = input.market ?? "global";
+  const schedulingSuggestions = suggestPostTimes(market, platforms, input.weekStartDate ?? undefined);
+
   const teamContext = {
     brands: brandsCovered,
     platforms,
     competitors,
+    market,
+    schedulingSuggestions,
     topics: targets.filter((target) => target.type === "topic" && target.active).map((target) => target.label),
     weekStartDate: input.weekStartDate ?? null,
     notes: input.notes ?? "",
-    constraints: ["Never publish automatically.", "All output is idea/brief/draft only.", "Human approval is required before anything is scheduled."]
+    constraints: ["Never publish automatically.", "All output is idea/brief/draft only.", "Human approval is required before anything is scheduled.", "Suggested post times target the audience market timezone; they are proposals only."]
   };
 
   // 1. Fan-out — research/draft specialists run in parallel.
   const fanOutResults = await Promise.all(teamFanOutKeys.map((key) => runSubAgent(subAgentConfigs[key], teamContext)));
   const agentOutputs = fanOutResults.map(toSummary);
 
+  // Signals the specialists just raised — routed to Crina for the report.
+  const openSignals = await listSignals(["open", "needs_approval"]);
+
   // 2. Fan-in — Crina synthesizes the weekly marketing report.
-  const synthesis = await synthesizeReport(agentOutputs, teamContext);
+  const synthesis = await synthesizeReport(agentOutputs, teamContext, openSignals);
 
   const successes = agentOutputs.filter((output) => !output.fallback).length;
   const fallbacks = agentOutputs.filter((output) => output.fallback).length + (synthesis.provider === "deterministic" ? 1 : 0);
@@ -124,6 +137,8 @@ export async function runTeam(input: TeamRunInput = {}): Promise<TeamRunReport> 
     agentOutputs,
     synthesis: synthesis.report,
     synthesisProvider: synthesis.provider,
+    market,
+    schedulingSuggestions,
     observability: {
       totalDurationMs: Date.now() - startedAt,
       totalTokens,
@@ -162,13 +177,14 @@ export async function getLatestTeamReport(): Promise<TeamRunReport | null> {
   return (latest?.output as unknown as TeamRunReport) ?? null;
 }
 
-async function synthesizeReport(agentOutputs: AgentOutputSummary[], teamContext: Record<string, unknown>) {
+async function synthesizeReport(agentOutputs: AgentOutputSummary[], teamContext: Record<string, unknown>, signals: { agent_name: string; kind: string; severity: string; message: string }[] = []) {
   const startedAt = Date.now();
   const outputSchema = {
     headline: "string",
     executiveSummary: "string",
     keyMoves: ["string"],
     perBrand: [{ brand: "string", focus: "string", recommendedPosts: "number" }],
+    escalations: [{ agent: "string", issue: "string", recommendation: "string" }],
     risks: ["string"],
     nextActions: ["string"]
   };
@@ -179,9 +195,9 @@ async function synthesizeReport(agentOutputs: AgentOutputSummary[], teamContext:
     fallbackRole: "Marketing CEO Agent",
     task: SYNTHESIS_WORKFLOW,
     instructions:
-      "Read every specialist agent output and synthesize ONE concise executive weekly marketing report. Take a position. Do not publish, schedule, or approve anything.",
+      "Read every specialist agent output AND the raised signals. Synthesize ONE concise executive weekly marketing report. Summarize any signals/issues into the escalations array with a clear recommendation for the human. Take a position. Do not publish, schedule, or approve anything.",
     outputSchema,
-    input: { teamContext, agentOutputs },
+    input: { teamContext, agentOutputs, signals },
     handoffFrom: "Team fan-out",
     handoffTo: "Approval Queue / Slack report"
   });
