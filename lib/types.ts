@@ -82,6 +82,11 @@ export type ContentItem = {
   scheduled_at: string | null;
   published_at: string | null;
   performance_summary: string | null;
+  visual_asset_url?: string | null;
+  visual_asset_prompt?: string | null;
+  visual_asset_status?: "not_requested" | "generated" | "placeholder" | "error" | null;
+  visual_asset_model?: string | null;
+  visual_asset_error?: string | null;
   workflow_stage?: ContentWorkflowStage | null;
   current_owner?: string | null;
   next_owner?: string | null;

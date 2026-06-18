@@ -67,8 +67,19 @@ create table if not exists content_items (
   scheduled_at timestamptz,
   published_at timestamptz,
   performance_summary text,
+  visual_asset_url text,
+  visual_asset_prompt text,
+  visual_asset_status text default 'not_requested',
+  visual_asset_model text,
+  visual_asset_error text,
   created_at timestamptz not null default now()
 );
+
+alter table content_items add column if not exists visual_asset_url text;
+alter table content_items add column if not exists visual_asset_prompt text;
+alter table content_items add column if not exists visual_asset_status text default 'not_requested';
+alter table content_items add column if not exists visual_asset_model text;
+alter table content_items add column if not exists visual_asset_error text;
 
 create table if not exists approvals (
   id uuid primary key default gen_random_uuid(),

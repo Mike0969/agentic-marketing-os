@@ -214,9 +214,18 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
                 <div className="mt-4 rounded-md border border-teal-200 bg-teal-50 p-3 text-teal-950 dark:border-teal-900 dark:bg-teal-950 dark:text-teal-100">
                   <div className="text-xs font-semibold uppercase tracking-[0.14em]">Visual / video direction</div>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{selectedPackage.visual}</p>
-                  <p className="mt-3 text-xs text-teal-700 dark:text-teal-200">
-                    This is a production brief for the visual. Actual image/video rendering is not connected yet.
-                  </p>
+                </div>
+              ) : null}
+              {!isCrinaProposal(selectedItem) && selectedItem.visual_asset_url ? (
+                <div className="mt-4 overflow-hidden rounded-md border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={selectedItem.visual_asset_url} alt={`Generated visual for ${selectedItem.title}`} className="aspect-video w-full object-cover" />
+                  <div className="border-t border-slate-200 p-3 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                    <div className="font-semibold text-slate-950 dark:text-white">
+                      Visual asset: {selectedItem.visual_asset_status ?? "not requested"} · {selectedItem.visual_asset_model ?? "unknown model"}
+                    </div>
+                    {selectedItem.visual_asset_error ? <p className="mt-1 text-amber-700 dark:text-amber-300">{selectedItem.visual_asset_error}</p> : null}
+                  </div>
                 </div>
               ) : null}
               <div className="mt-4 text-sm font-semibold">CTA</div>

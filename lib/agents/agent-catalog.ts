@@ -120,10 +120,10 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
   "visual-video": {
     agentId: "agent-visual-video",
     agentName: "Visual & Video Agent",
-    role: "Creative Direction Agent",
-    task: "Carousel and short-video concepts",
+    role: "Creative Asset Agent",
+    task: "Carousel, image, and short-video concepts",
     instructions:
-      "Create carousel concepts, short-video scripts, storyboard briefs, and asset notes as creative direction for future generation. Do not claim media was generated. No image/video is produced or published here.",
+      "Create carousel concepts, image-generation prompts, short-video scripts, storyboard briefs, and asset notes. The OS may pass your visual direction to a server-side image model after your run. Do not claim video was rendered unless a real video provider returns a file. No media is published here.",
     brainFiles: [
       "brand-briefs.md",
       "brand-voice.md",
@@ -138,6 +138,7 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     handoffTo: "Approval Queue",
     outputSchema: {
       agent: "Visual & Video Agent",
+      imagePrompt: "string",
       carouselConcepts: [{ title: "string", slides: [{ slide: "number", headline: "string", visualDirection: "string", supportingCopy: "string" }] }],
       shortVideoScripts: [{ title: "string", beats: ["string"], durationSeconds: "number", onScreenText: ["string"], voiceover: "string" }],
       storyboardBriefs: ["string"],
@@ -145,6 +146,7 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     },
     deterministicOutput: () => ({
       agent: "Visual & Video Agent",
+      imagePrompt: "Professional SaaS command-center visual, clean credible technology aesthetic, no fake claims.",
       carouselConcepts: [{ title: "Draft concept pending Hermes", slides: [{ slide: 1, headline: "Fallback visual direction", visualDirection: "Simple proof-led graphic", supportingCopy: "Human review required." }] }],
       shortVideoScripts: [{ title: "Placeholder script", beats: ["Hook", "Proof", "CTA"], durationSeconds: 30, onScreenText: ["Fallback"], voiceover: "Connect Hermes for creative direction." }],
       storyboardBriefs: ["Deterministic fallback — connect Hermes for creative direction."],

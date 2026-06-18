@@ -4,7 +4,19 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { ContentItem } from "@/lib/types";
 
-const workflowPatchKeys = new Set(["workflow_stage", "current_owner", "next_owner", "human_feedback_tags", "crina_review_notes", "agent_handoff_summary"]);
+const workflowPatchKeys = new Set([
+  "workflow_stage",
+  "current_owner",
+  "next_owner",
+  "human_feedback_tags",
+  "crina_review_notes",
+  "agent_handoff_summary",
+  "visual_asset_url",
+  "visual_asset_prompt",
+  "visual_asset_status",
+  "visual_asset_model",
+  "visual_asset_error"
+]);
 
 function stripWorkflowPatch(patch: Partial<ContentItem>) {
   return Object.fromEntries(Object.entries(patch).filter(([key]) => !workflowPatchKeys.has(key))) as Partial<ContentItem>;
@@ -12,7 +24,13 @@ function stripWorkflowPatch(patch: Partial<ContentItem>) {
 
 function isMissingWorkflowColumn(error: { message?: string; code?: string } | null | undefined) {
   const message = error?.message?.toLowerCase() ?? "";
-  return error?.code === "PGRST204" || message.includes("workflow_stage") || message.includes("current_owner") || message.includes("agent_handoff_summary");
+  return (
+    error?.code === "PGRST204" ||
+    message.includes("workflow_stage") ||
+    message.includes("current_owner") ||
+    message.includes("agent_handoff_summary") ||
+    message.includes("visual_asset")
+  );
 }
 
 /** Fetch a single content item by id (Supabase or local). */

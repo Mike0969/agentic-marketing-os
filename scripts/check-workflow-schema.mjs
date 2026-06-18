@@ -16,7 +16,9 @@ const checks = [
     run: () =>
       supabase
         .from("content_items")
-        .select("id,workflow_stage,current_owner,next_owner,human_feedback_tags,crina_review_notes,agent_handoff_summary")
+        .select(
+          "id,workflow_stage,current_owner,next_owner,human_feedback_tags,crina_review_notes,agent_handoff_summary,visual_asset_url,visual_asset_prompt,visual_asset_status,visual_asset_model,visual_asset_error"
+        )
         .limit(1)
   },
   {

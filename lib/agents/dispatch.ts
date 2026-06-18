@@ -1,6 +1,7 @@
 import { subAgentConfigs, type SubAgentKey } from "@/lib/agents/agent-catalog";
 import { runSubAgent } from "@/lib/agents/sub-agent-runner";
 import { runHermesAgent } from "@/lib/agents/hermes-client";
+import { generateVisualAsset } from "@/lib/agents/visual-asset-generator";
 import { getContentItem, updateContentItem } from "@/lib/content-store";
 import { getDashboardData } from "@/lib/data";
 import type { ContentItem, ContentStatus } from "@/lib/types";
@@ -83,6 +84,7 @@ function mapOutputToPatch(key: SubAgentKey, output: Record<string, unknown>): Di
       };
     }
     case "visual-video": {
+      const imagePrompt = asString(output.imagePrompt);
       const carousel = asRecord(asArray(output.carouselConcepts)[0]);
       const script = asRecord(asArray(output.shortVideoScripts)[0]);
       const slides = formatList(asArray(carousel.slides), (slide) => {
@@ -95,6 +97,7 @@ function mapOutputToPatch(key: SubAgentKey, output: Record<string, unknown>): Di
       const storyboardBriefs = formatList(asArray(output.storyboardBriefs));
       const assetNotes = formatList(asArray(output.assetNotes));
       const lines = [
+        imagePrompt ? `Image generation prompt:\n${imagePrompt}` : "",
         asString(carousel.title) || slides.length ? `Carousel: ${asString(carousel.title) || "Concept"}\n- ${slides.join("\n- ")}` : "",
         asString(script.title) || beats.length ? `Short video: ${asString(script.title) || "Script"}\n- ${beats.join("\n- ")}` : "",
         onScreenText.length ? `On-screen text:\n- ${onScreenText.join("\n- ")}` : "",
@@ -181,6 +184,10 @@ function packageBody(parts: Array<[string, string | null | undefined]>) {
     .filter(([, value]) => value && value.trim())
     .map(([label, value]) => `${label}\n${value}`)
     .join("\n\n---\n\n");
+}
+
+function extractVisualDirection(body: string) {
+  return body.split(/\n\n---\n\nVISUAL \/ VIDEO DIRECTION\n/)[1]?.trim() ?? "";
 }
 
 async function markStage(item: ContentItem, patch: Partial<ContentItem>, label: string, detail: string) {
@@ -357,6 +364,13 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
     fallback = fallback || visualResult.fallback;
     if (visualResult.error) errors.push(visualResult.error);
     const afterVisual = (await getContentItem(item.id)) ?? current;
+    const visualAsset = await generateVisualAsset({
+      item: afterVisual,
+      brand,
+      visualDirection: visualPatch.body ?? "",
+      copyDraft: afterVisual.body
+    });
+    if (visualAsset.error && visualAsset.status === "error") errors.push(visualAsset.error);
 
     await markStage(
       afterVisual,
@@ -371,8 +385,18 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
           ["VISUAL / VIDEO DIRECTION", visualPatch.body ?? ""]
         ]),
         content_type: visualPatch.content_type ?? afterVisual.content_type,
-        performance_summary: `${visualResult.agent} finished ${visualResult.fallback ? "with fallback" : "through Hermes"}. With Crina for final review.`,
-        agent_handoff_summary: `${visualResult.agent} handed visual direction back to Crina.`
+        visual_asset_url: visualAsset.dataUrl,
+        visual_asset_prompt: visualAsset.prompt,
+        visual_asset_status: visualAsset.status,
+        visual_asset_model: visualAsset.model,
+        visual_asset_error: visualAsset.error,
+        performance_summary:
+          visualAsset.status === "generated"
+            ? `${visualResult.agent} finished and generated an image asset with ${visualAsset.model}. With Crina for final review.`
+            : visualAsset.status === "placeholder"
+              ? `${visualResult.agent} finished creative direction. Image model is not configured, so a local placeholder preview was attached.`
+              : `${visualResult.agent} finished creative direction, but image generation failed. Placeholder attached; error: ${visualAsset.error}`,
+        agent_handoff_summary: `${visualResult.agent} handed visual direction ${visualAsset.status === "generated" ? "and generated asset" : "and placeholder asset"} back to Crina.`
       },
       "Visual & Video Agent handed package to Crina",
       `${item.title} is with Crina for final review.`
@@ -380,7 +404,38 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
     current = (await getContentItem(item.id)) ?? afterVisual;
   }
 
-  const packageForReview = (await getContentItem(item.id)) ?? current;
+  let packageForReview = (await getContentItem(item.id)) ?? current;
+  if (!packageForReview.visual_asset_url) {
+    const existingVisualDirection = extractVisualDirection(packageForReview.body);
+    if (existingVisualDirection) {
+      const visualAsset = await generateVisualAsset({
+        item: packageForReview,
+        brand,
+        visualDirection: existingVisualDirection,
+        copyDraft: packageForReview.body
+      });
+      const patchedPackage = await updateContentItem(
+        item.id,
+        {
+          visual_asset_url: visualAsset.dataUrl,
+          visual_asset_prompt: visualAsset.prompt,
+          visual_asset_status: visualAsset.status,
+          visual_asset_model: visualAsset.model,
+          visual_asset_error: visualAsset.error,
+          performance_summary:
+            visualAsset.status === "generated"
+              ? `Visual asset generated with ${visualAsset.model}. With Crina for final review.`
+              : visualAsset.status === "placeholder"
+                ? "Image model is not configured, so a local placeholder preview was attached before final review."
+                : `Image generation failed before final review. Placeholder attached; error: ${visualAsset.error}`
+        },
+        { label: "Visual asset attached", detail: `${item.title} received a visual asset before Crina final review.` }
+      );
+      packageForReview = patchedPackage ?? packageForReview;
+      if (visualAsset.error && visualAsset.status === "error") errors.push(visualAsset.error);
+    }
+  }
+
   const finalReview = await crinaReview("final_review", {
     brand,
     contentPackage: {
