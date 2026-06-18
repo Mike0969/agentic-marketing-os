@@ -132,7 +132,14 @@ export async function decideLocalApproval(input: {
   const updatedContentItem: ContentItem = {
     ...contentItem,
     approval_status: input.decision,
-    status: nextContentStatus
+    status: nextContentStatus,
+    workflow_stage: input.decision === "approved" ? "publishing_prep" : "rework",
+    current_owner: input.decision === "approved" ? "Publishing Agent" : "Crina",
+    next_owner: input.decision === "approved" ? "Human / manual posting" : "Content Creator Agent",
+    performance_summary:
+      input.decision === "approved"
+        ? "Human approved Crina final package. Publishing Agent should prepare the manual draft package. Live posting remains disabled."
+        : "Human requested changes. Crina should route the feedback back through the agent chain."
   };
   const existingApproval = data.approvals.find((approval) => approval.content_item_id === input.contentItemId);
   const approval: Approval = {

@@ -10,7 +10,7 @@ export default async function ApprovalsPage() {
       <PageHeader
         eyebrow="Governance"
         title="Approval Queue"
-        description="Review content before scheduling or publishing. Decisions are mocked locally until Supabase mutations are connected."
+        description="Review finished drafts before scheduling or publishing. Approval decisions are saved to Supabase when configured, with local fallback for offline development."
       />
       <ApprovalQueue brands={brands} contentItems={contentItems} />
     </>

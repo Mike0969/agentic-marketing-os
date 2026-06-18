@@ -1,4 +1,4 @@
-import { readFile, readdir, stat, writeFile } from "fs/promises";
+import { appendFile, readFile, readdir, stat, writeFile } from "fs/promises";
 import path from "path";
 
 /**
@@ -253,6 +253,18 @@ export async function writeAgentMemory(agentId: string, content: string): Promis
   if (!snapshot.brainPath) return false;
   try {
     await writeFile(path.join(snapshot.brainPath, agentMemoryFileName(agentId)), content, "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Append a concise note into a shared brain markdown file. Best-effort only. */
+export async function appendBrainResource(fileName: string, content: string): Promise<boolean> {
+  const snapshot = await readHermesRegistry();
+  if (!snapshot.brainPath || !fileName.endsWith(".md")) return false;
+  try {
+    await appendFile(path.join(snapshot.brainPath, fileName), `\n\n${content.trim()}\n`, "utf8");
     return true;
   } catch {
     return false;

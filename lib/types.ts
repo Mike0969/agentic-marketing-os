@@ -54,6 +54,17 @@ export const contentStatuses = [
 
 export type ContentStatus = (typeof contentStatuses)[number];
 export type ApprovalStatus = "not_requested" | "pending" | "approved" | "rejected" | "changes_requested";
+export type ContentWorkflowStage =
+  | "crina_plan_approval"
+  | "content_creation"
+  | "crina_content_review"
+  | "visual_creation"
+  | "crina_final_review"
+  | "human_final_approval"
+  | "publishing_prep"
+  | "scheduled"
+  | "rework"
+  | "done";
 
 export type ContentItem = {
   id: string;
@@ -71,6 +82,12 @@ export type ContentItem = {
   scheduled_at: string | null;
   published_at: string | null;
   performance_summary: string | null;
+  workflow_stage?: ContentWorkflowStage | null;
+  current_owner?: string | null;
+  next_owner?: string | null;
+  human_feedback_tags?: string[] | null;
+  crina_review_notes?: string | null;
+  agent_handoff_summary?: string | null;
 };
 
 export type ApprovalDecision = "pending" | "approved" | "rejected" | "changes_requested";
@@ -179,6 +196,19 @@ export type AgentSignal = {
   resolved_at?: string | null;
 };
 
+export type AgentLearningEvent = {
+  id: string;
+  content_item_id: string | null;
+  brand_id: string | null;
+  agent_id: string | null;
+  agent_name: string;
+  decision: string;
+  feedback: string;
+  tags: string[];
+  summary: string;
+  created_at: string;
+};
+
 export type ModelRegistryEntry = {
   id: string;
   name: string;
@@ -217,6 +247,7 @@ export type DashboardData = {
   agentSettings?: AgentSetting[];
   agentTargets?: AgentTarget[];
   agentSignals?: AgentSignal[];
+  agentLearningEvents?: AgentLearningEvent[];
   modelRegistry?: ModelRegistryEntry[];
 };
 

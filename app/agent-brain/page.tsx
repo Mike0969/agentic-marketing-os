@@ -23,6 +23,7 @@ import { listModelNames } from "@/lib/agents/model-registry";
 import { AgentModelPicker } from "@/components/agent-model-picker";
 import { AgentMemoryEditor } from "@/components/agent-memory-editor";
 import { subAgentConfigs } from "@/lib/agents/agent-catalog";
+import { listAgentLearningEvents } from "@/lib/agents/learning-store";
 import type { AgentRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -77,11 +78,12 @@ const brainFilesByAgentId = new Map([
 ]);
 
 export default async function AgentBrainPage() {
-  const [registry, runs, settings, modelNames] = await Promise.all([
+  const [registry, runs, settings, modelNames, learningEvents] = await Promise.all([
     readHermesRegistry(),
     getAgentRuns(undefined, 100),
     listAgentSettings(),
-    listModelNames()
+    listModelNames(),
+    listAgentLearningEvents(8)
   ]);
 
   const endpoint = registry.team?.apiTargeting.endpoint || process.env.HERMES_AGENT_ENDPOINT || "";
@@ -160,6 +162,32 @@ export default async function AgentBrainPage() {
         <StatCard label="Default / backup model" value={defaultModel} detail={`Backup: ${backupModel}`} />
         <StatCard label="Hermes endpoint" value={hermesConfigured ? "Configured" : "Not set"} detail={hermesConfigured ? endpoint : "Deterministic fallback only"} />
       </div>
+
+      <Panel className="mb-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <BrainCircuit className="h-4 w-4 text-command" />
+            <h3 className="font-semibold">Recent human learning</h3>
+          </div>
+          <Badge tone={learningEvents.length ? "blue" : "neutral"}>{learningEvents.length} events</Badge>
+        </div>
+        {learningEvents.length ? (
+          <div className="grid gap-2">
+            {learningEvents.map((event) => (
+              <div key={event.id} className="rounded-md bg-slate-50 p-3 text-sm dark:bg-slate-950">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold">{event.decision.replaceAll("_", " ")}</span>
+                  <span className="text-xs text-slate-500">{new Date(event.created_at).toLocaleString()}</span>
+                </div>
+                <p className="mt-1 text-slate-600 dark:text-slate-400">{event.summary}</p>
+                {event.tags.length ? <p className="mt-1 text-xs text-command">{event.tags.join(" · ")}</p> : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">No rejection/change feedback has been recorded yet.</p>
+        )}
+      </Panel>
 
       {/* Connection + safety strip */}
       <div className="mb-6 grid gap-4 lg:grid-cols-2">

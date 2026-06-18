@@ -13,7 +13,7 @@ export default async function ContentPipelinePage() {
       <PageHeader
         eyebrow="Workflow"
         title="Content Pipeline"
-        description="Crina's approved ideas/briefs are dispatched to their assigned specialist with one click; the specialist's draft is written back onto the same card. Drafts then go to Approvals. Nothing is published."
+        description="A compact production monitor: pick a Crina idea, produce it, then review finished drafts in Approvals. Approved work leaves the active queue. Nothing is published automatically."
       />
       <PipelineBoard items={contentItems} brandNames={brandNames} />
     </>
