@@ -46,6 +46,8 @@ const queueHelp = {
   rework: "Rejected or changes requested. Crina should route the fix."
 } as const;
 
+const resumableStages = new Set(["content_creation", "crina_content_review", "visual_creation", "crina_final_review"]);
+
 type DispatchResponse = {
   ok: boolean;
   agent: string;
@@ -155,8 +157,8 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
       setNotice({
         tone: usedFallback ? "amber" : "green",
         text: usedFallback
-          ? `${agent} wrote a deterministic fallback draft. Review quality before approval; Hermes/model did not complete this run.`
-          : `${agent} finished through Hermes. The card moved forward and is now waiting for human approval.`
+          ? `${agent} continued the workflow with deterministic fallback. Review quality carefully when it reaches Approvals.`
+          : `${agent} continued the workflow through Hermes. The card moved to the next owner or returned for final approval.`
       });
       router.refresh();
     } catch (cause) {
@@ -171,6 +173,10 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
       window.clearTimeout(timeout);
       setBusyId(null);
     }
+  }
+
+  function canContinueWorkflow(item: ContentItem) {
+    return Boolean(item.workflow_stage && resumableStages.has(item.workflow_stage));
   }
 
   async function startCrinaRevision(item: ContentItem) {
@@ -426,6 +432,18 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
                   >
                     {busyId === selectedItem.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                     {busyId === selectedItem.id ? "Producing…" : "Produce this"}
+                  </button>
+                ) : null}
+                {canContinueWorkflow(selectedItem) ? (
+                  <button
+                    type="button"
+                    onClick={() => dispatch(selectedItem)}
+                    disabled={busyId === selectedItem.id}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950"
+                    title="Continue this staged workflow from the current owner. Useful if Hermes timed out or the browser was interrupted."
+                  >
+                    {busyId === selectedItem.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    {busyId === selectedItem.id ? "Continuing…" : "Continue workflow"}
                   </button>
                 ) : null}
                 {selectedItem.approval_status === "pending" ? (
