@@ -187,7 +187,7 @@ export async function getHermesAgentProfile(agentId: string): Promise<HermesAgen
   return snapshot.team?.agents.find((agent) => agent.id === agentId) ?? null;
 }
 
-const MAX_BRAIN_CONTEXT_CHARS = 6000;
+const MAX_BRAIN_CONTEXT_CHARS = 12000;
 
 export type BrainContext = {
   text: string;

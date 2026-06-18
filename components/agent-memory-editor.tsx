@@ -5,6 +5,25 @@ import { Check, Loader2, NotebookPen } from "lucide-react";
 import { clsx } from "clsx";
 import { inputClass } from "@/components/ui";
 
+const memoryTemplate = `# Agent memory
+
+## Brand voice
+
+## Winning hooks
+
+## Weak hooks
+
+## Competitor references
+
+## SEO targets
+
+## Content formulas
+
+## Approval rules
+
+## Reusable CTAs
+`;
+
 /**
  * Per-agent memory editor. Loads/saves the agent's own brain file
  * (agent-<id>-memory.md) which is injected only into that agent's Hermes calls.
@@ -69,11 +88,20 @@ export function AgentMemoryEditor({ agentId }: { agentId: string }) {
             </div>
           ) : (
             <>
+              {!value.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setValue(memoryTemplate)}
+                  className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 hover:bg-white dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+                >
+                  Insert memory template
+                </button>
+              ) : null}
               <textarea
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
-                rows={5}
-                placeholder="Notes, voice rules, winning phrases, do/don'ts for this agent. Injected only into this agent's prompts."
+                rows={8}
+                placeholder="Use sections like: brand voice, winning hooks, weak hooks, competitor references, SEO targets, content formulas, approval rules, reusable CTAs. Injected only into this agent's prompts."
                 className={clsx(inputClass, "text-sm")}
               />
               <div className="flex items-center justify-end gap-2">

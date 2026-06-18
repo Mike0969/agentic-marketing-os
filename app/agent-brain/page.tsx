@@ -22,6 +22,7 @@ import { listAgentSettings } from "@/lib/agents/agent-config-store";
 import { listModelNames } from "@/lib/agents/model-registry";
 import { AgentModelPicker } from "@/components/agent-model-picker";
 import { AgentMemoryEditor } from "@/components/agent-memory-editor";
+import { subAgentConfigs } from "@/lib/agents/agent-catalog";
 import type { AgentRun } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,26 @@ function statusTone(status?: AgentRun["status"]) {
 function runsForAgent(runs: AgentRun[], profile: HermesAgentProfile) {
   return runs.filter((run) => run.agent_id === profile.id || run.agent_name === profile.name);
 }
+
+const crinaBrainFiles = [
+  "brand-briefs.md",
+  "brand-voice.md",
+  "winning-hooks.md",
+  "weak-hooks.md",
+  "competitor-references.md",
+  "seo-targets.md",
+  "content-formulas.md",
+  "approval-rules.md",
+  "reusable-ctas.md",
+  "workflow-contract.md",
+  "agent-crina-memory.md",
+  "agent-output-schemas.md"
+];
+
+const brainFilesByAgentId = new Map([
+  ["agent-crina", crinaBrainFiles],
+  ...Object.values(subAgentConfigs).map((config) => [config.agentId, config.brainFiles ?? []] as const)
+]);
 
 export default async function AgentBrainPage() {
   const [registry, runs, settings, modelNames] = await Promise.all([
@@ -311,6 +332,17 @@ export default async function AgentBrainPage() {
                   models={modelNames}
                 />
                 <AgentMemoryEditor agentId={agent.id} />
+              </div>
+
+              <div className="mt-4 rounded-md bg-slate-50 p-3 dark:bg-slate-950">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Visible brain resources</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(brainFilesByAgentId.get(agent.id) ?? []).map((file) => (
+                    <span key={file} className="rounded bg-white px-2 py-1 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-800">
+                      {file.replace(".md", "")}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* Observability strip */}

@@ -24,14 +24,27 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     role: "Content Drafting Agent",
     task: "Draft platform content from brief",
     instructions:
-      "Turn the provided Crina brief into platform-specific draft copy with hook and CTA variants. Drafts only — never publish or schedule.",
-    brainFiles: ["brand-briefs.md", "voice-calendar-memory.md", "workflow-contract.md"],
+      "Turn the provided Crina, SEO, or competitor brief into platform-specific draft copy with hook and CTA variants. Include claim-review notes, useful body copy, and visual opportunities. Drafts only — never publish or schedule.",
+    brainFiles: [
+      "brand-briefs.md",
+      "brand-voice.md",
+      "voice-calendar-memory.md",
+      "winning-hooks.md",
+      "weak-hooks.md",
+      "content-formulas.md",
+      "reusable-ctas.md",
+      "approval-rules.md",
+      "workflow-contract.md",
+      "agent-content-creator-memory.md",
+      "agent-output-schemas.md"
+    ],
     handoffFrom: "Crina",
     handoffTo: "Approval Queue",
     outputSchema: {
       agent: "Content Creator Agent",
       platform: "LinkedIn | X | Instagram | Facebook | Blog",
-      drafts: [{ title: "string", hook: "string", body: "string", CTA: "string", variant: "string" }],
+      drafts: [{ title: "string", hook: "string", body: "string", CTA: "string", variant: "primary | sharper | conservative", claimsToReview: ["string"] }],
+      visualOpportunities: ["string"],
       status: "draft",
       notes: "string"
     },
@@ -46,9 +59,11 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
             hook: "Deterministic placeholder hook — Hermes was unavailable.",
             body: "This is an offline draft scaffold. Connect Hermes to generate real copy.",
             CTA: "Review in approval queue",
-            variant: "fallback"
+            variant: "fallback",
+            claimsToReview: ["Fallback draft; human review required."]
           }
         ],
+        visualOpportunities: ["Create a simple proof-led carousel after Hermes is available."],
         status: "draft",
         notes: "Deterministic fallback. No content was published."
       };
@@ -60,23 +75,46 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     role: "Search Strategy Agent",
     task: "SEO themes and blog briefs",
     instructions:
-      "Produce keyword themes, SERP angles, and a blog brief plus technical SEO recommendations. Analysis only — never publish.",
-    brainFiles: ["brand-briefs.md", "content-intelligence-patterns.md", "workflow-contract.md"],
+      "Produce keyword themes, search intent, SERP angles, and a blog brief plus technical SEO recommendations. Label recommendations without real Search Console data as strategic hypotheses. Analysis only — never publish.",
+    brainFiles: [
+      "brand-briefs.md",
+      "brand-voice.md",
+      "seo-targets.md",
+      "content-intelligence-patterns.md",
+      "approval-rules.md",
+      "workflow-contract.md",
+      "agent-seo-memory.md",
+      "agent-output-schemas.md"
+    ],
     handoffFrom: "Crina",
     handoffTo: "Content Creator Agent",
     outputSchema: {
       agent: "SEO Agent",
-      keywordThemes: ["string"],
+      brandName: "string",
+      searchObjective: "string",
+      keywordThemes: [{ theme: "string", intent: "informational | commercial | navigational | transactional", priority: "high | medium | low", rationale: "string" }],
       serpAngles: ["string"],
-      blogBrief: { title: "string", outline: ["string"], targetKeyword: "string" },
-      technicalRecommendations: ["string"]
+      blogBrief: { title: "string", outline: ["string"], targetKeyword: "string", audience: "string", proofNeeded: ["string"], internalLinks: ["string"], cta: "string" },
+      technicalRecommendations: ["string"],
+      handoffTo: "Content Creator Agent"
     },
     deterministicOutput: () => ({
       agent: "SEO Agent",
-      keywordThemes: ["ai data center power", "ev ride hailing gcc"],
+      brandName: "Unknown brand",
+      searchObjective: "Create a searchable content brief.",
+      keywordThemes: [{ theme: "ai data center power", intent: "commercial", priority: "medium", rationale: "Fallback hypothesis." }],
       serpAngles: ["Deterministic placeholder — Hermes unavailable."],
-      blogBrief: { title: "Draft brief pending Hermes", outline: ["Intro", "Problem", "Solution", "CTA"], targetKeyword: "placeholder" },
-      technicalRecommendations: ["Connect Hermes for real SEO analysis."]
+      blogBrief: {
+        title: "Draft brief pending Hermes",
+        outline: ["Intro", "Problem", "Solution", "CTA"],
+        targetKeyword: "placeholder",
+        audience: "Marketing reviewer",
+        proofNeeded: ["Real source context"],
+        internalLinks: [],
+        cta: "Review the fallback brief"
+      },
+      technicalRecommendations: ["Connect Hermes for real SEO analysis."],
+      handoffTo: "Content Creator Agent"
     })
   },
   "visual-video": {
@@ -85,21 +123,32 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     role: "Creative Direction Agent",
     task: "Carousel and short-video concepts",
     instructions:
-      "Create carousel concepts, short-video scripts, and storyboard briefs as creative direction for future generation. No image/video is produced or published here.",
-    brainFiles: ["brand-briefs.md", "voice-calendar-memory.md", "draft-publishing-safety.md"],
+      "Create carousel concepts, short-video scripts, storyboard briefs, and asset notes as creative direction for future generation. Do not claim media was generated. No image/video is produced or published here.",
+    brainFiles: [
+      "brand-briefs.md",
+      "brand-voice.md",
+      "content-formulas.md",
+      "approval-rules.md",
+      "voice-calendar-memory.md",
+      "draft-publishing-safety.md",
+      "agent-visual-video-memory.md",
+      "agent-output-schemas.md"
+    ],
     handoffFrom: "Content Creator Agent",
     handoffTo: "Approval Queue",
     outputSchema: {
       agent: "Visual & Video Agent",
-      carouselConcepts: [{ title: "string", slides: ["string"] }],
-      shortVideoScripts: [{ title: "string", beats: ["string"], durationSeconds: "number" }],
-      storyboardBriefs: ["string"]
+      carouselConcepts: [{ title: "string", slides: [{ slide: "number", headline: "string", visualDirection: "string", supportingCopy: "string" }] }],
+      shortVideoScripts: [{ title: "string", beats: ["string"], durationSeconds: "number", onScreenText: ["string"], voiceover: "string" }],
+      storyboardBriefs: ["string"],
+      assetNotes: ["string"]
     },
     deterministicOutput: () => ({
       agent: "Visual & Video Agent",
-      carouselConcepts: [{ title: "Draft concept pending Hermes", slides: ["Slide 1", "Slide 2", "Slide 3"] }],
-      shortVideoScripts: [{ title: "Placeholder script", beats: ["Hook", "Proof", "CTA"], durationSeconds: 30 }],
-      storyboardBriefs: ["Deterministic fallback — connect Hermes for creative direction."]
+      carouselConcepts: [{ title: "Draft concept pending Hermes", slides: [{ slide: 1, headline: "Fallback visual direction", visualDirection: "Simple proof-led graphic", supportingCopy: "Human review required." }] }],
+      shortVideoScripts: [{ title: "Placeholder script", beats: ["Hook", "Proof", "CTA"], durationSeconds: 30, onScreenText: ["Fallback"], voiceover: "Connect Hermes for creative direction." }],
+      storyboardBriefs: ["Deterministic fallback — connect Hermes for creative direction."],
+      assetNotes: ["No assets generated."]
     })
   },
   "competitor-intelligence": {
@@ -108,29 +157,44 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     role: "Market Pattern Intelligence Agent",
     task: "Competitor pattern analysis",
     instructions:
-      "Identify winning-topic patterns and extract reusable hook skeletons and angles. Use competitor winners only as inspiration — never copy content. No publishing.",
-    brainFiles: ["content-intelligence-patterns.md", "brand-briefs.md"],
+      "Identify winning-topic patterns and extract reusable hook skeletons, angles, platform fit, and risk notes. Use competitor winners only as inspiration — never copy content. No publishing.",
+    brainFiles: [
+      "content-intelligence-patterns.md",
+      "competitor-references.md",
+      "winning-hooks.md",
+      "weak-hooks.md",
+      "brand-briefs.md",
+      "brand-voice.md",
+      "agent-competitor-intelligence-memory.md",
+      "agent-output-schemas.md"
+    ],
     handoffFrom: "Crina",
     handoffTo: "SEO Agent",
     outputSchema: {
       agent: "Competitor Intelligence Agent",
       winningPatterns: [
-        { hookSkeleton: "string", audiencePromise: "string", proofAngle: "string", CTA: "string", platformFit: "string", whyItWorked: "string", adaptFor: "string" }
-      ]
+        { sourceLabel: "string", hookSkeleton: "string", audiencePromise: "string", proofAngle: "string", CTA: "string", platformFit: "string", whyItWorked: "string", adaptFor: "string", riskNotes: ["string"] }
+      ],
+      recommendedAngles: ["string"],
+      handoffTo: "SEO Agent"
     },
     deterministicOutput: () => ({
       agent: "Competitor Intelligence Agent",
       winningPatterns: [
         {
           hookSkeleton: "Deterministic placeholder — Hermes unavailable.",
+          sourceLabel: "fallback",
           audiencePromise: "placeholder",
           proofAngle: "placeholder",
           CTA: "placeholder",
           platformFit: "LinkedIn",
           whyItWorked: "placeholder",
-          adaptFor: "Connect Hermes for real competitor intelligence."
+          adaptFor: "Connect Hermes for real competitor intelligence.",
+          riskNotes: ["No real competitor source was analyzed."]
         }
-      ]
+      ],
+      recommendedAngles: ["Run Hermes with competitor or topic context."],
+      handoffTo: "SEO Agent"
     })
   },
   publishing: {
@@ -139,15 +203,23 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     role: "Draft Packaging Agent",
     task: "Package approved content into platform draft",
     instructions:
-      "Format already-approved content into a platform-ready DRAFT only. Prepare scheduling metadata suggestions. You must NEVER publish, schedule live, or post. Output is a draft package for human action.",
-    brainFiles: ["draft-publishing-safety.md", "workflow-contract.md"],
+      "Format already-approved content into a platform-ready DRAFT only. Prepare hashtags, alt text, asset notes, checklist, and scheduling metadata suggestions. You must NEVER publish, schedule live, or post. Output is a draft package for human action.",
+    brainFiles: [
+      "draft-publishing-safety.md",
+      "workflow-contract.md",
+      "approval-rules.md",
+      "reusable-ctas.md",
+      "brand-voice.md",
+      "agent-publishing-memory.md",
+      "agent-output-schemas.md"
+    ],
     handoffFrom: "Approval Queue",
     handoffTo: "Human (manual posting)",
     outputSchema: {
       agent: "Publishing Agent",
       platform: "string",
-      draftPackage: { title: "string", body: "string", formattedFor: "string", assets: ["string"] },
-      suggestedScheduleMetadata: { suggestedTime: "string", timezone: "string" },
+      draftPackage: { title: "string", body: "string", formattedFor: "string", hashtags: ["string"], assetNotes: ["string"], altText: "string" },
+      suggestedScheduleMetadata: { suggestedTime: "string", timezone: "Asia/Dubai", reason: "string" },
       readinessChecklist: ["string"],
       published: false,
       status: "draft"
@@ -161,9 +233,11 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
           title: content.title ?? "Draft package pending Hermes",
           body: "Deterministic fallback draft. No content was published.",
           formattedFor: content.platform ?? "LinkedIn",
-          assets: []
+          hashtags: [],
+          assetNotes: [],
+          altText: ""
         },
-        suggestedScheduleMetadata: { suggestedTime: "TBD", timezone: "Asia/Dubai" },
+        suggestedScheduleMetadata: { suggestedTime: "TBD", timezone: "Asia/Dubai", reason: "Fallback mode." },
         readinessChecklist: ["Awaiting Hermes", "Human approval required", "Live posting disabled"],
         published: false,
         status: "draft"
@@ -176,23 +250,35 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     role: "Marketing Performance Analyst",
     task: "Summarize marketing performance",
     instructions:
-      "Summarize impressions, engagement, clicks, leads, top/weak content, and next-best actions into a concise executive report. No data exfiltration, no publishing.",
-    brainFiles: ["voice-calendar-memory.md", "workflow-contract.md"],
+      "Summarize impressions, engagement, clicks, leads, search metrics, top/weak content, and next-best actions into a concise executive report. Be explicit when data is mock, partial, missing, or delayed. No data exfiltration, no publishing.",
+    brainFiles: [
+      "voice-calendar-memory.md",
+      "workflow-contract.md",
+      "approval-rules.md",
+      "winning-hooks.md",
+      "weak-hooks.md",
+      "agent-analytics-memory.md",
+      "agent-output-schemas.md"
+    ],
     handoffFrom: "Publishing Agent",
     handoffTo: "Crina",
     outputSchema: {
       agent: "Analytics Agent",
       summary: "string",
-      topContent: ["string"],
-      weakContent: ["string"],
-      nextBestActions: ["string"]
+      dataQuality: "real | partial | mock | missing",
+      topContent: [{ title: "string", reason: "string", metricSignal: "string" }],
+      weakContent: [{ title: "string", reason: "string", recommendedFix: "string" }],
+      nextBestActions: ["string"],
+      handoffTo: "Crina"
     },
     deterministicOutput: () => ({
       agent: "Analytics Agent",
       summary: "Deterministic fallback — Hermes unavailable. No live analytics retrieved.",
+      dataQuality: "missing",
       topContent: [],
       weakContent: [],
-      nextBestActions: ["Connect Hermes and integrations for real analytics."]
+      nextBestActions: ["Connect Hermes and integrations for real analytics."],
+      handoffTo: "Crina"
     })
   }
 };
