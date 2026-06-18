@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { getDashboardData } from "@/lib/data";
 
 export default async function BrandsPage() {
-  const { brands } = await getDashboardData();
+  const { brands, contentItems } = await getDashboardData();
 
   return (
     <>
@@ -12,7 +12,7 @@ export default async function BrandsPage() {
         title="Brands"
         description="Edit the strategic inputs agents will use for positioning, audience selection, voice, and channel execution."
       />
-      <BrandEditor brands={brands} />
+      <BrandEditor brands={brands} contentItems={contentItems} />
     </>
   );
 }

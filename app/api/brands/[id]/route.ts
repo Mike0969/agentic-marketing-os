@@ -20,6 +20,14 @@ export async function PATCH(request: Request, context: Context) {
     positioning: body.positioning,
     target_audience: body.target_audience,
     tone_of_voice: body.tone_of_voice,
+    content_pillars: body.content_pillars,
+    key_messages: body.key_messages,
+    proof_points: body.proof_points,
+    offers: body.offers,
+    competitors: body.competitors,
+    seo_targets: body.seo_targets,
+    approval_rules: body.approval_rules,
+    reusable_ctas: body.reusable_ctas,
     active: body.active
   });
 
