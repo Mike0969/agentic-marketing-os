@@ -54,6 +54,13 @@ type DispatchResponse = {
   error: string | null;
 };
 
+type ReworkResponse = {
+  ok: boolean;
+  provider: "hermes" | "deterministic";
+  fallback?: boolean;
+  error: string | null;
+};
+
 export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; brandNames: Record<string, string> }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -162,6 +169,37 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
       setError(message);
     } finally {
       window.clearTimeout(timeout);
+      setBusyId(null);
+    }
+  }
+
+  async function startCrinaRevision(item: ContentItem) {
+    setBusyId(item.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/agents/crina/rework-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contentItemId: item.id,
+          feedback: item.performance_summary ?? item.crina_review_notes ?? "",
+          feedbackTags: item.human_feedback_tags ?? []
+        })
+      });
+      const result = (await response.json().catch(() => ({}))) as Partial<ReworkResponse> & { error?: string };
+      if (!response.ok) throw new Error(result.error ?? `Crina revision failed (HTTP ${response.status}).`);
+      const usedFallback = result.provider === "deterministic" || result.fallback;
+      setNotice({
+        tone: usedFallback ? "amber" : "green",
+        text: usedFallback
+          ? "Crina returned a fallback revision. It is back in Approvals for your decision."
+          : "Crina revised the plan. It is back in Approvals for your decision."
+      });
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Crina revision failed.");
+    } finally {
       setBusyId(null);
     }
   }
@@ -332,7 +370,9 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
                       : selectedItem.approval_status === "approved"
                         ? "Approved and out of active work"
                         : selectedItem.approval_status === "changes_requested" || selectedItem.approval_status === "rejected"
-                          ? "Agent should remake it"
+                          ? selectedItem.current_owner === "Crina"
+                            ? "Crina should revise"
+                            : "Agent should remake it"
                           : selectedItem.status === "draft" || selectedItem.status === "visual"
                             ? "Agent producing"
                             : "Ready to produce"}
@@ -394,7 +434,18 @@ export function PipelineBoard({ items, brandNames }: { items: ContentItem[]; bra
                     Review in Approvals
                   </div>
                 ) : null}
-                {selectedItem.approval_status === "rejected" || selectedItem.approval_status === "changes_requested" ? (
+                {(selectedItem.workflow_stage === "rework" || selectedItem.approval_status === "changes_requested") && selectedItem.current_owner === "Crina" ? (
+                  <button
+                    type="button"
+                    onClick={() => startCrinaRevision(selectedItem)}
+                    disabled={busyId === selectedItem.id}
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950"
+                    title="Ask Crina to revise this plan from your saved feedback."
+                  >
+                    {busyId === selectedItem.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                    {busyId === selectedItem.id ? "Crina revising…" : "Start Crina revision"}
+                  </button>
+                ) : selectedItem.approval_status === "rejected" || selectedItem.approval_status === "changes_requested" ? (
                   <button
                     type="button"
                     onClick={() => dispatch(selectedItem)}
