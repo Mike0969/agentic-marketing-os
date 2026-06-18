@@ -29,6 +29,8 @@ alter table public.content_items
 update public.content_items
 set workflow_stage = case
     when approval_status = 'not_requested' and status in ('idea', 'brief') then 'crina_plan_approval'
+    when approval_status = 'not_requested' and status = 'draft' then 'content_creation'
+    when approval_status = 'not_requested' and status = 'visual' then 'crina_final_review'
     when approval_status = 'pending' then 'human_final_approval'
     when approval_status in ('rejected', 'changes_requested') then 'rework'
     when approval_status = 'approved' then 'done'
@@ -36,9 +38,13 @@ set workflow_stage = case
   end,
   current_owner = case
     when approval_status = 'not_requested' and status in ('idea', 'brief') then 'Human'
+    when approval_status = 'not_requested' and status = 'draft' then coalesce(assigned_agent, 'Content Creator Agent')
+    when approval_status = 'not_requested' and status = 'visual' then 'Crina'
     when approval_status = 'pending' then 'Human'
     when approval_status in ('rejected', 'changes_requested') then 'Crina'
     when approval_status = 'approved' then 'Publishing Agent'
     else current_owner
   end
 where workflow_stage is null;
+
+notify pgrst, 'reload schema';

@@ -35,7 +35,15 @@ export function ApprovalQueue({ brands, contentItems }: { brands: Brand[]; conte
       const startResponse = await fetch("/api/content-items", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, status: "draft", approval_status: "not_requested" })
+        body: JSON.stringify({
+          id: item.id,
+          status: "draft",
+          approval_status: "not_requested",
+          workflow_stage: "content_creation",
+          current_owner: item.assigned_agent,
+          next_owner: "Crina",
+          performance_summary: `Approved for production. With ${item.assigned_agent} for content writing.`
+        })
       });
       const startResult = (await startResponse.json().catch(() => ({}))) as { error?: string };
       if (!startResponse.ok) throw new Error(startResult.error ?? "Could not move proposal into production.");

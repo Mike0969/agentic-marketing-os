@@ -235,30 +235,21 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
   const firstConfig = subAgentConfigs[firstKey];
   const data = await getDashboardData();
   const brand = data.brands.find((b) => b.id === item.brand_id);
+  const errors: string[] = [];
+  let fallback = false;
+  let current = item;
 
-  await markStage(
-    item,
-    {
-      status: "draft",
-      approval_status: "not_requested",
-      workflow_stage: "content_creation",
-      current_owner: firstConfig.agentName,
-      next_owner: "Crina",
-      performance_summary: `With ${firstConfig.agentName}. Producing the approved Crina plan. Started ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" })} Dubai time.`,
-      agent_handoff_summary: `Crina approved this plan for production and handed it to ${firstConfig.agentName}.`
-    },
-    `${firstConfig.agentName} started work`,
-    `${item.title} is now in execution.`
-  );
+  if (item.workflow_stage === "human_final_approval") {
+    return { ok: true, item, agent: "Crina", provider: "hermes", fallback: false, error: null };
+  }
 
-  const current = (await getContentItem(item.id)) ?? item;
   const input = {
-    title: current.title,
-    platform: current.platform,
-    contentType: current.content_type,
-    contentItemId: current.id,
-    assignedAgent: current.assigned_agent,
-    brief: { title: current.title, hook: current.hook, body: current.body, platform: current.platform, content_type: current.content_type, CTA: current.CTA },
+    title: item.title,
+    platform: item.platform,
+    contentType: item.content_type,
+    contentItemId: item.id,
+    assignedAgent: item.assigned_agent,
+    brief: { title: item.title, hook: item.hook, body: item.body, platform: item.platform, content_type: item.content_type, CTA: item.CTA },
     brand: brand
       ? {
           name: brand.name,
@@ -279,82 +270,117 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
     instruction: "Produce a draft for this specific approved item. Drafts only — never publish."
   };
 
-  const contentResult = await runSubAgent(firstConfig, input);
-  const contentPatch = mapOutputToPatch(firstKey, contentResult.output);
+  const needsContentWriting = !["crina_content_review", "visual_creation", "crina_final_review"].includes(current.workflow_stage ?? "");
 
-  await markStage(
-    current,
-    {
-      ...contentPatch,
-      approval_status: "not_requested",
-      workflow_stage: "crina_content_review",
-      current_owner: "Crina",
-      next_owner: "Visual & Video Agent",
-      performance_summary: `${contentResult.agent} finished ${contentResult.fallback ? "with fallback" : "through Hermes"}. With Crina for strategy review.`,
-      agent_handoff_summary: `${contentResult.agent} handed draft output back to Crina.`
-    },
-    `${contentResult.agent} handed draft to Crina`,
-    `${item.title} is now with Crina for content review.`
-  );
+  if (needsContentWriting) {
+    await markStage(
+      current,
+      {
+        status: "draft",
+        approval_status: "not_requested",
+        workflow_stage: "content_creation",
+        current_owner: firstConfig.agentName,
+        next_owner: "Crina",
+        performance_summary: `With ${firstConfig.agentName}. Producing the approved Crina plan. Started ${new Date().toLocaleString("en-US", { timeZone: "Asia/Dubai" })} Dubai time.`,
+        agent_handoff_summary: `Crina approved this plan for production and handed it to ${firstConfig.agentName}.`
+      },
+      `${firstConfig.agentName} started work`,
+      `${item.title} is now in execution.`
+    );
 
-  const afterContent = (await getContentItem(item.id)) ?? current;
-  const crinaContentReview = await crinaReview("content_review", {
-    brand,
-    originalPlan: input.brief,
-    contentDraft: { title: afterContent.title, hook: afterContent.hook, body: afterContent.body, CTA: afterContent.CTA, platform: afterContent.platform }
-  });
-  const reviewNotes = asString(crinaContentReview.output.reviewNotes);
-  const handoffSummary = asString(crinaContentReview.output.handoffSummary);
+    current = (await getContentItem(item.id)) ?? current;
+    const contentResult = await runSubAgent(firstConfig, input);
+    const contentPatch = mapOutputToPatch(firstKey, contentResult.output);
+    fallback = fallback || contentResult.fallback;
+    if (contentResult.error) errors.push(contentResult.error);
 
-  await markStage(
-    afterContent,
-    {
-      workflow_stage: "visual_creation",
-      current_owner: "Visual & Video Agent",
-      next_owner: "Crina",
-      crina_review_notes: reviewNotes,
-      agent_handoff_summary: handoffSummary,
-      performance_summary: "Crina reviewed the draft and handed it to Visual & Video Agent."
-    },
-    "Crina reviewed content draft",
-    `${item.title} moved to Visual & Video Agent.`
-  );
+    await markStage(
+      current,
+      {
+        ...contentPatch,
+        approval_status: "not_requested",
+        workflow_stage: "crina_content_review",
+        current_owner: "Crina",
+        next_owner: "Visual & Video Agent",
+        performance_summary: `${contentResult.agent} finished ${contentResult.fallback ? "with fallback" : "through Hermes"}. With Crina for strategy review.`,
+        agent_handoff_summary: `${contentResult.agent} handed draft output back to Crina.`
+      },
+      `${contentResult.agent} handed draft to Crina`,
+      `${item.title} is now with Crina for content review.`
+    );
+    current = (await getContentItem(item.id)) ?? current;
+  }
 
-  const visualResult = await runSubAgent(subAgentConfigs["visual-video"], {
-    brand,
-    platform: afterContent.platform,
-    title: afterContent.title,
-    hook: afterContent.hook,
-    body: afterContent.body,
-    CTA: afterContent.CTA,
-    crinaReviewNotes: reviewNotes,
-    handoffSummary,
-    instruction: "Create the visual, carousel, or video direction required for this content package. No live publishing."
-  });
-  const visualPatch = mapOutputToPatch("visual-video", visualResult.output);
-  const afterVisual = (await getContentItem(item.id)) ?? afterContent;
+  let reviewNotes = current.crina_review_notes ?? "";
+  let handoffSummary = current.agent_handoff_summary ?? "";
 
-  await markStage(
-    afterVisual,
-    {
-      workflow_stage: "crina_final_review",
-      current_owner: "Crina",
-      next_owner: "Human",
-      status: "visual",
-      approval_status: "not_requested",
-      body: packageBody([
-        ["COPY DRAFT", afterVisual.body],
-        ["VISUAL / VIDEO DIRECTION", visualPatch.body ?? ""]
-      ]),
-      content_type: visualPatch.content_type ?? afterVisual.content_type,
-      performance_summary: `${visualResult.agent} finished ${visualResult.fallback ? "with fallback" : "through Hermes"}. With Crina for final review.`,
-      agent_handoff_summary: `${visualResult.agent} handed visual direction back to Crina.`
-    },
-    "Visual & Video Agent handed package to Crina",
-    `${item.title} is with Crina for final review.`
-  );
+  if (current.workflow_stage !== "visual_creation" && current.workflow_stage !== "crina_final_review") {
+    const crinaContentReview = await crinaReview("content_review", {
+      brand,
+      originalPlan: input.brief,
+      contentDraft: { title: current.title, hook: current.hook, body: current.body, CTA: current.CTA, platform: current.platform }
+    });
+    fallback = fallback || crinaContentReview.fallback;
+    if (crinaContentReview.error) errors.push(crinaContentReview.error);
+    reviewNotes = asString(crinaContentReview.output.reviewNotes);
+    handoffSummary = asString(crinaContentReview.output.handoffSummary);
 
-  const packageForReview = (await getContentItem(item.id)) ?? afterVisual;
+    await markStage(
+      current,
+      {
+        workflow_stage: "visual_creation",
+        current_owner: "Visual & Video Agent",
+        next_owner: "Crina",
+        crina_review_notes: reviewNotes,
+        agent_handoff_summary: handoffSummary,
+        performance_summary: "Crina reviewed the draft and handed it to Visual & Video Agent."
+      },
+      "Crina reviewed content draft",
+      `${item.title} moved to Visual & Video Agent.`
+    );
+    current = (await getContentItem(item.id)) ?? current;
+  }
+
+  if (current.workflow_stage !== "crina_final_review") {
+    const visualResult = await runSubAgent(subAgentConfigs["visual-video"], {
+      brand,
+      platform: current.platform,
+      title: current.title,
+      hook: current.hook,
+      body: current.body,
+      CTA: current.CTA,
+      crinaReviewNotes: reviewNotes,
+      handoffSummary,
+      instruction: "Create the visual, carousel, or video direction required for this content package. No live publishing."
+    });
+    const visualPatch = mapOutputToPatch("visual-video", visualResult.output);
+    fallback = fallback || visualResult.fallback;
+    if (visualResult.error) errors.push(visualResult.error);
+    const afterVisual = (await getContentItem(item.id)) ?? current;
+
+    await markStage(
+      afterVisual,
+      {
+        workflow_stage: "crina_final_review",
+        current_owner: "Crina",
+        next_owner: "Human",
+        status: "visual",
+        approval_status: "not_requested",
+        body: packageBody([
+          ["COPY DRAFT", afterVisual.body],
+          ["VISUAL / VIDEO DIRECTION", visualPatch.body ?? ""]
+        ]),
+        content_type: visualPatch.content_type ?? afterVisual.content_type,
+        performance_summary: `${visualResult.agent} finished ${visualResult.fallback ? "with fallback" : "through Hermes"}. With Crina for final review.`,
+        agent_handoff_summary: `${visualResult.agent} handed visual direction back to Crina.`
+      },
+      "Visual & Video Agent handed package to Crina",
+      `${item.title} is with Crina for final review.`
+    );
+    current = (await getContentItem(item.id)) ?? afterVisual;
+  }
+
+  const packageForReview = (await getContentItem(item.id)) ?? current;
   const finalReview = await crinaReview("final_review", {
     brand,
     contentPackage: {
@@ -367,6 +393,8 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
     },
     previousCrinaReview: reviewNotes
   });
+  fallback = fallback || finalReview.fallback;
+  if (finalReview.error) errors.push(finalReview.error);
 
   const finalNotes = asString(finalReview.output.reviewNotes);
   const finalSummary = asString(finalReview.output.handoffSummary);
@@ -386,8 +414,7 @@ export async function dispatchContentItem(contentItemId: string): Promise<Dispat
     { label: "Crina sent final package for approval", detail: `${item.title} is ready for human final approval.` }
   );
 
-  const fallback = contentResult.fallback || visualResult.fallback || crinaContentReview.fallback || finalReview.fallback;
-  const error = [contentResult.error, visualResult.error, crinaContentReview.error, finalReview.error].filter(Boolean).join(" | ") || null;
+  const error = errors.filter(Boolean).join(" | ") || null;
 
   return { ok: Boolean(updated), item: updated, agent: "Crina", provider: fallback ? "deterministic" : "hermes", fallback, error };
 }
