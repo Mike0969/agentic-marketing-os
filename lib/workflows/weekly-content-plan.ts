@@ -21,7 +21,7 @@ type BrandContext = {
   videoIdea: string;
 };
 
-const platformFallbacks: WeeklyContentPlatform[] = ["LinkedIn", "X", "Instagram", "Facebook", "Blog"];
+const platformFallbacks: WeeklyContentPlatform[] = ["LinkedIn", "X", "Instagram", "Facebook", "TikTok", "YouTube", "Blog"];
 
 export function generateWeeklyContentPlan(input: WeeklyContentPlanInput, data: DashboardData = seedData): WeeklyContentPlanOutput {
   const selectedBrands = getSelectedBrandContexts(input.brand, data);
@@ -142,7 +142,7 @@ function buildBrandPlan(context: BrandContext, input: WeeklyContentPlanInput): G
     status: "brief"
   });
 
-  const carouselPlatform = selectedPlatforms.includes("Instagram") ? "Instagram" : "LinkedIn";
+  const carouselPlatform = selectedPlatforms.includes("Instagram") ? "Instagram" : selectedPlatforms.includes("TikTok") ? "TikTok" : "LinkedIn";
   const carousel = buildItem(context, {
     platform: carouselPlatform,
     contentType: "Carousel concept",
@@ -154,7 +154,15 @@ function buildBrandPlan(context: BrandContext, input: WeeklyContentPlanInput): G
     status: "brief"
   });
 
-  const videoPlatform = selectedPlatforms.includes("Instagram") ? "Instagram" : selectedPlatforms.includes("Facebook") ? "Facebook" : "LinkedIn";
+  const videoPlatform = selectedPlatforms.includes("TikTok")
+    ? "TikTok"
+    : selectedPlatforms.includes("YouTube")
+      ? "YouTube"
+      : selectedPlatforms.includes("Instagram")
+        ? "Instagram"
+        : selectedPlatforms.includes("Facebook")
+          ? "Facebook"
+          : "LinkedIn";
   const video = buildItem(context, {
     platform: videoPlatform,
     contentType: "Short video script idea",

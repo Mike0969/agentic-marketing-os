@@ -10,7 +10,7 @@ export default async function CampaignsPage() {
       <PageHeader
         eyebrow="Campaigns"
         title="Campaign Planning"
-        description="Create campaign records and keep brand-specific objectives ready for agent-generated briefs and content."
+        description="Campaigns are strategic containers and status records for Crina and the specialist agents. Start planning from Workflows; use this tab to inspect active campaigns or save a manual admin record."
       />
       <CampaignManager brands={brands} campaigns={campaigns} />
     </>

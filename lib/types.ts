@@ -101,6 +101,7 @@ export type IntegrationProvider =
   | "linkedin"
   | "x"
   | "tiktok"
+  | "youtube"
   | "instagram"
   | "facebook"
   | "google-search-console"
@@ -221,7 +222,7 @@ export type DashboardData = {
 
 export type WeeklyContentPlanBrandSelection = "gridfactory" | "gulf-el" | "both";
 export type WeeklyContentIntensity = "light" | "normal" | "aggressive";
-export type WeeklyContentPlatform = "LinkedIn" | "X" | "Instagram" | "Facebook" | "Blog";
+export type WeeklyContentPlatform = "LinkedIn" | "X" | "Instagram" | "Facebook" | "TikTok" | "YouTube" | "Blog";
 
 export type WeeklyContentPlanInput = {
   brand: WeeklyContentPlanBrandSelection;

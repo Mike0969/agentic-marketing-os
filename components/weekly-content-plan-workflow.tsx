@@ -13,7 +13,7 @@ import type {
   WeeklyContentPlatform
 } from "@/lib/types";
 
-const platforms: WeeklyContentPlatform[] = ["LinkedIn", "X", "Instagram", "Facebook", "Blog"];
+const platforms: WeeklyContentPlatform[] = ["LinkedIn", "X", "Instagram", "Facebook", "TikTok", "YouTube", "Blog"];
 
 export function WeeklyContentPlanWorkflow() {
   const router = useRouter();

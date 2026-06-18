@@ -199,7 +199,7 @@ function buildOpenAiCompatiblePayload(
                 brand_id: "brand id from context",
                 brandName: "string",
                 campaign_id: "campaign id from context",
-                platform: "LinkedIn | X | Instagram | Facebook | Blog",
+                platform: "LinkedIn | X | Instagram | Facebook | TikTok | YouTube | Blog",
                 content_type: "string",
                 title: "string",
                 hook: "string",

@@ -42,7 +42,7 @@ export const subAgentConfigs: Record<SubAgentKey, SubAgentConfig> = {
     handoffTo: "Approval Queue",
     outputSchema: {
       agent: "Content Creator Agent",
-      platform: "LinkedIn | X | Instagram | Facebook | Blog",
+      platform: "LinkedIn | X | Instagram | Facebook | TikTok | YouTube | Blog",
       drafts: [{ title: "string", hook: "string", body: "string", CTA: "string", variant: "primary | sharper | conservative", claimsToReview: ["string"] }],
       visualOpportunities: ["string"],
       status: "draft",

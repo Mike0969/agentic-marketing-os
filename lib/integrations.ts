@@ -17,6 +17,7 @@ export const integrationProviders: Array<{
   { provider: "linkedin", displayName: "LinkedIn", category: "Social", description: "Company page read/connect scaffold. No live posting yet.", secretLabel: "Access token" },
   { provider: "x", displayName: "X", category: "Social", description: "Social read/connect scaffold. No live posting yet.", secretLabel: "Bearer token" },
   { provider: "tiktok", displayName: "TikTok", category: "Social", description: "TikTok read/connect scaffold for future short-form analytics.", secretLabel: "Access token" },
+  { provider: "youtube", displayName: "YouTube", category: "Social", description: "YouTube read/connect scaffold for future video publishing prep and analytics. No live posting yet.", secretLabel: "OAuth client / API key" },
   { provider: "instagram", displayName: "Instagram", category: "Social", description: "Instagram read/connect scaffold. No live posting yet.", secretLabel: "Access token" },
   { provider: "facebook", displayName: "Facebook", category: "Social", description: "Facebook page read/connect scaffold. No live posting yet.", secretLabel: "Access token" },
   {
