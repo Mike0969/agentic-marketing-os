@@ -1,26 +1,31 @@
 import type { GscResult, GscRow } from "@/lib/types";
+import { getServiceAccountToken, hasServiceAccountEnv } from "@/lib/analytics/google-auth";
 
 /**
  * Google Search Console — READ-ONLY analytics connector, PER BRAND.
  *
- * Two brands / two sites: GridFactory.io and Gulf-EL.com / NexRide. Each brand
- * has its own server-only OAuth access token + site URL. Tokens live in env
- * (matching the Hermes-token model); never NEXT_PUBLIC, never rendered, no write
- * scopes, no posting. Service-account JWT auth is a documented follow-up.
+ * Two brands / two sites: GridFactory.io and Gulf-EL.com / NexRide. Auth resolves
+ * in this order (server-only, never NEXT_PUBLIC, no write scopes, no posting):
+ *   1. Service account (DURABLE, recommended) — self-mints tokens, no refresh.
+ *   2. Static OAuth access token in env (quick test; expires ~1h).
  *
- * Env (per brand, with a generic fallback):
- *   GOOGLE_SEARCH_CONSOLE_TOKEN_GRIDFACTORY / _SITE_GRIDFACTORY
- *   GOOGLE_SEARCH_CONSOLE_TOKEN_GULF_EL     / _SITE_GULF_EL
- *   GOOGLE_SEARCH_CONSOLE_TOKEN             / _SITE            (fallback)
+ * Env:
+ *   Service account (shared or per-brand):
+ *     GOOGLE_APPLICATION_CREDENTIALS[_GRIDFACTORY|_GULF_EL]  (path to SA JSON)
+ *     GOOGLE_SERVICE_ACCOUNT_KEY[_GRIDFACTORY|_GULF_EL]      (inline SA JSON)
+ *   Site per brand (+ generic fallback):
+ *     GOOGLE_SEARCH_CONSOLE_SITE_GRIDFACTORY / _GULF_EL / GOOGLE_SEARCH_CONSOLE_SITE
+ *   Static token fallback (optional):
+ *     GOOGLE_SEARCH_CONSOLE_TOKEN_GRIDFACTORY / _GULF_EL / GOOGLE_SEARCH_CONSOLE_TOKEN
  */
 
 const GSC_BASE = "https://searchconsole.googleapis.com/webmasters/v3";
 const TIMEOUT_MS = 10000;
 
 export type BrandGscKey = "GRIDFACTORY" | "GULF_EL";
-export type GscCredentials = { token: string; site: string };
+export type AuthSource = "service_account" | "token" | "none";
+export type BrandCredentials = { token: string; site: string; source: AuthSource };
 
-/** Canonical brand → env key. Matches by brand name substring. */
 export const GSC_BRANDS: { name: string; key: BrandGscKey }[] = [
   { name: "GridFactory.io", key: "GRIDFACTORY" },
   { name: "Gulf-EL.com / NexRide", key: "GULF_EL" }
@@ -33,21 +38,34 @@ export function brandGscKey(brandName: string): BrandGscKey | null {
   return null;
 }
 
-/** Resolve a brand's GSC token + site from env (per-brand first, then generic). */
-export function resolveBrandGsc(brandName: string): GscCredentials {
+function resolveBrandSite(brandName: string): string {
   const key = brandGscKey(brandName);
-  const token = (key ? process.env[`GOOGLE_SEARCH_CONSOLE_TOKEN_${key}`] : "") || process.env.GOOGLE_SEARCH_CONSOLE_TOKEN || "";
-  const site = (key ? process.env[`GOOGLE_SEARCH_CONSOLE_SITE_${key}`] : "") || process.env.GOOGLE_SEARCH_CONSOLE_SITE || "";
-  return { token, site };
+  return (key ? process.env[`GOOGLE_SEARCH_CONSOLE_SITE_${key}`] : "") || process.env.GOOGLE_SEARCH_CONSOLE_SITE || "";
 }
 
-export function isBrandGscConfigured(brandName: string) {
-  const { token, site } = resolveBrandGsc(brandName);
-  return Boolean(token && site);
+function resolveStaticToken(brandName: string): string {
+  const key = brandGscKey(brandName);
+  return (key ? process.env[`GOOGLE_SEARCH_CONSOLE_TOKEN_${key}`] : "") || process.env.GOOGLE_SEARCH_CONSOLE_TOKEN || "";
+}
+
+/** Resolve a brand's access token (service account first) + site. */
+export async function getBrandCredentials(brandName: string): Promise<BrandCredentials> {
+  const key = brandGscKey(brandName);
+  const site = resolveBrandSite(brandName);
+
+  if (hasServiceAccountEnv(key)) {
+    const token = await getServiceAccountToken(key);
+    if (token) return { token, site, source: "service_account" };
+  }
+
+  const staticToken = resolveStaticToken(brandName);
+  if (staticToken) return { token: staticToken, site, source: "token" };
+
+  return { token: "", site, source: "none" };
 }
 
 async function gscFetch(path: string, token: string, init?: RequestInit) {
-  if (!token) throw new Error("Search Console token is not set.");
+  if (!token) throw new Error("Search Console token is not available.");
   return fetch(`${GSC_BASE}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -79,14 +97,25 @@ function isoDaysAgo(days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-/** Core read: last ~28 days of top queries for a credential set. Never throws. */
-export async function getSearchPerformance(creds: GscCredentials): Promise<GscResult> {
+export type BrandGscResult = GscResult & { brand: string; source: AuthSource };
+
+/** Read last ~28 days of top queries for one brand using its own credentials. Never throws. */
+export async function getSearchPerformanceForBrand(brandName: string): Promise<BrandGscResult> {
+  let creds: BrandCredentials;
+  try {
+    creds = await getBrandCredentials(brandName);
+  } catch (error) {
+    return { brand: brandName, source: "none", connected: false, site: null, rows: [], reason: error instanceof Error ? error.message : "Auth failed." };
+  }
+
   if (!creds.token || !creds.site) {
     return {
+      brand: brandName,
+      source: creds.source,
       connected: false,
       site: creds.site || null,
       rows: [],
-      reason: !creds.token ? "Search Console token is not set." : "No Search Console site configured."
+      reason: !creds.token ? "No service account or token configured for this brand." : "No Search Console site configured for this brand."
     };
   }
 
@@ -101,38 +130,38 @@ export async function getSearchPerformance(creds: GscCredentials): Promise<GscRe
       ctr: sum.impressions ? sum.clicks / sum.impressions : 0,
       position: rows.length ? rows.reduce((acc, row) => acc + row.position, 0) / rows.length : 0
     };
-    return { connected: true, site: creds.site, range: { start, end }, rows, totals };
+    return { brand: brandName, source: creds.source, connected: true, site: creds.site, range: { start, end }, rows, totals };
   } catch (error) {
-    return { connected: false, site: creds.site, rows: [], reason: error instanceof Error ? error.message : "GSC fetch failed." };
+    return { brand: brandName, source: creds.source, connected: false, site: creds.site, rows: [], reason: error instanceof Error ? error.message : "GSC fetch failed." };
   }
 }
 
-export type BrandGscResult = GscResult & { brand: string };
-
-/** Read performance for one brand using its own token + site. */
-export async function getSearchPerformanceForBrand(brandName: string): Promise<BrandGscResult> {
-  const result = await getSearchPerformance(resolveBrandGsc(brandName));
-  return { ...result, brand: brandName };
-}
-
-/** A short connection summary across the configured brands (for the Settings test). */
+/** Short connection summary across both brands (for the Settings test). */
 export async function gscConnectionSummary(): Promise<{ anyConnected: boolean; lines: string[] }> {
   const lines: string[] = [];
   let anyConnected = false;
 
   for (const { name } of GSC_BRANDS) {
-    const { token, site } = resolveBrandGsc(name);
-    if (!token) {
-      lines.push(`${name}: token not set.`);
+    let creds: BrandCredentials;
+    try {
+      creds = await getBrandCredentials(name);
+    } catch (error) {
+      lines.push(`${name}: ${error instanceof Error ? error.message : "auth failed"}.`);
+      continue;
+    }
+
+    if (!creds.token) {
+      lines.push(`${name}: no service account or token set.`);
       continue;
     }
     try {
-      const sites = await gscListSites(token);
-      if (!site) lines.push(`${name}: token valid, site not set (${sites.length} available).`);
-      else if (sites.includes(site)) {
-        lines.push(`${name}: connected to ${site}.`);
+      const sites = await gscListSites(creds.token);
+      const via = creds.source === "service_account" ? "service account" : "token";
+      if (!creds.site) lines.push(`${name}: ${via} valid, site not set (${sites.length} available).`);
+      else if (sites.includes(creds.site)) {
+        lines.push(`${name}: connected to ${creds.site} via ${via}.`);
         anyConnected = true;
-      } else lines.push(`${name}: token lacks access to ${site}.`);
+      } else lines.push(`${name}: ${via} lacks access to ${creds.site} (share the property with the service account).`);
     } catch (error) {
       lines.push(`${name}: ${error instanceof Error ? error.message : "test failed"}.`);
     }

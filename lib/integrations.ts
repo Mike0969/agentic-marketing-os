@@ -24,8 +24,8 @@ export const integrationProviders: Array<{
     displayName: "Google Search Console",
     category: "Analytics",
     description:
-      "Recommended first analytics connector — read-only Search performance (clicks, impressions, CTR, position), one per brand (GridFactory.io and Gulf-EL.com). Tokens + sites are set server-side per brand via GOOGLE_SEARCH_CONSOLE_TOKEN_GRIDFACTORY / _GULF_EL (+ _SITE_…). No write scopes, no posting.",
-    secretLabel: "OAuth access token (read-only)",
+      "Recommended first analytics connector — read-only Search performance (clicks, impressions, CTR, position), one per brand (GridFactory.io and Gulf-EL.com). Durable auth via a service account (added as a user on each property) that self-mints tokens; static tokens supported for quick tests. Per-brand sites via GOOGLE_SEARCH_CONSOLE_SITE_GRIDFACTORY / _GULF_EL. Server-side only, no write scopes, no posting.",
+    secretLabel: "Service account (read-only)",
     recommended: true
   },
   {

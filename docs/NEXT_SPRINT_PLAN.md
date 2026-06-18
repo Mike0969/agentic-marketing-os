@@ -22,8 +22,11 @@ Live Brain work — coordinate merges).
     `lib/integration-store.ts`, Settings now marks GSC **Recommended** and GA4
     "planned next" (`lib/integrations.ts` + `components/integration-settings.tsx`),
     env docs (`GOOGLE_SEARCH_CONSOLE_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE`).
-  - Follow-ups: service-account JWT auth (replace manual token), snapshot table
-    (`0006`) for trends, then GA4 via the same pattern.
+  - **Durable auth DONE:** service-account JWT (RS256 → token exchange, cached;
+    Node `crypto`, no npm dep) in `lib/analytics/google-auth.ts`; the connector
+    prefers the service account and falls back to a static token. Per-brand or
+    shared SA supported.
+  - Follow-ups: snapshot table (`0006`) for trends, then GA4 via the same pattern.
 - **Sprint 1 (chaining) — DEFERRED** until Codex's physics Live Brain lands; it
   shares `lib/agents/dispatch.ts` + `components/pipeline-board.tsx` (do-not-touch
   now). Plan below is unchanged.
