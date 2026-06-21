@@ -1,0 +1,11 @@
+export * from "@/lib/providers/types";
+export * from "@/lib/providers/registry";
+export * from "@/lib/providers/call-model";
+export * as anthropic from "@/lib/providers/anthropic";
+export * as openai from "@/lib/providers/openai";
+export * as deepseek from "@/lib/providers/deepseek";
+export * as glm from "@/lib/providers/glm";
+export * as ollama from "@/lib/providers/ollama";
+export * as telegram from "@/lib/providers/telegram";
+export * as slack from "@/lib/providers/slack";
+export * as hermes from "@/lib/providers/hermes";
