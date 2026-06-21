@@ -42,7 +42,7 @@ function deterministicDraft(item: ContentItem, brand: Brand | null, reason: stri
     title: item.title,
     hook: item.hook || `The market is asking a sharper question about ${item.title}.`,
     body: `${item.body || item.title}\n\nFrame this for ${audience}. Keep the tone ${tone}. Add verified proof before final approval. This deterministic draft was generated because Hermes was unavailable: ${reason}`,
-    CTA: item.CTA || brand?.reusable_ctas?.split(/[;\n,]/)[0]?.trim() || "Request more information",
+    CTA: item.CTA || (brand?.ctas ?? brand?.reusable_ctas)?.split(/[;\n,]/)[0]?.trim() || "Request more information",
     editorNotes: `FALLBACK: Hermes did not return a valid draft. Reason: ${reason}`
   };
 }

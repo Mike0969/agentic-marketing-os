@@ -49,6 +49,7 @@ function normalizeAnalysis(value: unknown): BrandAnalysis | null {
 
 function deterministicBrandAnalysis(brand: Brand, reason: string): BrandAnalysis {
   const isGrid = brand.name.toLowerCase().includes("grid");
+  const ctas = brand.ctas ?? brand.reusable_ctas ?? "";
 
   return {
     positioningDiagnosis: `${brand.name} has a usable strategic base, but this is deterministic fallback analysis because Hermes could not return valid JSON: ${reason}`,
@@ -63,7 +64,7 @@ function deterministicBrandAnalysis(brand: Brand, reason: string): BrandAnalysis
       .map((item) => item.trim())
       .filter(Boolean)
       .slice(0, 4),
-    ctaRecommendations: (brand.reusable_ctas ?? "")
+    ctaRecommendations: ctas
       .split(/[;\n]/)
       .flatMap((item) => item.split(","))
       .map((item) => item.trim())

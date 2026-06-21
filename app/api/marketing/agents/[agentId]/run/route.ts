@@ -58,7 +58,14 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
     input: {
       agentId,
       agentName,
-      brands: data.brands.map((brand) => ({ name: brand.name, positioning: brand.positioning, pillars: brand.content_pillars, seoTargets: brand.seo_targets })),
+      brands: data.brands.map((brand) => ({
+        name: brand.name,
+        positioning: brand.positioning,
+        pillars: brand.pillars ?? brand.content_pillars,
+        seoTargets: brand.seo_targets,
+        ctas: brand.ctas ?? brand.reusable_ctas,
+        approvalRules: brand.approval_rules
+      })),
       openCampaigns: data.campaigns.filter((campaign) => campaign.status !== "completed").map((campaign) => ({ title: campaign.title, status: campaign.status }))
     },
     brainFiles: ["workflow-contract.md", "token-model-policy.md", "draft-publishing-safety.md"],

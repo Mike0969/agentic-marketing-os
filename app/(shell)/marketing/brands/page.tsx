@@ -10,7 +10,13 @@ export default async function BrandsPage() {
   const contextFields = data.brands.reduce((count, brand) => {
     return (
       count +
-      ["content_pillars", "seo_targets", "reusable_ctas", "approval_rules", "proof_points"].filter((field) => Boolean(brand[field as keyof typeof brand])).length
+      [
+        brand.pillars ?? brand.content_pillars,
+        brand.seo_targets,
+        brand.ctas ?? brand.reusable_ctas,
+        brand.approval_rules,
+        brand.proof_points
+      ].filter(Boolean).length
     );
   }, 0);
 

@@ -5,6 +5,7 @@ export type Brand = {
   positioning: string;
   target_audience: string;
   tone_of_voice: string;
+  pillars?: string | null;
   content_pillars?: string | null;
   key_messages?: string | null;
   proof_points?: string | null;
@@ -12,6 +13,7 @@ export type Brand = {
   competitors?: string | null;
   seo_targets?: string | null;
   approval_rules?: string | null;
+  ctas?: string | null;
   reusable_ctas?: string | null;
   active: boolean;
 };

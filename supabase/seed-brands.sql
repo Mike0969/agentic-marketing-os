@@ -7,23 +7,23 @@ begin;
 
 -- GridFactory.io ------------------------------------------------------------
 update public.brands set
-  content_pillars = 'GPU infrastructure, green energy data centers, modular design, European expansion',
+  pillars         = 'GPU infrastructure, green energy data centers, modular design, European expansion',
   seo_targets     = 'GPU cloud provider, green data center Europe, modular data center, H100 H200 colocation',
-  reusable_ctas   = 'Request capacity, Download investor deck, Book a site visit',
+  ctas            = 'Request capacity, Download investor deck, Book a site visit',
   approval_rules  = 'No financial claims without legal review. No unverified capacity numbers.'
 where name ilike '%gridfactory%' or website ilike '%gridfactory%';
 
 -- Gulf-EL.com / NexRide -----------------------------------------------------
 update public.brands set
-  content_pillars = 'zero-commission ride-hailing, EV fleet, AI dispatch, GCC mobility',
+  pillars         = 'zero-commission ride-hailing, EV fleet, AI dispatch, GCC mobility',
   seo_targets     = 'ride-hailing GCC, EV taxi Dubai, zero commission driver app, tokenized loyalty transport',
-  reusable_ctas   = 'Join as driver, Book a ride, Partner with us',
+  ctas            = 'Join as driver, Book a ride, Partner with us',
   approval_rules  = 'No pricing claims without ops confirmation. No market share claims.'
 where name ilike '%gulf-el%' or name ilike '%gulf el%' or name ilike '%nexride%' or website ilike '%gulf-el%';
 
 commit;
 
 -- Verify ---------------------------------------------------------------------
-select name, content_pillars, seo_targets, reusable_ctas, approval_rules
+select name, pillars, seo_targets, ctas, approval_rules
 from public.brands
 order by name;

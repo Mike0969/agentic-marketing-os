@@ -12,14 +12,14 @@ const allowedFields = [
   "positioning",
   "target_audience",
   "tone_of_voice",
-  "content_pillars",
+  "pillars",
   "key_messages",
   "proof_points",
   "offers",
   "competitors",
   "seo_targets",
   "approval_rules",
-  "reusable_ctas"
+  "ctas"
 ] as const;
 
 type BrandPatch = Pick<Brand, (typeof allowedFields)[number]>;

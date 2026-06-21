@@ -7,6 +7,7 @@ create table if not exists brands (
   positioning text not null,
   target_audience text not null,
   tone_of_voice text not null,
+  pillars text,
   content_pillars text,
   key_messages text,
   proof_points text,
@@ -14,12 +15,14 @@ create table if not exists brands (
   competitors text,
   seo_targets text,
   approval_rules text,
+  ctas text,
   reusable_ctas text,
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
 
 alter table brands add column if not exists content_pillars text;
+alter table brands add column if not exists pillars text;
 alter table brands add column if not exists key_messages text;
 alter table brands add column if not exists proof_points text;
 alter table brands add column if not exists offers text;
@@ -27,6 +30,7 @@ alter table brands add column if not exists competitors text;
 alter table brands add column if not exists seo_targets text;
 alter table brands add column if not exists approval_rules text;
 alter table brands add column if not exists reusable_ctas text;
+alter table brands add column if not exists ctas text;
 
 create table if not exists agents (
   id uuid primary key default gen_random_uuid(),

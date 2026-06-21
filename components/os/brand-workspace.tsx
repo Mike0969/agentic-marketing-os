@@ -28,9 +28,9 @@ const editableFields: Array<{ key: keyof Brand; label: string; type: "input" | "
   { key: "positioning", label: "Positioning", type: "textarea" },
   { key: "target_audience", label: "Target audience", type: "textarea" },
   { key: "tone_of_voice", label: "Tone of voice", type: "textarea" },
-  { key: "content_pillars", label: "Content pillars", type: "textarea", hint: "Separate pillars with commas or semicolons." },
+  { key: "pillars", label: "Pillars", type: "textarea", hint: "Separate pillars with commas or semicolons." },
   { key: "seo_targets", label: "SEO targets", type: "textarea", hint: "Primary keyword clusters and search topics." },
-  { key: "reusable_ctas", label: "Reusable CTAs", type: "textarea", hint: "Approved conversion asks for the agents." },
+  { key: "ctas", label: "CTAs", type: "textarea", hint: "Approved conversion asks for the agents." },
   { key: "key_messages", label: "Key messages", type: "textarea" },
   { key: "proof_points", label: "Proof points", type: "textarea" },
   { key: "offers", label: "Offers", type: "textarea" },
@@ -53,6 +53,14 @@ function splitList(value?: string | null) {
 
 function firstLine(value?: string | null) {
   return (value ?? "").split(/\n|;/)[0]?.trim() || "Not set";
+}
+
+function brandPillars(brand: Brand) {
+  return brand.pillars ?? brand.content_pillars ?? "";
+}
+
+function brandCtas(brand: Brand) {
+  return brand.ctas ?? brand.reusable_ctas ?? "";
 }
 
 function getInitialBrand(brands: Brand[]) {
@@ -161,9 +169,9 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
             </div>
             <p className="mt-4 text-sm leading-6 text-neutral-300">{brand.positioning}</p>
             <div className="mt-4 grid gap-3">
-              <SummaryRow label="Pillars" value={firstLine(brand.content_pillars)} />
+              <SummaryRow label="Pillars" value={firstLine(brandPillars(brand))} />
               <SummaryRow label="SEO" value={firstLine(brand.seo_targets)} />
-              <SummaryRow label="CTA" value={firstLine(brand.reusable_ctas)} />
+              <SummaryRow label="CTA" value={firstLine(brandCtas(brand))} />
             </div>
           </button>
         ))}
@@ -220,9 +228,9 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
             <OSBadge tone="off">Read preview</OSBadge>
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <ListBlock label="Pillars" items={splitList(draft.content_pillars)} />
+            <ListBlock label="Pillars" items={splitList(brandPillars(draft))} />
             <ListBlock label="SEO targets" items={splitList(draft.seo_targets)} />
-            <ListBlock label="CTAs" items={splitList(draft.reusable_ctas)} />
+            <ListBlock label="CTAs" items={splitList(brandCtas(draft))} />
           </div>
         </OSPanel>
 
