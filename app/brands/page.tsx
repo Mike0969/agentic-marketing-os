@@ -1,18 +1,5 @@
-import { BrandEditor } from "@/components/brand-editor";
-import { PageHeader } from "@/components/ui";
-import { getDashboardData } from "@/lib/data";
+import { redirect } from "next/navigation";
 
-export default async function BrandsPage() {
-  const { brands, contentItems } = await getDashboardData();
-
-  return (
-    <>
-      <PageHeader
-        eyebrow="Brand System"
-        title="Brands"
-        description="Edit the strategic inputs agents will use for positioning, audience selection, voice, and channel execution."
-      />
-      <BrandEditor brands={brands} contentItems={contentItems} />
-    </>
-  );
+export default function BrandsRedirect() {
+  redirect("/marketing/brands");
 }

@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Gauge,
   Layers3,
+  LineChart,
   LogOut,
   Megaphone,
   Moon,
@@ -23,16 +24,19 @@ import { clsx } from "clsx";
 
 const navItems = [
   { href: "/", label: "Home", icon: Gauge },
-  { href: "/brands", label: "Brands", icon: BriefcaseBusiness },
-  { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/agent-brain", label: "Agent Brain", icon: BrainCircuit },
-  { href: "/system-map", label: "Live Brain", icon: Share2 },
-  { href: "/campaigns", label: "Campaigns", icon: Megaphone },
-  { href: "/workflows/weekly-content-plan", label: "Workflows", icon: Wand2 },
-  { href: "/content-pipeline", label: "Pipeline", icon: Layers3 },
-  { href: "/approvals", label: "Approvals", icon: CheckSquare },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/settings", label: "Settings", icon: Settings }
+  { href: "/marketing", label: "Marketing OS", icon: Megaphone },
+  { href: "/trading", label: "Trading OS", icon: LineChart },
+  { href: "/founder", label: "Founder Ops", icon: BriefcaseBusiness },
+  { href: "/marketing/brands", label: "Brands", icon: BriefcaseBusiness },
+  { href: "/marketing/agents", label: "Agents", icon: Bot },
+  { href: "/marketing/agent-brain", label: "Agent Brain", icon: BrainCircuit },
+  { href: "/marketing/system-map", label: "Live Brain", icon: Share2 },
+  { href: "/marketing/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/marketing/workflows/weekly-content-plan", label: "Workflows", icon: Wand2 },
+  { href: "/marketing/content-pipeline", label: "Pipeline", icon: Layers3 },
+  { href: "/marketing/approvals", label: "Approvals", icon: CheckSquare },
+  { href: "/marketing/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/marketing/settings", label: "Settings", icon: Settings }
 ];
 
 const publicAuthPaths = ["/login", "/forgot-password", "/reset-password", "/auth/callback"];
@@ -66,13 +70,13 @@ export function AppShell({ children, auth }: { children: React.ReactNode; auth: 
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-72 border-r border-slate-200 bg-white/95 px-4 py-5 shadow-panel dark:border-slate-800 dark:bg-slate-950/95 lg:block">
         <div className="mb-8 px-2">
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-command">Control Tower</div>
-          <div className="mt-2 text-xl font-semibold tracking-tight">Agentic Marketing OS</div>
-          <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">GridFactory + Gulf-EL / NexRide</div>
+          <div className="mt-2 text-xl font-semibold tracking-tight">Agentic OS</div>
+          <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">Marketing · Trading · Founder Ops</div>
         </div>
         <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href;
+            const active = pathname === item.href || (item.href !== "/" && pathname.startsWith(`${item.href}/`));
             return (
               <Link
                 key={item.href}

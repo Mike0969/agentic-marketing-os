@@ -1,107 +1,90 @@
-import { CheckCircle2, Clock, Layers3, Megaphone } from "lucide-react";
-import { ApprovalStatusBadge, ContentStatusBadge } from "@/components/status";
-import { PageHeader, Panel, StatCard } from "@/components/ui";
-import { byId, getDashboardData } from "@/lib/data";
+import Link from "next/link";
+import { ArrowRight, BriefcaseBusiness, LineChart, Megaphone, ShieldCheck } from "lucide-react";
+import { Badge, PageHeader, Panel, StatCard } from "@/components/ui";
+import { getAgentRuns, getDashboardData } from "@/lib/data";
+
+const areas = [
+  {
+    href: "/marketing",
+    title: "Marketing OS",
+    eyebrow: "Live",
+    description: "Crina, content pipeline, approvals, agent brain, Search Console analytics, and visual asset generation.",
+    icon: Megaphone,
+    tone: "green" as const
+  },
+  {
+    href: "/trading",
+    title: "Trading OS",
+    eyebrow: "COMING SOON backend",
+    description: "FX scanner, quant research lab, and risk governor UI wired to Hermes analysis endpoints. No broker execution.",
+    icon: LineChart,
+    tone: "amber" as const
+  },
+  {
+    href: "/founder",
+    title: "Founder Ops",
+    eyebrow: "COMING SOON backend",
+    description: "Founder daily brief, decision register, investor/commercial priorities, and cross-domain executive queue.",
+    icon: BriefcaseBusiness,
+    tone: "blue" as const
+  }
+];
 
 export default async function HomePage() {
-  const data = await getDashboardData();
-  const brandMap = byId(data.brands);
-  const activeCampaigns = data.campaigns.filter((campaign) => campaign.status === "active");
-  const approvalQueue = data.contentItems.filter((item) => item.status === "approval" || item.approval_status === "pending");
-  const pipelineCounts = data.contentItems.reduce<Record<string, number>>((counts, item) => {
-    counts[item.status] = (counts[item.status] ?? 0) + 1;
-    return counts;
-  }, {});
+  const [data, runs] = await Promise.all([getDashboardData(), getAgentRuns(undefined, 50)]);
+  const activeWork = data.contentItems.filter((item) => !["published", "analyzed"].includes(item.status)).length;
+  const pendingApprovals = data.contentItems.filter((item) => item.approval_status === "pending").length;
 
   return (
     <>
       <PageHeader
-        eyebrow="Command Center"
-        title="Agentic Marketing Agency OS"
-        description="A working control tower for campaign strategy, AI agent coordination, content workflow, approvals, and performance review."
+        eyebrow="Unified Control Tower"
+        title="Agentic Operating System"
+        description="One command center for marketing execution today, with Trading and Founder Ops surfaces prepared for Hermes-backed workflows."
+        action={<Badge tone={process.env.HERMES_AGENT_ENDPOINT ? "green" : "amber"}>{process.env.HERMES_AGENT_ENDPOINT ? "Hermes configured" : "Hermes fallback"}</Badge>}
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active brands" value={data.brands.filter((brand) => brand.active).length} detail="GridFactory and Gulf-EL / NexRide configured" />
-        <StatCard label="Active campaigns" value={activeCampaigns.length} detail="Investor and GCC mobility narratives" />
-        <StatCard label="Pipeline items" value={data.contentItems.length} detail="Across ideation, publishing, and analysis" />
-        <StatCard label="Approval queue" value={approvalQueue.length} detail="Human decisions required before release" />
+        <StatCard label="Marketing brands" value={data.brands.length} detail="GridFactory + Gulf-EL / NexRide" />
+        <StatCard label="Active work items" value={activeWork} detail="Marketing production and review queue" />
+        <StatCard label="Pending approvals" value={pendingApprovals} detail="Human approval gates only" />
+        <StatCard label="Agent runs" value={runs.length} detail="Recent Hermes / fallback runs" />
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <Panel>
-          <div className="mb-4 flex items-center gap-2">
-            <Layers3 className="h-4 w-4 text-command" />
-            <h2 className="text-lg font-semibold">Content Pipeline Counts</h2>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {Object.entries(pipelineCounts).map(([status, count]) => (
-              <div key={status} className="rounded-md border border-slate-200 p-4 dark:border-slate-800">
-                <ContentStatusBadge status={status as never} />
-                <div className="mt-3 text-2xl font-semibold">{count}</div>
-              </div>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel>
-          <div className="mb-4 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-command" />
-            <h2 className="text-lg font-semibold">Approval Queue</h2>
-          </div>
-          <div className="space-y-3">
-            {approvalQueue.map((item) => (
-              <div key={item.id} className="rounded-md border border-slate-200 p-3 dark:border-slate-800">
-                <div className="text-sm font-semibold">{item.title}</div>
-                <div className="mt-1 text-xs text-slate-500">{brandMap.get(item.brand_id)?.name} · {item.platform}</div>
-                <div className="mt-3">
-                  <ApprovalStatusBadge status={item.approval_status} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Panel>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <Panel>
-          <div className="mb-4 flex items-center gap-2">
-            <Megaphone className="h-4 w-4 text-command" />
-            <h2 className="text-lg font-semibold">Active Brands</h2>
-          </div>
-          <div className="space-y-4">
-            {data.brands.map((brand) => (
-              <div key={brand.id} className="rounded-md border border-slate-200 p-4 dark:border-slate-800">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-semibold">{brand.name}</div>
-                    <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{brand.positioning}</div>
+      <div className="mt-6 grid gap-5 xl:grid-cols-3">
+        {areas.map((area) => {
+          const Icon = area.icon;
+          return (
+            <Link key={area.href} href={area.href} className="group block">
+              <Panel className="h-full transition group-hover:-translate-y-0.5 group-hover:border-slate-300 dark:group-hover:border-slate-700">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md bg-slate-950 text-white dark:bg-slate-100 dark:text-slate-950">
+                    <Icon className="h-5 w-5" />
                   </div>
-                  <span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
-                    Active
-                  </span>
+                  <Badge tone={area.tone}>{area.eyebrow}</Badge>
                 </div>
-              </div>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel>
-          <div className="mb-4 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-command" />
-            <h2 className="text-lg font-semibold">Recent Activity</h2>
-          </div>
-          <div className="space-y-4">
-            {data.activity.map((item) => (
-              <div key={item.id} className="border-l-2 border-slate-300 pl-4 dark:border-slate-700">
-                <div className="text-sm font-semibold">{item.label}</div>
-                <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{item.detail}</div>
-                <div className="mt-1 text-xs font-medium text-slate-500">{item.timestamp}</div>
-              </div>
-            ))}
-          </div>
-        </Panel>
+                <h2 className="mt-5 text-xl font-semibold">{area.title}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">{area.description}</p>
+                <div className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-command">
+                  Open workspace <ArrowRight className="h-4 w-4" />
+                </div>
+              </Panel>
+            </Link>
+          );
+        })}
       </div>
+
+      <Panel className="mt-6 border-l-4 border-l-command">
+        <div className="flex gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-command" />
+          <div>
+            <h2 className="font-semibold">Execution rule</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
+              Marketing can create drafts and visual assets, but live publishing remains blocked. Trading screens are research and risk review only; no broker orders are placed. Founder Ops produces briefs and decision support only.
+            </p>
+          </div>
+        </div>
+      </Panel>
     </>
   );
 }
