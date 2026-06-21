@@ -9,7 +9,20 @@ if (!url || !publicKey) {
 }
 
 const supabase = createClient(url, publicKey);
-const tables = ["brands", "agents", "campaigns", "content_items", "approvals", "activity", "admin_users", "integration_configs", "agent_runs", "agent_settings", "agent_targets"];
+const tables = [
+  "brands",
+  "agents",
+  "campaigns",
+  "content_items",
+  "approvals",
+  "activity",
+  "admin_users",
+  "integration_configs",
+  "agent_runs",
+  "agent_settings",
+  "agent_targets",
+  "agent_config"
+];
 const results = {};
 let hasError = false;
 
@@ -17,6 +30,15 @@ const health = await supabase.rpc("schema_health");
 
 if (!health.error && health.data) {
   Object.assign(results, health.data);
+  if (!Object.hasOwn(results, "agent_config")) {
+    const { count, error } = await supabase.from("agent_config").select("id", { count: "exact" }).limit(1);
+    if (error) {
+      hasError = true;
+      results.agent_config = `error: ${error.message}`;
+    } else {
+      results.agent_config = count ?? 0;
+    }
+  }
 } else {
   for (const table of tables) {
     const { count, error } = await supabase.from(table).select("id", { count: "exact" }).limit(1);

@@ -176,6 +176,15 @@ export type AgentSetting = {
   updated_at?: string;
 };
 
+export type AgentConfig = {
+  id?: string;
+  agent_id: string;
+  provider: string;
+  model: string;
+  updated_at?: string;
+  updated_by?: string | null;
+};
+
 export type AgentTargetType = "competitor" | "topic" | "platform" | "brand";
 
 export type AgentTarget = {
@@ -251,6 +260,7 @@ export type DashboardData = {
   activity: Activity[];
   integrationConfigs?: IntegrationConfig[];
   agentRuns?: AgentRun[];
+  agentConfigs?: AgentConfig[];
   agentSettings?: AgentSetting[];
   agentTargets?: AgentTarget[];
   agentSignals?: AgentSignal[];

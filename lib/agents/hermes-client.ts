@@ -1,4 +1,4 @@
-import { resolveAgentModel } from "@/lib/agents/agent-config-store";
+import { resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { agentMemoryFileName, buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
 import { listIntegrationConfigs } from "@/lib/integration-store";
 
@@ -156,9 +156,10 @@ async function postChatCompletion(endpoint: string, model: string, systemPrompt:
  */
 export async function runHermesAgent(options: HermesAgentCallOptions): Promise<HermesAgentCallResult> {
   const startedAt = Date.now();
-  // Per-agent model override (set from the Agent Brain UI) takes precedence over
-  // the global env default.
-  const primaryModel = await resolveAgentModel(options.agentId, process.env.HERMES_AGENT_MODEL || "gpt-5.5");
+  // Per-agent provider/model config takes precedence over legacy model-only
+  // overrides and then the global Hermes env default.
+  const runtimeConfig = await resolveAgentRuntimeConfig(options.agentId, process.env.HERMES_AGENT_MODEL || "gpt-5.5");
+  const primaryModel = runtimeConfig.model;
   const backupModel = process.env.HERMES_AGENT_BACKUP_MODEL || null;
 
   const base: HermesAgentCallResult = {
@@ -175,16 +176,6 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
     error: null
   };
 
-  const endpoint = await resolveHermesEndpoint();
-  if (!endpoint) {
-    return { ...base, durationMs: Date.now() - startedAt, error: "HERMES_AGENT_ENDPOINT is not configured." };
-  }
-
-  // Only the OpenAI-compatible chat completions path is supported for sub-agents.
-  if (!endpoint.includes("/v1/chat/completions")) {
-    return { ...base, durationMs: Date.now() - startedAt, error: "Hermes endpoint is not an OpenAI-compatible chat completions URL." };
-  }
-
   const profile = await getHermesAgentProfile(options.agentId);
   // Always include this agent's own memory file alongside its assigned brain
   // files. When no files are restricted, buildBrainContext reads all of them
@@ -194,6 +185,56 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
   const systemPrompt = buildSystemPrompt(profile, options);
   const userPrompt = buildUserPrompt(options, brain.text);
   const temperature = options.temperature ?? 0.4;
+
+  if (runtimeConfig.provider !== "hermes") {
+    const { callModel } = await import("@/lib/providers/call-model");
+    const result = await callModel({
+      provider: runtimeConfig.provider,
+      model: primaryModel,
+      agentId: options.agentId,
+      fallbackAgentName: options.fallbackAgentName,
+      fallbackRole: options.fallbackRole,
+      task: options.task,
+      system: systemPrompt,
+      user: userPrompt,
+      jsonSchema: options.outputSchema,
+      temperature
+    });
+
+    return {
+      ok: result.ok,
+      json: result.json,
+      rawContent: result.text,
+      status: result.status,
+      modelUsed: result.model,
+      backupModel,
+      usage: {
+        tokensPrompt: result.usage?.promptTokens ?? null,
+        tokensCompletion: result.usage?.completionTokens ?? null,
+        tokensTotal: result.usage?.totalTokens ?? null
+      },
+      durationMs: result.latencyMs,
+      brainResourcesUsed: brain.resourcesUsed,
+      profile,
+      error: result.error
+    };
+  }
+
+  const endpoint = await resolveHermesEndpoint();
+  if (!endpoint) {
+    return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, durationMs: Date.now() - startedAt, error: "HERMES_AGENT_ENDPOINT is not configured." };
+  }
+
+  // Only the OpenAI-compatible chat completions path is supported for sub-agents.
+  if (!endpoint.includes("/v1/chat/completions")) {
+    return {
+      ...base,
+      profile,
+      brainResourcesUsed: brain.resourcesUsed,
+      durationMs: Date.now() - startedAt,
+      error: "Hermes endpoint is not an OpenAI-compatible chat completions URL."
+    };
+  }
 
   const models = backupModel && backupModel !== primaryModel ? [primaryModel, backupModel] : [primaryModel];
   let lastStatus: number | null = null;

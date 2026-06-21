@@ -4,6 +4,7 @@ import { seedData } from "@/lib/seed";
 import type {
   Activity,
   AgentRun,
+  AgentConfig,
   AgentSetting,
   AgentSignal,
   AgentSignalStatus,
@@ -296,11 +297,46 @@ function withDefaults(data: DashboardData): DashboardData {
     ...data,
     integrationConfigs: data.integrationConfigs ?? [],
     agentRuns: data.agentRuns ?? [],
+    agentConfigs: data.agentConfigs ?? [],
     agentSettings: data.agentSettings ?? [],
     agentTargets: data.agentTargets ?? [],
     agentSignals: data.agentSignals ?? [],
     modelRegistry: data.modelRegistry ?? []
   };
+}
+
+export async function readLocalAgentConfigs() {
+  const data = await readLocalDashboardData();
+  return data.agentConfigs ?? [];
+}
+
+export async function upsertLocalAgentConfig(input: { agent_id: string; provider: string; model: string; updated_by?: string | null }) {
+  const data = await readLocalDashboardData();
+  const configs = data.agentConfigs ?? [];
+  const existing = configs.find((config) => config.agent_id === input.agent_id);
+  const next: AgentConfig = {
+    id: existing?.id ?? `agent-config-${input.agent_id}`,
+    agent_id: input.agent_id,
+    provider: input.provider,
+    model: input.model,
+    updated_at: new Date().toISOString(),
+    updated_by: input.updated_by ?? null
+  };
+
+  await writeFile(
+    dataFile,
+    JSON.stringify(
+      {
+        ...data,
+        agentConfigs: existing ? configs.map((config) => (config.agent_id === input.agent_id ? next : config)) : [next, ...configs],
+        activity: [createActivity("Agent model config updated", `${input.agent_id} now uses ${input.provider}/${input.model}.`), ...data.activity]
+      },
+      null,
+      2
+    )
+  );
+
+  return next;
 }
 
 export async function readLocalAgentSignals() {
