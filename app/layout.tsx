@@ -1,21 +1,19 @@
 import type { Metadata } from "next";
 import "@/app/globals.css";
-import { AppShell } from "@/components/app-shell";
-import { getShellAuthStatus } from "@/lib/auth";
 
 export const metadata: Metadata = {
-  title: "Agentic Marketing Agency OS",
-  description: "Control tower for AI-assisted marketing operations across GridFactory and Gulf-EL / NexRide."
+  title: "Agentic OS",
+  description: "Personal Command Center — Marketing, Trading, and Founder Ops on one Hermes-backed operating system."
 };
 
-export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const auth = await getShellAuthStatus();
+// Auth-gated dashboard with per-request data; render dynamically (matches prior
+// behavior and avoids static prerender of client auth pages using useSearchParams).
+export const dynamic = "force-dynamic";
 
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased">
-        <AppShell auth={auth}>{children}</AppShell>
-      </body>
+    <html lang="en" suppressHydrationWarning className="dark">
+      <body className="font-sans antialiased bg-neutral-950 text-neutral-100">{children}</body>
     </html>
   );
 }

@@ -1,93 +1,61 @@
-# CODEX_PLAN.md — implementation plan for the Agentic OS
+# CODEX_PLAN.md — Agentic OS build plan (post clean-restart)
 
-For the implementing agent (Codex). Read `docs/code-health-report.md` and
-`docs/os-architecture.md` first.
+For the implementing agent (Codex). Read `docs/os-architecture.md` (see the
+"CLEAN RESTART" section) and `docs/code-health-report.md` first.
 
-**Hard rule:** STABILIZATION before features. Complete **S1** and **S2** before
-any **S3** (Trading / Founder) work. Build/`tsc`/lint must stay green at every step.
+**State now:** the OS shell + home + domain skeletons exist and build green. Old
+code is in `_archive/` (reference, don't import). KEPT foundation: Supabase layer,
+`lib/agents/hermes-client.ts` (+ `hermes-registry`, `agent-config-store`,
+`agent-runs`), GSC connector, `middleware.ts`, auth pages, `components/ui.tsx`,
+new `components/os/*` + `lib/agents/hermes-health.ts`.
 
-**Tags:** `[ARCH]` = careful architectural change (review before/after) · `[UI]` =
-mostly UI wiring · `[DATA]` = Supabase/schema · `[SAFE]` = low-risk/additive.
+**Hard rules:**
+- Build / `npx tsc --noEmit` / `npm run lint` stay green at every commit. Small, isolated commits.
+- Every agent call goes through `lib/agents/hermes-client.ts`. Every run logs to `agent_runs`. Fallback/mock output must be badged **FALLBACK**/**DEMO** in the UI.
+- Governance: Marketing = drafts only (no live posting). Trading = research/risk only (no broker orders). Founder = decision support only. Human approval gates. Secrets server-side only.
+- Reuse `_archive/` as reference when rebuilding (the old logic mostly works) — port, don't blind-copy; keep the new dark OS aesthetic (`components/os/*`).
 
-**Governance (never violate):** Marketing = drafts only, no live posting. Trading
-= research/risk only, no broker orders. Founder = briefs/decision support only.
-Human approval gates stay. Secrets stay server-side (never `NEXT_PUBLIC`).
-
----
-
-## PHASE S1 — Clean build & run, no broken UX
-
-1. `[ARCH]` **Consolidate marketing routes.** Canonical = `app/marketing/*`.
-   For each orphaned top-level page (`app/brands`, `app/agents`, `app/campaigns`,
-   `app/approvals`, `app/analytics`, `app/settings`, `app/content-pipeline`,
-   `app/agent-brain`, `app/system-map`, `app/workflows/weekly-content-plan`):
-   replace with `export default function(){ redirect("/marketing/<x>") }` OR delete.
-   Prefer redirects if any external link/bookmark may exist. **One source of truth.**
-   - Acceptance: no duplicate page files serve the same UI; diff drift eliminated.
-2. `[UI]` **Unbreak nav.** Either add minimal `app/trading/page.tsx` +
-   `app/founder/page.tsx` ("No backend yet" placeholders) OR remove `/trading` and
-   `/founder` from nav + home until S3. No 404 from any visible link.
-3. `[SAFE]` Verify `npm run dev`: every nav item loads, **no 404, no console errors**.
-4. `[SAFE]` Keep `npm run build` + `npx tsc --noEmit` + `npm run lint` green.
-5. `[SAFE]` `npm audit` triage (3 moderate, transitive) — note, don't force-fix.
-
-**Do not proceed to S2 until all S1 boxes pass.**
+**Tags:** `[ARCH]` careful architecture · `[UI]` UI wiring · `[DATA]` Supabase/schema · `[SAFE]` low-risk.
 
 ---
 
-## PHASE S2 — Solidify the Marketing core
+## ORDER: Marketing → Trading → Founder. Screen by screen.
 
-6. `[UI]`/`[ARCH]` E2E the real path with Hermes **up and down**:
-   Crina plan → Create Content Items → Pipeline "Send to agent" → draft written
-   back → Approvals (gate 2) → Scheduled (suggested time). Fix what breaks.
-7. `[UI]` **Label fallback/mock output** unmistakably (badge "fallback" / "sample")
-   so placeholder output is never mistaken for real Hermes output.
-8. `[UI]` **Honest connector status** in Settings: visibly separate wired
-   (Hermes, Google Search Console) from scaffolds (social/model/n8n/Telegram).
-9. `[ARCH]` Confirm `visual-asset-generator.ts` runs end-to-end (with a cost/size
-   guard) or mark the feature "partial" in the UI.
-10. `[SAFE]` Add smoke tests for the agent runners (at least deterministic-fallback
-    paths) + a basic CI check (build + tsc).
+### M0 — `[SAFE]` Verify the restart
+- `npm run dev`: every nav item (Home, Marketing+subs, Trading+subs, Founder+subs, Settings) loads, no 404, no console errors. Hermes badge reflects real status.
 
-**Do not proceed to S3 until S2 is solid.**
+### M1 — Marketing: rebuild real screens (reuse kept tables, port from `_archive/`)
+1. `[UI]`/`[DATA]` **Brands** → list + editor on `brands` table (port `_archive/components/brand-editor.tsx`, restyle to `components/os/*`).
+2. `[UI]`/`[DATA]` **Campaigns** → on `campaigns` table.
+3. `[UI]`/`[ARCH]` **Pipeline** → `content_items` board + "dispatch to agent" via `hermes-client` (port `_archive/lib/agents/dispatch.ts` + `sub-agent-runner.ts` + `agent-catalog.ts`). Drafts only.
+4. `[UI]` **Approvals** → two human gates on `approvals` (port `_archive/components/approval-queue.tsx` + `_archive/app/api/approvals`).
+5. `[UI]` **Analytics** → real GSC panel (kept connector) + clearly-labelled DEMO panels.
+6. `[UI]` **Agents** → roster from `agents` + recent `agent_runs`.
+7. `[UI]` **Workflows / Crina weekly plan** → port `_archive/lib/agents/crina-runner.ts` + the generate route; create `app/(shell)/marketing/workflows/...` + `app/api/marketing/*`.
+- **Acceptance (S2):** Crina plan → content items → pipeline dispatch → draft → approvals → scheduled (suggested time), with Hermes up AND down (fallback badged).
 
----
+### T1 — Trading (only after Marketing core is solid)
+8. `[UI]` Flesh out `trading/fx-scanner` (FX-majors-vs-USD signal table), `quant-lab`, `risk-governor` as real dashboards.
+9. `[DATA]` Tables: `fx_signals`, `trade_ideas`, `risk_rules`, `trading_runs` (RLS admin-gated; mirror `agent_runs`).
+10. `[ARCH]` `lib/trading/*` runners via `hermes-client` (agent ids `agent-fx-scanner`, `agent-quant-lab`, `agent-risk-governor`); register in `team.json` + shared brain. **Research/risk only, no orders.**
+11. `[UI]` Wire screens → `app/api/trading/*` → Hermes; log to `agent_runs`.
 
-## PHASE S3 — Add Trading + Founder Ops (only after S1+S2)
+### F1 — Founder Ops (after Trading)
+12. `[UI]` Flesh out `founder/daily-review`, `tasks`, `research`, `investors`.
+13. `[DATA]` Tables: `founder_tasks`, `decisions`, `research_notes`, `investor_items` (RLS).
+14. `[ARCH]` `lib/founder/*` runner `agent-founder-operator` via `hermes-client`. **Decision support only.** Wire `app/api/founder/*` → Hermes → `agent_runs`.
 
-### S3.1 Shell `[ARCH]`
-11. Introduce `app/(shell)/layout.tsx` as shared chrome; keep domain nav grouped
-    (Marketing / Trading / Founder). Migrate `components/app-shell.tsx` into it.
-
-### S3.2 Trading `[UI]` then `[DATA]`/`[ARCH]`
-12. `[UI]` `app/trading/page.tsx` — cards for **FX Scanner**, **Quant Lab**,
-    **Risk Governor** (real-looking dashboards, "No backend yet").
-13. `[UI]` Sub-pages: `app/trading/fx-scanner` (FX-majors-vs-USD signal table),
-    `quant-lab` (research/backtest cards), `risk-governor` (exposure/risk rules).
-14. `[DATA]` Supabase tables: `trade_ideas`, `fx_signals`, `risk_rules`,
-    `trading_runs` (RLS admin-gated; mirror `agent_runs` observability).
-15. `[ARCH]` `lib/trading/*` runners reusing `lib/agents/hermes-client.ts`
-    (agent ids: `agent-fx-scanner`, `agent-quant-lab`, `agent-risk-governor`);
-    register them in `team.json` + shared brain; **research/risk only, no orders.**
-16. `[UI]` Wire screens to `api/trading/*` → Hermes; log to `agent_runs`.
-
-### S3.3 Founder Ops `[UI]` then `[DATA]`/`[ARCH]`
-17. `[UI]` `app/founder/page.tsx` — daily review, tasks, quick actions.
-18. `[UI]` Sub-pages: `daily-review`, `tasks`, `research`, `investors`.
-19. `[DATA]` Supabase tables: `founder_tasks`, `decisions`, `research_notes`,
-    `investor_items` (RLS admin-gated).
-20. `[ARCH]` `lib/founder/*` runner `agent-founder-operator` reusing the Hermes
-    core; **briefs/decision support only.** Wire to `api/founder/*` + `agent_runs`.
-
-### S3.4 Specs & prompts `[SAFE]`
-21. Write `docs/trading_agents_spec.md` and `docs/founder_ops_spec.md` (I/O schemas,
-    allowed/blocked actions, data sources, guardrails).
-22. Add high-level OS prompt + per-agent prompts (FX Scanner, Quant Lab, Risk
-    Governor, Founder Operator) in `prompts/` and `agents/*-soul.md`.
+### X1 — Specs & prompts `[SAFE]`
+15. `docs/trading_agents_spec.md`, `docs/founder_ops_spec.md` (I/O schemas, allowed/blocked actions, data sources, guardrails).
+16. High-level OS prompt + per-agent prompts (FX Scanner, Quant Lab, Risk Governor, Founder Operator) under `prompts/` + `agents/` (the originals are in `_archive/` for reference).
 
 ---
 
-## Coordination notes
-- Work in **small, isolated commits**; keep build green per commit.
-- Parallel agents have been committing; rebase/coordinate before large moves (esp. S1 consolidation and S3.1 shell).
-- Reuse the existing observability (`agent_runs`, `agent-status`, `agent-signals`) and the human-approval pattern for every new domain — don't invent parallel mechanisms.
+## Shared Hermes route
+- Keep one shared workflow entry per domain: `app/api/<domain>/...`, plus an
+  optional `app/api/os/hermes/route.ts` for cross-domain calls. All go through
+  `lib/agents/hermes-client.ts` and log to `agent_runs`.
+
+## Coordination
+- Parallel agents may be active — rebase before large moves; commit small; keep build green.
+- Do NOT import from `_archive/` in shipped code (it's excluded from tsconfig). Port the logic into the new structure instead.

@@ -1,8 +1,65 @@
 # Agentic OS — Architecture
 
-**Status:** 2026-06-21 · HEAD `98e8cca`
+**Status:** 2026-06-21 · **clean restart executed**
 **Goal:** evolve this Marketing OS into a unified **Agentic OS** with three domains —
 **Marketing**, **Trading**, **Founder Ops** — sharing one shell, Supabase, and Hermes.
+
+---
+
+## ★ CLEAN RESTART (executed 2026-06-21)
+
+The UI/shell was rebuilt from a clean base. The old implementation is **archived,
+not deleted** (`_archive/`, recoverable via git history). Build / `tsc` / lint stay
+green.
+
+### KEPT (foundation)
+- Toolchain: Next 15 App Router, TS strict, Tailwind, ESLint config.
+- `middleware.ts` (auth gating); auth pages (`app/login`, `forgot-password`, `reset-password`, `auth/callback`).
+- Supabase layer (`lib/supabase/*`, `lib/auth.ts`, `lib/data.ts`, `lib/local-store.ts`, `lib/seed.ts`, `lib/activity.ts`, `lib/types.ts`, `lib/content-store.ts`) + tables: brands, agents, campaigns, content_items, approvals, agent_runs, admin_users (+ integration_configs, agent_settings/targets/signals, model_registry).
+- **Hermes client pattern**: `lib/agents/hermes-client.ts` (+ deps it needs: `hermes-registry.ts`, `agent-config-store.ts`, `agent-runs.ts`) — reused across all domains.
+- GSC connector: `lib/analytics/*`, `lib/integrations.ts`, `lib/integration-store.ts`, `app/api/analytics/search-console/pull`, env `GOOGLE_*`.
+- Toolchain scripts (`scripts/check-supabase.mjs`, `clean-next.mjs`, `env-loader.mjs`, `seed-supabase.mjs`, `test-gsc.mjs`).
+- `components/ui.tsx` (used by auth pages).
+
+### ARCHIVED → `_archive/` (do not delete)
+- All old pages: `app/page.tsx`, the top-level marketing pages, the duplicate `app/marketing/*`, and Codex's earlier `app/trading|founder` + `app/api/os`.
+- Old UI components (app-shell, live-brain, pipeline-board, approval-queue, brand/campaign editors, integration/models settings, agent-* editors, weekly-content-plan-workflow, status, os-workflow-runner).
+- Marketing/agent runners (crina-runner, dispatch, team-runner, sub-agent-runner, crina-plan-rework, learning-store, visual-asset-generator, agent-catalog, agent-signals, agent-status, model-registry), `lib/os-workflows.ts`, `lib/workflows/*`.
+- `prompts/`, `agents/`, `scripts/check-workflow-schema.mjs`.
+- `tsconfig.json` excludes `_archive` so it never affects builds/typecheck.
+
+### NEW shell (built this pass)
+```
+app/
+  layout.tsx              # root: html/body, dark theme, force-dynamic
+  globals.css
+  (shell)/
+    layout.tsx            # OS shell: sidebar nav + top bar + Hermes status badge
+    page.tsx              # OS Home: Hermes status, 3 domain cards, recent agent runs, quick actions
+    marketing/page.tsx    # command center (real Supabase counts) + module cards
+      brands, campaigns, pipeline, approvals, analytics, agents   # skeletons
+    trading/page.tsx      # command center
+      fx-scanner, quant-lab, risk-governor                        # skeletons
+    founder/page.tsx      # command center
+      daily-review, tasks, research, investors                    # skeletons
+    settings/page.tsx     # skeleton
+  login, forgot-password, reset-password, auth/callback           # kept (no shell)
+  api/auth, api/analytics                                          # kept
+components/os/{ui.tsx, os-shell.tsx}                               # new dark primitives + shell
+lib/agents/hermes-health.ts                                        # new shell status probe
+```
+- **Branding:** "Agentic OS" / "Personal Command Center". Dark, minimal (Vercel/Linear feel). No "Agency Operations" language.
+- **Shell:** `app/(shell)/layout.tsx` wraps all OS routes via a route group (no URL segment); auth pages stay outside it.
+- All skeleton sub-pages render a clear **"No backend yet"** notice. Marketing front shows real counts to prove Supabase + the stack still work.
+
+### Governance (unchanged, all domains)
+Marketing = drafts only (no live posting). Trading = research/risk only (no broker orders). Founder = decision support only. Human approval gates + server-side secrets.
+
+> Next: Codex rebuilds each domain screen-by-screen per `/CODEX_PLAN.md`, wiring to
+> the kept Supabase tables + `hermes-client.ts`. Marketing first (S2 core), then
+> Trading, then Founder.
+
+---
 
 > ⚠️ **Read [code-health-report.md](code-health-report.md) first.** The OS expansion
 > is **gated behind stabilization S1+S2**. Do **not** add Trading/Founder features
