@@ -34,7 +34,46 @@ new `components/os/*` + `lib/agents/hermes-health.ts`.
 7. `[UI]` **Workflows / Crina weekly plan** → port `_archive/lib/agents/crina-runner.ts` + the generate route; create `app/(shell)/marketing/workflows/...` + `app/api/marketing/*`.
 - **Acceptance (S2):** Crina plan → content items → pipeline dispatch → draft → approvals → scheduled (suggested time), with Hermes up AND down (fallback badged).
 
-## TRADING — T1–T6 (only after Marketing M1–M6 are solid)
+## PHASE 1.5 — Model Control Center + Agent Kanban (P1–P6, BEFORE Trading)
+
+Implement from `docs/model-control-spec.md` + `docs/agent-kanban-spec.md`. Real,
+testable provider connections + a working model switcher. Same rules: secrets
+server-side only (never `NEXT_PUBLIC_`), all routes `requireAdmin`, every agent run
+logs to `agent_runs`, fallback/demo badged, `components/os/*` only, no `_archive/`
+imports, build/tsc/lint green after each task. Report after each.
+
+### P1 — Provider layer `[ARCH]`
+- `lib/providers/{registry,types,anthropic,openai,deepseek,glm,ollama,telegram,slack,hermes}.ts`.
+- Each model provider exports `healthCheck()`, `listModels()`, `testCall(prompt)`, `chat(opts)`; channel providers (telegram, slack) export `healthCheck()` + `send(text)`.
+- `registry.ts`: `PROVIDERS` meta + `isConfigured(key)` + `getProvider(key)`. `hermes.ts` delegates to `lib/agents/hermes-client.ts` (no duplication).
+- `call-model.ts`: dispatch `provider==="hermes" → runHermesAgent`, else `getProvider(provider).chat()`.
+- Acceptance: a unit/manual call to each `healthCheck()` returns configured/connected; build green.
+
+### P2 — Provider API routes `[UI]`/`[ARCH]`
+- `GET /api/os/providers/[provider]/health`, `GET .../models`, `POST .../test` — exact shapes in `model-control-spec.md` §2. `requireAdmin`, whitelist `[provider]`, never echo secrets.
+- Acceptance: each route returns real results for configured providers; clean error for unconfigured.
+
+### P3 — `agent_config` table `[DATA]`
+- Run `supabase/migrations/0011_agent_config.sql` (already written). Columns: `id, agent_id (unique), provider, model, updated_at, updated_by`. RLS admin-gated.
+- Acceptance: table exists; `check:supabase` green.
+
+### P4 — Settings → Models page `[UI]`
+- `app/(shell)/settings/models` (or a Settings tab): a provider card per provider with live status dot (from `/health`), model list (from `/models`), and a **Test** button (calls `/test`, shows response + latency). "Configured via env" note; no secret inputs.
+- Acceptance: cards show real connected/disconnected; Test returns a real response per configured provider.
+
+### P5 — Agent Kanban `[UI]` (`/agents`)
+- `app/(shell)/agents/page.tsx` per `docs/agent-kanban-spec.md`: columns Idle→Queued→Running→Done→Error; cards merge `team.json` + `agents` + `agent_config` + latest `agent_runs` (domain badge, provider/model, last run + summary). Add "Agents" to shell nav.
+- **Run** → `POST /api/os/agents/[agentId]/run` (smoke run on assigned model via `call-model`, logs to `agent_runs`); optimistic Queued/Running, settle to Done/Error; FALLBACK badged. **View logs** drawer from `getAgentRuns(agentId)`.
+- Acceptance: all agents shown in correct columns from real data; Run works + logs.
+
+### P6 — Wire the model switcher `[ARCH]`
+- **Switch model** dropdown (live models from `/models`) → `POST /api/os/agents/[agentId]/config` upserts `agent_config`.
+- Update runners (marketing dispatch; later trading/founder) to resolve `{provider,model}` from `agent_config` (→ `agent_settings` → env) via `call-model` so the next run uses the selected provider/model. Use the service-role client so token-triggered runs aren't RLS-blocked.
+- Acceptance: switch a Marketing agent to a non-Hermes provider, Run, and confirm the `agent_runs` row shows the new provider/model. build/tsc/lint green; report to user.
+
+---
+
+## TRADING — T1–T6 (only after Marketing M1–M6 AND Phase 1.5 P1–P6 are solid)
 
 Implement **exactly** from `docs/trading_agents_spec.md`. Governance is absolute:
 **research/risk review only — no broker orders, no execution, no order tickets,
