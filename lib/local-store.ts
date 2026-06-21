@@ -139,10 +139,11 @@ export async function decideLocalApproval(input: {
   decision: Exclude<ApprovalDecision, "pending">;
   feedback: string;
   requestedByAgent: string;
+  nextStatus?: ContentItem["status"];
 }) {
   const data = await readLocalDashboardData();
   const decidedAt = new Date().toISOString();
-  const nextContentStatus = input.decision === "approved" ? "scheduled" : "draft";
+  const nextContentStatus = input.nextStatus ?? (input.decision === "approved" ? "scheduled" : "draft");
   const contentItem = data.contentItems.find((item) => item.id === input.contentItemId);
 
   if (!contentItem) {
