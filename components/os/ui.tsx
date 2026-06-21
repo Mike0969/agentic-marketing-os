@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { clsx } from "clsx";
-import type { ButtonHTMLAttributes, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 /** Dark, minimal OS primitives (Vercel/Linear aesthetic). Server-safe. */
 
@@ -104,6 +104,20 @@ export function OSTextarea({ className, ...props }: TextareaHTMLAttributes<HTMLT
       )}
       {...props}
     />
+  );
+}
+
+export function OSSelect({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      className={clsx(
+        "w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </select>
   );
 }
 

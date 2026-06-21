@@ -114,6 +114,26 @@ export async function createLocalCampaign(input: Omit<Campaign, "id" | "status">
   return campaign;
 }
 
+export async function updateLocalCampaign(id: string, patch: Partial<Campaign>) {
+  const data = await readLocalDashboardData();
+  const existing = data.campaigns.find((campaign) => campaign.id === id);
+
+  if (!existing) {
+    return null;
+  }
+
+  const updated: Campaign = { ...existing, ...patch, id };
+  const brand = data.brands.find((item) => item.id === updated.brand_id);
+  const nextData: DashboardData = {
+    ...data,
+    campaigns: data.campaigns.map((campaign) => (campaign.id === id ? updated : campaign)),
+    activity: [createActivity("Campaign updated", `${updated.title} was updated for ${brand?.name ?? "a brand"}.`), ...data.activity]
+  };
+
+  await writeFile(dataFile, JSON.stringify(nextData, null, 2));
+  return updated;
+}
+
 export async function decideLocalApproval(input: {
   contentItemId: string;
   decision: Exclude<ApprovalDecision, "pending">;
