@@ -49,7 +49,7 @@ export async function POST(_request: Request, context: { params: Promise<{ agent
     temperature: 0.1
   });
 
-  const status = result.ok ? "success" : "error";
+  const status = result.ok ? "success" : result.rateLimited ? "rate_limited" : "error";
   const outputSummary = summarize(result.json ?? result.text, result.error);
 
   await recordAgentRun({

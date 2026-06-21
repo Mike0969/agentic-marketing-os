@@ -127,7 +127,7 @@ create table if not exists agent_runs (
   agent_name text not null,
   workflow_name text not null,
   provider text not null,
-  status text not null check (status in ('success', 'fallback', 'error')),
+  status text not null check (status in ('success', 'fallback', 'error', 'rate_limited')),
   input jsonb not null default '{}'::jsonb,
   output jsonb,
   error text,

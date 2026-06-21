@@ -35,6 +35,7 @@ export type ProviderTestResult = {
   response: string;
   latencyMs: number;
   error: string | null;
+  rateLimited?: boolean;
 };
 
 export type ProviderUsage = {
@@ -60,6 +61,8 @@ export type ProviderChatResult = {
   error: string | null;
   latencyMs: number;
   model: string;
+  /** Soft failure: provider returned HTTP 429. Treat as "rate_limited", not a hard error. */
+  rateLimited?: boolean;
 };
 
 export type ModelProviderModule = {

@@ -69,6 +69,25 @@ export function failedChat(error: unknown, startedAt: number, model: string, sta
   };
 }
 
+/** Soft result for an HTTP 429 chat call — not a hard error. */
+export function rateLimitedChat(message: string, startedAt: number, model: string): ProviderChatResult {
+  return {
+    ok: false,
+    json: null,
+    text: null,
+    status: 429,
+    error: message,
+    latencyMs: elapsed(startedAt),
+    model,
+    rateLimited: true
+  };
+}
+
+/** Soft result for an HTTP 429 test call — not a hard error. */
+export function rateLimitedTest(message: string, startedAt: number, model: string): ProviderTestResult {
+  return { ok: false, model, response: "", latencyMs: elapsed(startedAt), error: message, rateLimited: true };
+}
+
 export function parseJsonFromText(text: string): unknown | null {
   try {
     return JSON.parse(text);

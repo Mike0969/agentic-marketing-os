@@ -157,6 +157,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                 {columnCards.map((card) => {
                   const isRunning = running === card.agentId;
                   const isFallback = card.lastRunStatus === "fallback";
+                  const isRateLimited = card.lastRunStatus === "rate_limited";
                   return (
                     <div key={card.agentId} className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
                       <div className="flex items-start justify-between gap-2">
@@ -164,7 +165,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                           <h3 className="font-semibold text-neutral-100">{card.name}</h3>
                           <div className="mt-1 flex flex-wrap gap-1.5">
                             <OSBadge tone={card.domain === "Marketing" ? "ok" : card.domain === "Trading" ? "warn" : "info"}>{card.domain}</OSBadge>
-                            <OSBadge tone={tone(card.column, isFallback)}>{isFallback ? "FALLBACK" : card.column}</OSBadge>
+                            <OSBadge tone={isRateLimited ? "warn" : tone(card.column, isFallback)}>{isRateLimited ? "RATE LIMITED" : isFallback ? "FALLBACK" : card.column}</OSBadge>
                           </div>
                         </div>
                       </div>
@@ -205,7 +206,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                               <div key={log.id} className="border-b border-neutral-900 pb-2 last:border-0 last:pb-0">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="text-xs font-medium text-neutral-300">{log.workflowName}</div>
-                                  <OSBadge tone={log.status === "success" ? "ok" : log.status === "fallback" ? "warn" : "danger"}>{log.status}</OSBadge>
+                                  <OSBadge tone={log.status === "success" ? "ok" : log.status === "fallback" || log.status === "rate_limited" ? "warn" : "danger"}>{log.status === "rate_limited" ? "rate limited" : log.status}</OSBadge>
                                 </div>
                                 <div className="mt-1 text-xs text-neutral-500">
                                   {log.provider} / {log.model ?? "default"} · {new Date(log.createdAt).toLocaleString()}
