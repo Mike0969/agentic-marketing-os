@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
-import { getSupabaseEnv } from "./env-loader.mjs";
+import { getSupabaseEnv, loadLocalEnv } from "./env-loader.mjs";
 
+loadLocalEnv();
 const { url, publicKey } = getSupabaseEnv();
 
 if (!url || !publicKey) {
@@ -9,6 +10,9 @@ if (!url || !publicKey) {
 }
 
 const supabase = createClient(url, publicKey);
+const serviceSupabase = process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  : supabase;
 const tables = [
   "brands",
   "agents",
@@ -31,7 +35,7 @@ const health = await supabase.rpc("schema_health");
 if (!health.error && health.data) {
   Object.assign(results, health.data);
   if (!Object.hasOwn(results, "agent_config")) {
-    const { count, error } = await supabase.from("agent_config").select("id", { count: "exact" }).limit(1);
+    const { count, error } = await serviceSupabase.from("agent_config").select("id", { count: "exact" }).limit(1);
     if (error) {
       hasError = true;
       results.agent_config = `error: ${error.message}`;

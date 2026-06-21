@@ -74,7 +74,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
     updateCard(card.agentId, { column: "queued" });
 
     window.setTimeout(() => {
-      setCards((current) => current.map((item) => (item.agentId === card.agentId && running === card.agentId ? { ...item, column: "running" } : item)));
+      setCards((current) => current.map((item) => (item.agentId === card.agentId ? { ...item, column: "running" } : item)));
     }, 100);
 
     try {
