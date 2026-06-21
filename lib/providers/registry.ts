@@ -13,7 +13,7 @@ export const PROVIDERS: ProviderMeta[] = [
   { key: "anthropic", label: "Anthropic", kind: "model", envKeys: ["ANTHROPIC_API_KEY"], defaultModel: process.env.ANTHROPIC_MODEL || "claude-haiku-4" },
   { key: "openai", label: "OpenAI", kind: "model", envKeys: ["OPENAI_API_KEY"], defaultModel: process.env.OPENAI_MODEL || "gpt-4o-mini" },
   { key: "deepseek", label: "DeepSeek", kind: "model", envKeys: ["DEEPSEEK_API_KEY"], defaultModel: process.env.DEEPSEEK_MODEL || "deepseek-chat" },
-  { key: "glm", label: "GLM / Zhipu", kind: "model", envKeys: ["ZHIPU_API_KEY"], defaultModel: process.env.ZHIPU_MODEL || "glm-4-flash" },
+  { key: "glm", label: "GLM / Zhipu", kind: "model", envKeys: ["ZHIPU_API_KEY"], defaultModel: process.env.ZHIPU_MODEL || "glm-5.2" },
   { key: "ollama", label: "Ollama", kind: "model", envKeys: ["OLLAMA_BASE_URL"], defaultModel: process.env.OLLAMA_MODEL || "llama3.1" },
   { key: "telegram", label: "Telegram", kind: "channel", envKeys: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] },
   { key: "slack", label: "Slack", kind: "channel", envKeys: ["SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID"] }

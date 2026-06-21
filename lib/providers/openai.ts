@@ -3,7 +3,7 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import type { ProviderChatOptions, ProviderChatResult } from "@/lib/providers/types";
 import { connectedHealth, elapsed, errorHealth, failedChat, failedTest, liveModels, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal } from "@/lib/providers/utils";
 
-const STATIC_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-5.5"];
+const STATIC_MODELS = ["gpt-5.5", "gpt-4o", "gpt-4o-mini"];
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 function apiKey() {

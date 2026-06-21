@@ -1,7 +1,7 @@
 import type { ProviderChatOptions, ProviderChatResult } from "@/lib/providers/types";
 import { connectedHealth, elapsed, errorHealth, failedChat, failedTest, liveModels, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal } from "@/lib/providers/utils";
 
-const BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+const BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1";
 const STATIC_MODELS = ["deepseek-chat", "deepseek-reasoner"];
 const DEFAULT_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
 

@@ -2,8 +2,8 @@ import type { ProviderChatOptions, ProviderChatResult } from "@/lib/providers/ty
 import { connectedHealth, elapsed, failedChat, failedTest, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal } from "@/lib/providers/utils";
 
 const BASE_URL = process.env.ZHIPU_BASE_URL || "https://open.bigmodel.cn/api/paas/v4";
-const STATIC_MODELS = ["glm-4", "glm-4-flash"];
-const DEFAULT_MODEL = process.env.ZHIPU_MODEL || "glm-4-flash";
+const STATIC_MODELS = ["glm-5.2", "glm-4.7", "glm-4.5-flash"];
+const DEFAULT_MODEL = process.env.ZHIPU_MODEL || "glm-5.2";
 
 function apiKey() {
   return process.env.ZHIPU_API_KEY;

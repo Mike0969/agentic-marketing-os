@@ -30,8 +30,8 @@ Two provider **kinds**:
 | Hermes | `hermes` | model | `HERMES_AGENT_ENDPOINT`, `HERMES_AGENT_TOKEN` | env endpoint | `GET {base}/v1/models` (live) |
 | Anthropic | `anthropic` | model | `ANTHROPIC_API_KEY` | `https://api.anthropic.com` | `GET /v1/models` (live) → fallback static `claude-opus-4, claude-sonnet-4, claude-haiku-4` |
 | OpenAI | `openai` | model | `OPENAI_API_KEY` | `https://api.openai.com` | `GET /v1/models` (live) |
-| DeepSeek | `deepseek` | model | `DEEPSEEK_API_KEY` | `https://api.deepseek.com` | `GET /models` (live) → fallback `deepseek-chat, deepseek-reasoner` |
-| GLM / Zhipu | `glm` | model | `ZHIPU_API_KEY` | `https://open.bigmodel.cn/api/paas/v4` | static `glm-4, glm-4-flash` (no public list endpoint; confirm) |
+| DeepSeek | `deepseek` | model | `DEEPSEEK_API_KEY` | `https://api.deepseek.com/v1` | `GET /models` (live) → fallback `deepseek-chat, deepseek-reasoner` |
+| GLM / Zhipu | `glm` | model | `ZHIPU_API_KEY` | `https://open.bigmodel.cn/api/paas/v4` | static `glm-5.2, glm-4.7, glm-4.5-flash` (default glm-5.2; no public list endpoint) |
 | Ollama | `ollama` | model | `OLLAMA_BASE_URL` (default `http://127.0.0.1:11434`) | env | `GET /api/tags` (live, local) |
 | Telegram | `telegram` | channel | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | `https://api.telegram.org` | — |
 | Slack | `slack` | channel | `SLACK_BOT_TOKEN`, `SLACK_CHANNEL_ID` | `https://slack.com/api` | — |
