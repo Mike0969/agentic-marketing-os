@@ -1,14 +1,18 @@
-import { SkeletonPage } from "@/components/os/ui";
+import { ModelsControlCenter } from "@/components/os/models-control-center";
+import { PageHeading } from "@/components/os/ui";
+import { PROVIDERS } from "@/lib/providers";
 
 export const dynamic = "force-dynamic";
 
 export default function Page() {
   return (
-    <SkeletonPage
-      eyebrow="Agentic OS"
-      title="Settings"
-      subtitle="Connections and configuration. Wired connectors (Hermes, Google Search Console) will be shown as live; everything else is clearly marked as a scaffold."
-      panels={["Connections (Hermes, GSC live)", "Models & preferences"]}
-    />
+    <>
+      <PageHeading
+        eyebrow="Agentic OS"
+        title="Settings · Models"
+        subtitle="Provider control center. Status, model lists, and test calls are live server-side checks; secrets remain in environment variables only."
+      />
+      <ModelsControlCenter providers={PROVIDERS} />
+    </>
   );
 }
