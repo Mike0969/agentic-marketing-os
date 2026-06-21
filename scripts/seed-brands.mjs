@@ -26,9 +26,9 @@ const updates = [
     label: "GridFactory.io",
     match: (q) => q.or("name.ilike.%gridfactory%,website.ilike.%gridfactory%"),
     values: {
-      pillars: "GPU infrastructure, green energy data centers, modular design, European expansion",
+      content_pillars: "GPU infrastructure, green energy data centers, modular design, European expansion",
       seo_targets: "GPU cloud provider, green data center Europe, modular data center, H100 H200 colocation",
-      ctas: "Request capacity, Download investor deck, Book a site visit",
+      reusable_ctas: "Request capacity, Download investor deck, Book a site visit",
       approval_rules: "No financial claims without legal review. No unverified capacity numbers."
     }
   },
@@ -36,9 +36,9 @@ const updates = [
     label: "Gulf-EL.com / NexRide",
     match: (q) => q.or("name.ilike.%gulf-el%,name.ilike.%gulf el%,name.ilike.%nexride%,website.ilike.%gulf-el%"),
     values: {
-      pillars: "zero-commission ride-hailing, EV fleet, AI dispatch, GCC mobility",
+      content_pillars: "zero-commission ride-hailing, EV fleet, AI dispatch, GCC mobility",
       seo_targets: "ride-hailing GCC, EV taxi Dubai, zero commission driver app, tokenized loyalty transport",
-      ctas: "Join as driver, Book a ride, Partner with us",
+      reusable_ctas: "Join as driver, Book a ride, Partner with us",
       approval_rules: "No pricing claims without ops confirmation. No market share claims."
     }
   }
