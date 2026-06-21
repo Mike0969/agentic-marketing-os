@@ -34,20 +34,75 @@ new `components/os/*` + `lib/agents/hermes-health.ts`.
 7. `[UI]` **Workflows / Crina weekly plan** → port `_archive/lib/agents/crina-runner.ts` + the generate route; create `app/(shell)/marketing/workflows/...` + `app/api/marketing/*`.
 - **Acceptance (S2):** Crina plan → content items → pipeline dispatch → draft → approvals → scheduled (suggested time), with Hermes up AND down (fallback badged).
 
-### T1 — Trading (only after Marketing core is solid)
-8. `[UI]` Flesh out `trading/fx-scanner` (FX-majors-vs-USD signal table), `quant-lab`, `risk-governor` as real dashboards.
-9. `[DATA]` Tables: `fx_signals`, `trade_ideas`, `risk_rules`, `trading_runs` (RLS admin-gated; mirror `agent_runs`).
-10. `[ARCH]` `lib/trading/*` runners via `hermes-client` (agent ids `agent-fx-scanner`, `agent-quant-lab`, `agent-risk-governor`); register in `team.json` + shared brain. **Research/risk only, no orders.**
-11. `[UI]` Wire screens → `app/api/trading/*` → Hermes; log to `agent_runs`.
+## TRADING — T1–T6 (only after Marketing M1–M6 are solid)
 
-### F1 — Founder Ops (after Trading)
-12. `[UI]` Flesh out `founder/daily-review`, `tasks`, `research`, `investors`.
-13. `[DATA]` Tables: `founder_tasks`, `decisions`, `research_notes`, `investor_items` (RLS).
-14. `[ARCH]` `lib/founder/*` runner `agent-founder-operator` via `hermes-client`. **Decision support only.** Wire `app/api/founder/*` → Hermes → `agent_runs`.
+Implement **exactly** from `docs/trading_agents_spec.md`. Governance is absolute:
+**research/risk review only — no broker orders, no execution, no order tickets,
+ever.** Same rules as Marketing: every call via `hermes-client.ts`, every run →
+`agent_runs`, fallback/demo **badged**, `components/os/*` only, no `_archive/`
+imports, build/tsc/lint green after each task. **Report after each task.**
 
-### X1 — Specs & prompts `[SAFE]`
-15. `docs/trading_agents_spec.md`, `docs/founder_ops_spec.md` (I/O schemas, allowed/blocked actions, data sources, guardrails).
-16. High-level OS prompt + per-agent prompts (FX Scanner, Quant Lab, Risk Governor, Founder Operator) under `prompts/` + `agents/` (the originals are in `_archive/` for reference).
+### T1 — Trading foundation `[ARCH]`/`[DATA]` (prerequisite for the screens)
+- `lib/trading/run-trading-agent.ts` — thin wrapper around `runHermesAgent` →
+  validate JSON → `recordAgentRun` → deterministic fallback (port the archived
+  `sub-agent-runner.ts` pattern; do not import it).
+- Register `agent-fx-scanner`, `agent-quant-lab`, `agent-risk-governor` in
+  `team.json` with `blocked_actions:["no broker orders","no live execution"]`.
+- Add brain file `trading-brief.md` (instruments, conventions, risk policy) to
+  `HERMES_BRAIN_PATH`; per-agent memory files `agent-<id>-memory.md`.
+- `[DATA]` Tables: `fx_signals`, `trade_ideas`, `risk_rules` (RLS admin-gated,
+  mirror existing patterns). Reuse `agent_runs` for observability.
+- Acceptance: a trading agent can be called and logs to `agent_runs`; build green.
+
+### T2 — FX Scanner screen `[UI]`/`[DATA]` (`app/(shell)/trading/fx-scanner`)
+- Inputs: symbols `EUR/USD, GBP/USD, USD/JPY, USD/CHF`; timeframes `15m, 1H`
+  (caller-provided `marketData` optional — if absent, score is null + a note).
+- "Run scan" → `app/api/trading/fx-scan` → `agent-fx-scanner` → output exactly the
+  FX Scanner schema (trend, momentum, S/R, setupQualityScore 0–100, bias, notes,
+  usdStrengthSummary, disclaimer). Render a signal table; persist to `fx_signals`.
+- Real Hermes output or **FALLBACK** badge if down. No order UI anywhere.
+- Acceptance: scan returns + renders + logs; build green.
+
+### T3 — Quant Lab screen `[UI]`/`[ARCH]` (`app/(shell)/trading/quant-lab`)
+- Inputs: taskDescription, repoPath, targetFile, optional context.
+- `app/api/trading/quant-proposal` → `agent-quant-lab` → output: plan,
+  `proposedDiff`, filesTouched, explanation, testCommand, `testResult:null`, risks.
+- UI shows the diff + **"Hand to Claude Code"** action (copies a ready prompt:
+  apply diff to repoPath, run testCommand, report). Hermes never applies/runs/commits;
+  human + Claude Code execute; human pastes `testResult` back to store.
+- Acceptance: proposal renders with diff + handoff; `testResult` only set post-run; build green.
+
+### T4 — Risk Governor screen `[UI]`/`[DATA]` (`app/(shell)/trading/risk-governor`)
+- Inputs: accountEquity, equityCurve, openPositions, drawdown, riskRules.
+- `app/api/trading/risk-review` → `agent-risk-governor` → output: metrics,
+  ruleViolations (severity + advisory recommendation), overallRiskLevel,
+  recommendations, disclaimer. Render report + violations; manage `risk_rules`.
+- **Advisory only** — never close/open positions; recommendations are human-facing.
+- Acceptance: review renders + logs; build green.
+
+### T5 — Trading command center wiring `[UI]` (`app/(shell)/trading/page.tsx`)
+- Replace skeleton metrics with real ones (latest FX signals count, open risk
+  level from last risk review, recent trading runs from `agent_runs`).
+- Cross-link the three modules; remove "No backend yet" once each is wired.
+- Surface the governance banner: "Research/risk only — no orders."
+- Acceptance: command center reflects real state; build green.
+
+### T6 — Trading specs polish + prompts + guardrail audit `[SAFE]`
+- Add per-agent prompts under `prompts/` + `agents/` (FX Scanner, Quant Lab, Risk
+  Governor) consistent with `docs/trading_agents_spec.md`.
+- Guardrail audit: grep the trading code for any order/execute/broker path — must
+  be **none**; confirm every output carries `disclaimer`; every run logs; fallbacks badged.
+- Acceptance: build/tsc/lint green; no execution path exists; report to user for review.
+
+### F1 — Founder Ops (after Trading T1–T6)
+- `[UI]` Flesh out `founder/daily-review`, `tasks`, `research`, `investors`.
+- `[DATA]` Tables: `founder_tasks`, `decisions`, `research_notes`, `investor_items` (RLS).
+- `[ARCH]` `lib/founder/*` runner `agent-founder-operator` via `hermes-client`. **Decision support only.** Wire `app/api/founder/*` → Hermes → `agent_runs`.
+- Spec to be written in `docs/founder_ops_spec.md` before F1 starts.
+
+### X1 — OS-wide prompts `[SAFE]`
+- High-level OS prompt describing Marketing/Trading/Founder + how Hermes treats each, under `prompts/` (originals in `_archive/` for reference).
+- `docs/agent-interconnections.md` (marketing chain) and `docs/trading_agents_spec.md` are written; add `docs/founder_ops_spec.md` when F1 is scheduled.
 
 ---
 
