@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { clsx } from "clsx";
+import type { ButtonHTMLAttributes, InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 /** Dark, minimal OS primitives (Vercel/Linear aesthetic). Server-safe. */
 
@@ -43,6 +44,66 @@ export function OSMetric({ label, value, hint }: { label: string; value: string 
       <div className="mt-2 text-3xl font-semibold tracking-tight text-neutral-50">{value}</div>
       {hint ? <div className="mt-1 text-sm text-neutral-400">{hint}</div> : null}
     </OSPanel>
+  );
+}
+
+export function OSButton({
+  children,
+  className,
+  variant = "primary",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" }) {
+  const variants = {
+    primary: "border-neutral-100 bg-neutral-100 text-neutral-950 hover:bg-white",
+    secondary: "border-neutral-700 bg-neutral-900 text-neutral-200 hover:border-neutral-500 hover:bg-neutral-800",
+    danger: "border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15"
+  };
+
+  return (
+    <button
+      className={clsx(
+        "inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+        variants[variant],
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function OSField({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium uppercase tracking-wider text-neutral-500">{label}</span>
+      <div className="mt-2">{children}</div>
+      {hint ? <span className="mt-1 block text-xs leading-5 text-neutral-500">{hint}</span> : null}
+    </label>
+  );
+}
+
+export function OSInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      className={clsx(
+        "w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+export function OSTextarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={clsx(
+        "min-h-28 w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm leading-6 text-neutral-100 outline-none transition placeholder:text-neutral-600 focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+      {...props}
+    />
   );
 }
 
