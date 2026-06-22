@@ -10,6 +10,8 @@ type DispatchResponse = {
   output: { title: string; hook: string; body: string; CTA: string; editorNotes: string };
   fallback: boolean;
   provider: string;
+  model?: string | null;
+  routeOrigin?: string;
   error?: string | null;
 };
 
@@ -80,7 +82,7 @@ export function PipelineWorkspace({
       updateItem(payload.contentItem);
       setSelected(payload.contentItem);
       setLastRun(payload);
-      setMessage(payload.fallback ? "FALLBACK draft created. Hermes did not return usable output." : "Hermes draft created and saved.");
+      setMessage(payload.fallback ? `FALLBACK draft created after ${payload.provider} failed.` : `${payload.provider} draft created and saved.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Agent dispatch failed.");
     } finally {
@@ -171,8 +173,9 @@ export function PipelineWorkspace({
             <div className="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm font-medium text-neutral-200">Last agent output</div>
-                <OSBadge tone={lastRun.fallback ? "warn" : "ok"}>{lastRun.fallback ? "FALLBACK" : "Hermes"}</OSBadge>
+                <OSBadge tone={lastRun.fallback ? "warn" : "ok"}>{lastRun.fallback ? "FALLBACK" : lastRun.provider}</OSBadge>
               </div>
+              <div className="mt-1 text-xs text-neutral-600">{lastRun.model ? `${lastRun.provider}/${lastRun.model}` : lastRun.provider}</div>
               <p className="mt-2 text-sm leading-6 text-neutral-400">{lastRun.output.editorNotes}</p>
             </div>
           ) : null}

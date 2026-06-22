@@ -10,6 +10,7 @@ export type CallModelOptions = ProviderChatOptions & {
   fallbackRole?: string;
   task: string;
   hermesInput?: HermesAgentCallOptions["input"];
+  hermesInstructions?: string;
   brainFiles?: string[];
 };
 
@@ -31,7 +32,7 @@ export async function callModel(options: CallModelOptions): Promise<ProviderChat
       fallbackAgentName: options.fallbackAgentName,
       fallbackRole: options.fallbackRole,
       task: options.task,
-      instructions: options.system,
+      instructions: options.hermesInstructions ?? options.system,
       outputSchema: options.jsonSchema ? (options.jsonSchema as Record<string, unknown>) : { response: "string" },
       input: options.hermesInput ?? { prompt: options.user },
       brainFiles: options.brainFiles,

@@ -16,7 +16,8 @@ type BrandAnalysis = {
 };
 
 type AnalysisResponse = {
-  provider: "hermes" | "deterministic";
+  provider: string;
+  model?: string | null;
   fallback: boolean;
   output: BrandAnalysis;
   error?: string | null;
@@ -239,10 +240,11 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="font-semibold text-neutral-100">Crina brand analysis</h3>
               <div className="flex gap-2">
-                <OSBadge tone={analysis.fallback ? "warn" : "ok"}>{analysis.fallback ? "FALLBACK" : "Hermes"}</OSBadge>
+                <OSBadge tone={analysis.fallback ? "warn" : "ok"}>{analysis.fallback ? "FALLBACK" : analysis.provider}</OSBadge>
                 {analysis.error ? <OSBadge tone="danger">Error logged</OSBadge> : null}
               </div>
             </div>
+            <div className="mt-2 text-xs text-neutral-600">{analysis.model ? `${analysis.provider}/${analysis.model}` : analysis.provider}</div>
             <p className="mt-4 text-sm leading-6 text-neutral-300">{analysis.output.positioningDiagnosis}</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <ListBlock label="Audience gaps" items={analysis.output.audienceGaps} />

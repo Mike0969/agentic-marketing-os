@@ -24,6 +24,8 @@ type RunResponse = {
   output: { statusSummary: string; nextAction: string; safetyNote: string };
   fallback: boolean;
   provider: string;
+  model?: string | null;
+  routeOrigin?: string;
   error?: string | null;
 };
 
@@ -70,7 +72,7 @@ export function AgentsWorkspace({ agents }: { agents: AgentCardData[] }) {
         )
       );
       setLastOutput({ agentId: agent.agentId, response: payload });
-      setMessage(payload.fallback ? `${agent.name} returned FALLBACK output.` : `${agent.name} health check logged.`);
+      setMessage(payload.fallback ? `${agent.name} returned FALLBACK output after ${payload.provider} failed.` : `${agent.name} health check logged with ${payload.provider}.`);
     } catch (error) {
       setItems((current) =>
         current.map((item) =>
@@ -133,8 +135,9 @@ export function AgentsWorkspace({ agents }: { agents: AgentCardData[] }) {
                 <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-950 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium text-neutral-200">Run output</div>
-                    <OSBadge tone={output.fallback ? "warn" : "ok"}>{output.fallback ? "FALLBACK" : "Hermes"}</OSBadge>
+                    <OSBadge tone={output.fallback ? "warn" : "ok"}>{output.fallback ? "FALLBACK" : output.provider}</OSBadge>
                   </div>
+                  <div className="mt-1 text-xs text-neutral-600">{output.model ? `${output.provider}/${output.model}` : output.provider}</div>
                   <p className="mt-2 text-sm leading-6 text-neutral-400">{output.output.statusSummary}</p>
                   <p className="mt-2 text-sm leading-6 text-neutral-500">{output.output.nextAction}</p>
                   <p className="mt-2 text-xs leading-5 text-neutral-500">{output.output.safetyNote}</p>

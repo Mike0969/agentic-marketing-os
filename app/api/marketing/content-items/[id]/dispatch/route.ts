@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
-import { runHermesAgent } from "@/lib/agents/hermes-client";
+import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { readLocalDashboardData, updateLocalContentItem } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ContentItem } from "@/lib/types";
@@ -85,7 +85,9 @@ async function readContext(id: string): Promise<{ item: ContentItem; brand: Bran
   };
 }
 
-async function writeDraft(id: string, draft: DraftOutput, fallback: boolean, agentName: string, error: string | null) {
+const routeOrigin = "api.marketing.content-items.dispatch";
+
+async function writeDraft(id: string, draft: DraftOutput, fallback: boolean, agentName: string, error: string | null, provider: string, model: string | null) {
   const patch: Partial<ContentItem> = {
     title: draft.title,
     hook: draft.hook,
@@ -94,7 +96,9 @@ async function writeDraft(id: string, draft: DraftOutput, fallback: boolean, age
     status: "draft",
     approval_status: "not_requested",
     assigned_agent: agentName,
-    performance_summary: fallback ? `FALLBACK: ${draft.editorNotes || error || "Deterministic draft generated."}` : `Hermes draft generated. ${draft.editorNotes}`
+    performance_summary: fallback
+      ? `FALLBACK (${provider}/${model ?? "default"}): ${draft.editorNotes || error || "Deterministic draft generated."}`
+      : `${provider}/${model ?? "default"} draft generated. ${draft.editorNotes}`
   };
 
   if (!isSupabaseConfigured()) {
@@ -118,7 +122,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
 
   const { item, brand, campaign } = contextData;
   const agent = agentForItem(item);
-  const result = await runHermesAgent({
+  const result = await runMarketingAgentModel({
     agentId: agent.id,
     fallbackAgentName: agent.name,
     fallbackRole: agent.role,
@@ -128,27 +132,26 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     outputSchema,
     input: { contentItem: item, brand, campaign },
     brainFiles: ["brand-briefs.md", "brand-voice.md", "content-formulas.md", "approval-rules.md", "reusable-ctas.md"],
-    temperature: 0.35
+    temperature: 0.35,
+    routeOrigin
   });
 
-  const hermesDraft = normalizeDraft(result.json);
-  const fallback = !result.ok || !hermesDraft;
-  const draft = fallback ? deterministicDraft(item, brand, result.error ?? "Invalid Hermes draft JSON.") : hermesDraft;
-  const provider = fallback ? "deterministic" : "hermes";
-  const error = fallback ? result.error ?? "Hermes returned invalid draft JSON." : null;
-  const updated = await writeDraft(id, draft, fallback, agent.name, error);
+  const modelDraft = normalizeDraft(result.json);
+  const fallback = !result.ok || !modelDraft;
+  const draft = fallback ? deterministicDraft(item, brand, result.error ?? "Invalid provider draft JSON.") : modelDraft;
+  const error = fallback ? result.error ?? `${result.provider} returned invalid draft JSON.` : null;
+  const updated = await writeDraft(id, draft, fallback, agent.name, error, result.provider, result.modelUsed);
 
   await recordAgentRun({
     agentName: agent.name,
     agentId: agent.id,
     workflowName: "Create Pipeline Draft",
-    provider,
+    provider: result.provider,
     status: fallback ? "fallback" : "success",
-    input: { contentItemId: item.id, title: item.title, brand: brand?.name ?? null, campaign: campaign?.title ?? null },
-    output: draft as unknown as Record<string, unknown>,
+    input: { contentItemId: item.id, title: item.title, brand: brand?.name ?? null, campaign: campaign?.title ?? null, routeOrigin },
+    output: { ...(draft as unknown as Record<string, unknown>), fallback_used: fallback, provider: result.provider, model: result.modelUsed, route_origin: routeOrigin },
     error,
     model: result.modelUsed,
-    backupModel: result.backupModel,
     tokensPrompt: result.usage.tokensPrompt,
     tokensCompletion: result.usage.tokensCompletion,
     tokensTotal: result.usage.tokensTotal,
@@ -161,5 +164,5 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
 
   revalidatePath("/marketing/pipeline");
   revalidatePath("/marketing");
-  return NextResponse.json({ contentItem: updated, output: draft, fallback, provider, error });
+  return NextResponse.json({ contentItem: updated, output: draft, fallback, provider: result.provider, model: result.modelUsed, routeOrigin, error });
 }

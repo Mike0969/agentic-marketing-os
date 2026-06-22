@@ -121,6 +121,16 @@ async function callModel({ provider, model, system, user, jsonSchema }) {
 Agent runners resolve `{provider, model}` from `agent_config` (see §4) and call
 `callModel`; every run still logs to `agent_runs` (set `provider`, `model`).
 
+**Marketing execution routes now using the provider-aware bridge:**
+- `POST /api/marketing/content-items/[id]/dispatch`
+- `POST /api/marketing/agents/[agentId]/run`
+- `POST /api/marketing/brands/[id]/analyze`
+
+Each route records `provider`, `model`, token usage, latency, provider status, and
+`routeOrigin`/`fallback_used` in `agent_runs.input`/`agent_runs.output`. Hermes is
+one supported provider, not a hardcoded assumption. Deterministic fallback remains
+available and is labelled `FALLBACK` in stored content/run output.
+
 ---
 
 ## 4. Supabase: `agent_config` (the "switch model" target)

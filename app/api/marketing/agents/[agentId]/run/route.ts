@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
-import { runHermesAgent } from "@/lib/agents/hermes-client";
 import { getHermesAgentProfile } from "@/lib/agents/hermes-registry";
+import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { getDashboardData } from "@/lib/data";
 
 type AgentTestOutput = {
@@ -17,6 +17,8 @@ const outputSchema = {
   safetyNote: "One sentence acknowledging no live posting/publishing without human approval."
 };
 
+const routeOrigin = "api.marketing.agents.run";
+
 function normalizeOutput(value: unknown): AgentTestOutput | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
@@ -29,8 +31,8 @@ function normalizeOutput(value: unknown): AgentTestOutput | null {
 
 function fallbackOutput(agentName: string, reason: string): AgentTestOutput {
   return {
-    statusSummary: `${agentName} did not receive a usable Hermes response, so the OS used deterministic fallback output.`,
-    nextAction: "Check Hermes health/model routing, then run the agent again before trusting output quality.",
+    statusSummary: `${agentName} did not receive a usable provider response, so the OS used deterministic fallback output.`,
+    nextAction: "Check provider health/model routing, then run the agent again before trusting output quality.",
     safetyNote: `FALLBACK: ${reason}. No live posting or publishing was performed.`
   };
 }
@@ -47,7 +49,7 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
   const data = await getDashboardData();
   const agentName = profile?.name ?? fallbackAgentName;
 
-  const result = await runHermesAgent({
+  const result = await runMarketingAgentModel({
     agentId,
     fallbackAgentName,
     fallbackRole,
@@ -69,26 +71,25 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
       openCampaigns: data.campaigns.filter((campaign) => campaign.status !== "completed").map((campaign) => ({ title: campaign.title, status: campaign.status }))
     },
     brainFiles: ["workflow-contract.md", "token-model-policy.md", "draft-publishing-safety.md"],
-    temperature: 0.2
+    temperature: 0.2,
+    routeOrigin
   });
 
-  const hermesOutput = normalizeOutput(result.json);
-  const fallback = !result.ok || !hermesOutput;
-  const output = fallback ? fallbackOutput(agentName, result.error ?? "Hermes returned invalid JSON.") : hermesOutput;
-  const provider = fallback ? "deterministic" : "hermes";
-  const error = fallback ? result.error ?? "Hermes returned invalid health-check JSON." : null;
+  const modelOutput = normalizeOutput(result.json);
+  const fallback = !result.ok || !modelOutput;
+  const output = fallback ? fallbackOutput(agentName, result.error ?? `${result.provider} returned invalid JSON.`) : modelOutput;
+  const error = fallback ? result.error ?? `${result.provider} returned invalid health-check JSON.` : null;
 
   await recordAgentRun({
     agentName,
     agentId,
     workflowName: "Marketing Agent Health Check",
-    provider,
+    provider: result.provider,
     status: fallback ? "fallback" : "success",
-    input: { agentId, agentName },
-    output: output as unknown as Record<string, unknown>,
+    input: { agentId, agentName, routeOrigin },
+    output: { ...(output as unknown as Record<string, unknown>), fallback_used: fallback, provider: result.provider, model: result.modelUsed, route_origin: routeOrigin },
     error,
     model: result.modelUsed,
-    backupModel: result.backupModel,
     tokensPrompt: result.usage.tokensPrompt,
     tokensCompletion: result.usage.tokensCompletion,
     tokensTotal: result.usage.tokensTotal,
@@ -97,5 +98,5 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
     providerResponseStatus: result.status
   });
 
-  return NextResponse.json({ output, fallback, provider, error });
+  return NextResponse.json({ output, fallback, provider: result.provider, model: result.modelUsed, routeOrigin, error });
 }

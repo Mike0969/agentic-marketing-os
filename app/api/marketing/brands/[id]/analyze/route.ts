@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
-import { runHermesAgent } from "@/lib/agents/hermes-client";
+import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { readLocalDashboardData } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand } from "@/lib/types";
@@ -25,6 +25,8 @@ const outputSchema = {
   approvalRisks: ["Claims or content areas requiring human review."],
   nextActions: ["Immediate actions to improve the brand profile."]
 };
+
+const routeOrigin = "api.marketing.brands.analyze";
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").slice(0, 8) : [];
@@ -52,7 +54,7 @@ function deterministicBrandAnalysis(brand: Brand, reason: string): BrandAnalysis
   const ctas = brand.ctas ?? brand.reusable_ctas ?? "";
 
   return {
-    positioningDiagnosis: `${brand.name} has a usable strategic base, but this is deterministic fallback analysis because Hermes could not return valid JSON: ${reason}`,
+    positioningDiagnosis: `${brand.name} has a usable strategic base, but this is deterministic fallback analysis because the selected provider could not return valid JSON: ${reason}`,
     audienceGaps: isGrid
       ? ["Clarify which investor or infrastructure buyer is primary for each campaign.", "Add any verified project stage, capacity, or partner constraints before claims are made."]
       : ["Separate rider, driver, fleet, regulator, and investor messaging so NexRide does not sound generic.", "Add verified launch geography and availability constraints before market-facing claims."],
@@ -104,7 +106,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     return NextResponse.json({ error: "Brand not found." }, { status: 404 });
   }
 
-  const result = await runHermesAgent({
+  const result = await runMarketingAgentModel({
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
     fallbackRole: "Marketing CEO Agent",
@@ -114,26 +116,25 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     outputSchema,
     input: { brand },
     brainFiles: ["brand-briefs.md", "brand-voice.md", "seo-targets.md", "approval-rules.md", "reusable-ctas.md"],
-    temperature: 0.2
+    temperature: 0.2,
+    routeOrigin
   });
 
-  const hermesOutput = normalizeAnalysis(result.json);
-  const fallback = !result.ok || !hermesOutput;
-  const output = fallback ? deterministicBrandAnalysis(brand, result.error ?? "Hermes returned invalid analysis.") : hermesOutput;
-  const provider = fallback ? "deterministic" : "hermes";
-  const error = fallback ? result.error ?? "Hermes returned invalid analysis JSON." : null;
+  const modelOutput = normalizeAnalysis(result.json);
+  const fallback = !result.ok || !modelOutput;
+  const output = fallback ? deterministicBrandAnalysis(brand, result.error ?? `${result.provider} returned invalid analysis.`) : modelOutput;
+  const error = fallback ? result.error ?? `${result.provider} returned invalid analysis JSON.` : null;
 
   await recordAgentRun({
     agentName: "Crina",
     agentId: "agent-crina",
     workflowName: "Brand Profile Analysis",
-    provider,
+    provider: result.provider,
     status: fallback ? "fallback" : "success",
-    input: { brandId: brand.id, brandName: brand.name },
-    output: output as unknown as Record<string, unknown>,
+    input: { brandId: brand.id, brandName: brand.name, routeOrigin },
+    output: { ...(output as unknown as Record<string, unknown>), fallback_used: fallback, provider: result.provider, model: result.modelUsed, route_origin: routeOrigin },
     error,
     model: result.modelUsed,
-    backupModel: result.backupModel,
     tokensPrompt: result.usage.tokensPrompt,
     tokensCompletion: result.usage.tokensCompletion,
     tokensTotal: result.usage.tokensTotal,
@@ -142,5 +143,5 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     providerResponseStatus: result.status
   });
 
-  return NextResponse.json({ provider, fallback, output, error });
+  return NextResponse.json({ provider: result.provider, model: result.modelUsed, fallback, output, routeOrigin, error });
 }
