@@ -96,6 +96,10 @@ async function writeDraft(id: string, draft: DraftOutput, fallback: boolean, age
     status: "draft",
     approval_status: "not_requested",
     assigned_agent: agentName,
+    workflow_stage: "crina_content_review",
+    current_owner: "Crina",
+    next_owner: "Visual & Video Agent",
+    agent_handoff_summary: `${agentName} created a draft and handed it back to Crina for review.`,
     performance_summary: fallback
       ? `FALLBACK (${provider}/${model ?? "default"}): ${draft.editorNotes || error || "Deterministic draft generated."}`
       : `${provider}/${model ?? "default"} draft generated. ${draft.editorNotes}`
@@ -131,7 +135,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
       "Turn the idea/brief into a useful draft. Do not publish, schedule, or approve. Keep claims conservative and flag approval risks in editorNotes.",
     outputSchema,
     input: { contentItem: item, brand, campaign },
-    brainFiles: ["brand-briefs.md", "brand-voice.md", "content-formulas.md", "approval-rules.md", "reusable-ctas.md"],
+    brainFiles: ["brand-voice.md", "content-formulas.md", "approval-rules.md", "reusable-ctas.md"],
     temperature: 0.35,
     routeOrigin
   });

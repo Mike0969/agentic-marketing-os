@@ -4,11 +4,23 @@ import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { updateLocalContentItem } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import type { ApprovalStatus, ContentItem, ContentStatus } from "@/lib/types";
+import type { ApprovalStatus, ContentItem, ContentStatus, ContentWorkflowStage } from "@/lib/types";
 
 const statuses: ContentStatus[] = ["idea", "brief", "draft", "visual", "approval", "scheduled", "published", "analyzed"];
 const approvalStatuses: ApprovalStatus[] = ["not_requested", "pending", "approved", "rejected", "changes_requested"];
-const editable = ["title", "body", "hook", "CTA", "platform", "content_type", "assigned_agent", "performance_summary"] as const;
+const workflowStages: ContentWorkflowStage[] = [
+  "crina_plan_approval",
+  "content_creation",
+  "crina_content_review",
+  "visual_creation",
+  "crina_final_review",
+  "human_final_approval",
+  "publishing_prep",
+  "scheduled",
+  "rework",
+  "done"
+];
+const editable = ["title", "body", "hook", "CTA", "platform", "content_type", "assigned_agent", "performance_summary", "current_owner", "next_owner"] as const;
 
 function cleanPatch(body: Record<string, unknown>): Partial<ContentItem> {
   const patch = Object.fromEntries(
@@ -19,6 +31,7 @@ function cleanPatch(body: Record<string, unknown>): Partial<ContentItem> {
 
   if (statuses.includes(body.status as ContentStatus)) patch.status = body.status as ContentStatus;
   if (approvalStatuses.includes(body.approval_status as ApprovalStatus)) patch.approval_status = body.approval_status as ApprovalStatus;
+  if (workflowStages.includes(body.workflow_stage as ContentWorkflowStage)) patch.workflow_stage = body.workflow_stage as ContentWorkflowStage;
 
   return patch;
 }
