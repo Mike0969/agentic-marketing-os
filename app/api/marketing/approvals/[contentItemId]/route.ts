@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { decideLocalApproval } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import type { Approval, ApprovalDecision, ContentItem, ContentStatus } from "@/lib/types";
+import type { Approval, ApprovalDecision, ContentItem, ContentStatus, ContentWorkflowStage } from "@/lib/types";
 
 const decisions: Array<Exclude<ApprovalDecision, "pending">> = ["approved", "rejected", "changes_requested"];
 
@@ -15,6 +15,25 @@ function gateNextStatus(gate: string, decision: Exclude<ApprovalDecision, "pendi
 
 function approvalStatus(decision: Exclude<ApprovalDecision, "pending">) {
   return decision;
+}
+
+function workflowStage(gate: string, decision: Exclude<ApprovalDecision, "pending">): ContentWorkflowStage {
+  if (decision !== "approved") return "rework";
+  return gate === "gate_1" ? "visual_creation" : "publishing_prep";
+}
+
+function currentOwner(gate: string, decision: Exclude<ApprovalDecision, "pending">) {
+  if (decision !== "approved") return "Crina";
+  return gate === "gate_1" ? "Visual & Video Agent" : "Publishing Agent";
+}
+
+function nextOwner(gate: string, decision: Exclude<ApprovalDecision, "pending">) {
+  if (decision !== "approved") return "Content Creator Agent";
+  return gate === "gate_1" ? "Crina" : "Human";
+}
+
+function memoryDecision(decision: Exclude<ApprovalDecision, "pending">) {
+  return decision === "approved" ? "approved" : "rejected";
 }
 
 export async function POST(request: Request, context: { params: Promise<{ contentItemId: string }> }) {
@@ -63,6 +82,9 @@ export async function POST(request: Request, context: { params: Promise<{ conten
     .update({
       status: nextStatus,
       approval_status: approvalStatus(decision),
+      workflow_stage: workflowStage(gate, decision),
+      current_owner: currentOwner(gate, decision),
+      next_owner: nextOwner(gate, decision),
       performance_summary:
         decision === "approved"
           ? gate === "gate_1"
@@ -97,6 +119,29 @@ export async function POST(request: Request, context: { params: Promise<{ conten
     : await supabase.from("approvals").insert(approvalPayload).select("*").single();
 
   if (approvalResult.error) return NextResponse.json({ error: approvalResult.error.message }, { status: 500 });
+
+  await supabase.from("feedback_memory").insert({
+    agent_id: "agent-crina",
+    content_type: gate === "gate_1" ? "draft_review" : "final_package",
+    content_summary: `${contentItem.title} — ${String(contentItem.hook ?? contentItem.body ?? "").slice(0, 400)}`,
+    content_full: {
+      content_item_id: contentItem.id,
+      brand_id: contentItem.brand_id,
+      campaign_id: contentItem.campaign_id,
+      title: contentItem.title,
+      platform: contentItem.platform,
+      content_type: contentItem.content_type,
+      hook: contentItem.hook,
+      body: contentItem.body,
+      cta: contentItem.CTA,
+      gate,
+      decision
+    },
+    decision: memoryDecision(decision),
+    reason: feedback || (decision === "approved" ? "Final package approved for publishing prep." : "Sent back for rework."),
+    decided_by: "human",
+    loop_iteration: 1
+  });
 
   await supabase.from("activity").insert(makeActivity("Approval decision recorded", `${contentItem.title} was marked ${decision.replaceAll("_", " ")}.`));
 
