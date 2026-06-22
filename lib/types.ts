@@ -41,6 +41,7 @@ export type Campaign = {
   status: CampaignStatus;
   start_date: string;
   end_date: string;
+  created_at?: string;
 };
 
 export const contentStatuses = [

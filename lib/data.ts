@@ -21,7 +21,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const [brands, agents, campaigns, contentItems, approvals, activity] = await Promise.all([
     supabase.from("brands").select("*").order("name"),
     supabase.from("agents").select("*").order("name"),
-    supabase.from("campaigns").select("*").order("start_date", { ascending: false }),
+    supabase.from("campaigns").select("*").order("created_at", { ascending: false }),
     supabase.from("content_items").select("*").order("scheduled_at", { ascending: false, nullsFirst: false }),
     supabase.from("approvals").select("*").order("decided_at", { ascending: false, nullsFirst: false }),
     supabase.from("activity").select("*").order("created_at", { ascending: false }).limit(20)

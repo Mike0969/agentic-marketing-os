@@ -25,7 +25,7 @@ type CampaignSeedOutput = {
 };
 
 const outputSchema = {
-  campaign_summary: "Short strategic summary of the campaign direction.",
+  campaign_summary: "Short strategic summary of the full campaign plan.",
   items: [
     {
       platform: "LinkedIn | X | Instagram | Facebook | Blog | TikTok | YouTube",
@@ -38,7 +38,7 @@ const outputSchema = {
       status: "idea | brief"
     }
   ],
-  crina_notes: "Notes about why these items were selected and what to review later."
+  crina_notes: "Notes about why this plan was selected, how the agents should execute, and what the operator should review later."
 };
 
 function firstObjectiveLine(objective: string) {
@@ -102,7 +102,7 @@ function deterministicItems(campaign: Campaign, brand: Brand | null): CampaignSe
     content_type: platform.toLowerCase().includes("blog") ? "SEO article brief" : index === 0 ? "Campaign anchor post" : "Platform post",
     title: `${campaign.title}: ${platform} angle`,
     hook: objective || campaign.title,
-    body: `Crina campaign seed for ${brand?.name ?? "the selected brand"}: turn the approved objective into a ${platform} draft focused on ${objective || campaign.title}. Keep claims conservative and prepare for final human approval.`,
+    body: `Crina campaign plan for ${brand?.name ?? "the selected brand"}: turn the approved objective into a ${platform} execution piece focused on ${objective || campaign.title}. Include the angle, draft direction, proof requirement, visual/video note when relevant, and final human approval requirement.`,
     CTA: cta,
     assigned_agent: platform.toLowerCase().includes("blog") ? "SEO Agent" : "Content Creator Agent",
     status: index === 0 ? "brief" : "idea"
@@ -133,7 +133,7 @@ function toContentItems(args: {
     approval_status: "not_requested",
     scheduled_at: null,
     published_at: null,
-    performance_summary: `${args.fallback ? "FALLBACK: " : ""}Campaign execution seed by Crina. Provider: ${args.provider}/${args.model ?? "default"}. ${args.crinaNotes}`,
+    performance_summary: `${args.fallback ? "FALLBACK: " : ""}Campaign plan by Crina. Campaign execution seed by Crina. Provider: ${args.provider}/${args.model ?? "default"}. ${args.crinaNotes}`,
     workflow_stage: "content_creation",
     current_owner: item.assigned_agent,
     next_owner: "Crina",
@@ -188,12 +188,12 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
     fallbackRole: "Marketing CEO Agent",
-    task: "Create Campaign Execution Seed",
+    task: "Create Campaign Plan For Execution",
     instructions:
-      "Read the approved campaign objective and create the first campaign execution seed. Produce 4-7 pipeline items only. Keep the brand scope strict. Do not publish, schedule, or mark anything approved.",
+      "Read the approved campaign objective and create the complete first campaign plan for execution. Produce 4-7 campaign pieces that cover the requested platforms, campaign angles, draft direction, visual/video needs when relevant, and CTA. Keep the brand scope strict: use only the provided brand object and campaign. Do not borrow claims, CTAs, tone, or positioning from any other brand. Do not publish, schedule, or mark anything approved.",
     outputSchema,
     input: { campaign, brand },
-    brainFiles: ["brand-briefs.md", "workflow-contract.md", "voice-calendar-memory.md", "approval-rules.md"],
+    brainFiles: ["workflow-contract.md", "voice-calendar-memory.md", "approval-rules.md"],
     temperature: 0.35,
     routeOrigin: "api.marketing.campaigns.execute"
   });
@@ -233,7 +233,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   await recordAgentRun({
     agentName: "Crina",
     agentId: "agent-crina",
-    workflowName: "Create Campaign Execution Seed",
+    workflowName: "Create Campaign Plan For Execution",
     provider: result.provider,
     status: fallback ? "fallback" : "success",
     input: { campaignId: campaign.id, campaignTitle: campaign.title, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.execute" },

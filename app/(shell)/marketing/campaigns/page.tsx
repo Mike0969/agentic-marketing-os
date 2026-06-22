@@ -23,7 +23,7 @@ export default async function CampaignsPage() {
         <OSMetric label="In execution" value={active} hint="Crina-led agent work" />
         <OSMetric label="Needs rework" value={paused} hint="Returned with feedback" />
       </div>
-      <CampaignWorkspace campaigns={data.campaigns} brands={data.brands} />
+      <CampaignWorkspace campaigns={data.campaigns} brands={data.brands} contentItems={data.contentItems} />
     </>
   );
 }
