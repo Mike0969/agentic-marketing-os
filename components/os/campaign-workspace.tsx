@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { CalendarDays, Loader2, Plus, Save } from "lucide-react";
+import { CalendarDays, CheckCircle2, Loader2, Plus, Save, ShieldCheck } from "lucide-react";
 import { OSBadge, OSButton, OSField, OSInput, OSPanel, OSSelect, OSTextarea } from "@/components/os/ui";
 import type { Brand, Campaign, CampaignStatus } from "@/lib/types";
 
@@ -9,6 +9,9 @@ type CampaignForm = {
   brand_id: string;
   title: string;
   objective: string;
+  source_material: string;
+  platforms: string;
+  primary_cta: string;
   target_audience: string;
   start_date: string;
   end_date: string;
@@ -16,9 +19,9 @@ type CampaignForm = {
 };
 
 const statusOptions: Array<{ value: CampaignStatus; label: string }> = [
-  { value: "planning", label: "Draft" },
-  { value: "active", label: "Active" },
-  { value: "paused", label: "Paused" },
+  { value: "planning", label: "Awaiting direction approval" },
+  { value: "active", label: "Approved for execution" },
+  { value: "paused", label: "Needs rework" },
   { value: "completed", label: "Completed" }
 ];
 
@@ -36,11 +39,32 @@ function emptyForm(brands: Brand[]): CampaignForm {
     brand_id: brands[0]?.id ?? "",
     title: "",
     objective: "",
+    source_material: "",
+    platforms: "LinkedIn, X, Instagram, Facebook, Blog",
+    primary_cta: "",
     target_audience: "",
     start_date: today,
     end_date: end,
     status: "planning"
   };
+}
+
+function buildObjective(form: CampaignForm) {
+  return [
+    `Objective:\n${form.objective.trim()}`,
+    form.source_material.trim() ? `Source material / notes:\n${form.source_material.trim()}` : "",
+    form.platforms.trim() ? `Platforms:\n${form.platforms.trim()}` : "",
+    form.primary_cta.trim() ? `Primary CTA / offer:\n${form.primary_cta.trim()}` : ""
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function firstObjectiveLine(objective: string) {
+  return objective
+    .replace(/^Objective:\s*/i, "")
+    .split(/\n\s*(Source material \/ notes:|Platforms:|Primary CTA \/ offer:)/i)[0]
+    .trim();
 }
 
 function brandMark(name: string) {
@@ -73,10 +97,15 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
     setMessage(null);
 
     try {
+      const payloadBody = {
+        ...form,
+        objective: buildObjective(form),
+        status: "planning" as CampaignStatus
+      };
       const response = await fetch("/api/marketing/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
+        body: JSON.stringify(payloadBody)
       });
       const payload = (await response.json()) as { campaign?: Campaign; error?: string };
 
@@ -85,7 +114,7 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
       setItems((current) => [payload.campaign!, ...current]);
       setForm(emptyForm(brands));
       setShowCreate(false);
-      setMessage("Campaign created and saved.");
+      setMessage("Campaign objective saved. Next step: direction approval before Crina executes.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Campaign creation failed.");
     } finally {
@@ -118,14 +147,33 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
 
   return (
     <div className="space-y-5">
+      <OSPanel className="border-cyan-500/20 bg-cyan-500/5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-cyan-300" />
+              <h2 className="text-lg font-semibold text-neutral-50">Campaign direction gate</h2>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
+              Create the campaign objective here. Crina starts only after direction approval. Internal SEO, content, visual, and publishing-prep loops stay inside the system until the final package needs your review.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <OSBadge tone="info">Brand-scoped</OSBadge>
+            <OSBadge tone="warn">Approval before execution</OSBadge>
+            <OSBadge tone="off">No live posting</OSBadge>
+          </div>
+        </div>
+      </OSPanel>
+
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-lg font-semibold text-neutral-50">Campaign register</h2>
-          <p className="mt-1 text-sm text-neutral-500">Manual creation is available for admin setup. Crina-created work can attach to these campaigns later.</p>
+          <h2 className="text-lg font-semibold text-neutral-50">Campaign objectives</h2>
+          <p className="mt-1 text-sm text-neutral-500">One objective becomes angles, platform drafts, visuals, calendar, final review, and draft publishing prep.</p>
         </div>
         <OSButton onClick={() => setShowCreate((current) => !current)}>
           <Plus className="h-4 w-4" />
-          New campaign
+          Create Campaign Objective
         </OSButton>
       </div>
 
@@ -136,10 +184,10 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
           <form onSubmit={createCampaign} className="space-y-4">
             <div className="flex items-center justify-between gap-3 border-b border-neutral-800 pb-4">
               <div>
-                <h3 className="font-semibold text-neutral-100">Create campaign</h3>
-                <p className="mt-1 text-sm text-neutral-500">Saved to Supabase when configured, otherwise local fallback.</p>
+                <h3 className="font-semibold text-neutral-100">Create campaign objective</h3>
+                <p className="mt-1 text-sm text-neutral-500">Give Crina the campaign source, audience, channels, and CTA. This saves as a planning objective.</p>
               </div>
-              <OSBadge tone="info">Draft</OSBadge>
+              <OSBadge tone="info">Awaiting direction approval</OSBadge>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -152,15 +200,43 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
                   ))}
                 </OSSelect>
               </OSField>
-              <OSField label="Campaign title">
-                <OSInput name="title" value={form.title} onChange={updateForm} required />
+              <OSField label="Campaign objective title">
+                <OSInput name="title" value={form.title} onChange={updateForm} placeholder="Example: 7-day GridFactory investor infrastructure campaign" required />
               </OSField>
               <OSField label="Objective">
-                <OSTextarea name="objective" value={form.objective} onChange={updateForm} required />
+                <OSTextarea
+                  name="objective"
+                  value={form.objective}
+                  onChange={updateForm}
+                  placeholder="What must this campaign achieve? What should the audience believe or do after seeing it?"
+                  required
+                />
               </OSField>
               <OSField label="Target audience">
-                <OSTextarea name="target_audience" value={form.target_audience} onChange={updateForm} required />
+                <OSTextarea
+                  name="target_audience"
+                  value={form.target_audience}
+                  onChange={updateForm}
+                  placeholder="Who is this for? Be specific: investor, operator, driver, partner, buyer, regulator..."
+                  required
+                />
               </OSField>
+              <OSField label="Source material / notes" hint="Paste a product update, transcript, blog idea, offer, or human notes for Crina.">
+                <OSTextarea
+                  name="source_material"
+                  value={form.source_material}
+                  onChange={updateForm}
+                  placeholder="One source can become angles, posts, visuals, and a weekly calendar."
+                />
+              </OSField>
+              <div className="grid gap-4">
+                <OSField label="Platforms">
+                  <OSInput name="platforms" value={form.platforms} onChange={updateForm} placeholder="LinkedIn, X, Instagram, Facebook, Blog, TikTok, YouTube" />
+                </OSField>
+                <OSField label="Primary CTA / offer">
+                  <OSInput name="primary_cta" value={form.primary_cta} onChange={updateForm} placeholder="Book a demo, request capacity, join as driver, partner with us..." />
+                </OSField>
+              </div>
               <OSField label="Start date">
                 <OSInput type="date" name="start_date" value={form.start_date} onChange={updateForm} required />
               </OSField>
@@ -175,7 +251,7 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
               </OSButton>
               <OSButton type="submit" disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Save campaign
+                Save objective
               </OSButton>
             </div>
           </form>
@@ -200,19 +276,20 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
                       <h3 className="text-lg font-semibold text-neutral-50">{campaign.title}</h3>
                     </div>
                   </div>
-                  <p className="mt-4 text-sm leading-6 text-neutral-300">{campaign.objective}</p>
+                  <p className="mt-4 text-sm leading-6 text-neutral-300">{firstObjectiveLine(campaign.objective)}</p>
                 </div>
                 <OSBadge tone={statusTone[campaign.status]}>{label}</OSBadge>
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
                 <Info label="Audience" value={campaign.target_audience} />
+                <Info label="Direction gate" value={campaign.status === "planning" ? "Needs approval before Crina starts" : campaign.status === "active" ? "Approved for Crina execution" : campaign.status === "paused" ? "Returned for rework" : "Closed"} />
                 <Info label="Start" value={campaign.start_date} icon />
                 <Info label="End" value={campaign.end_date} icon />
               </div>
 
               <div className="mt-4 max-w-xs">
-                <OSField label="Status">
+                <OSField label="Operator stage">
                   <OSSelect value={campaign.status} onChange={(event) => updateStatus(campaign, event.target.value as CampaignStatus)} disabled={updatingId === campaign.id}>
                     {statusOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -222,6 +299,13 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
                   </OSSelect>
                 </OSField>
               </div>
+
+              {campaign.status === "active" ? (
+                <div className="mt-4 flex items-start gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-100">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>Direction is approved. Next implementation step will let Crina execute this campaign and update Pipeline ownership.</span>
+                </div>
+              ) : null}
             </OSPanel>
           );
         })}
