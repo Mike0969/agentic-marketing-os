@@ -865,3 +865,148 @@ Then update copy so the operator understands:
 - SEO Loop is an internal campaign subsystem.
 
 No schema migration is required for this first UI framing step.
+
+## 12. Review Notes (Claude — UI/UX + flow review)
+
+Reviewed against this plan (canonical) and the live code. The plan is correct;
+the current UI contradicts it. Feedback for Codex below — no files changed.
+
+### Answers to the 6 checks
+
+1. **Is SEO Loop incorrectly exposed as a top-level operator action?** Yes.
+   `app/(shell)/marketing/page.tsx:29` renders `<SeoLoopLauncher />` as the primary
+   panel above the module grid, with a "Run SEO Loop" button posting straight to
+   `/api/marketing/seo-loop` (`components/os/seo-loop-launcher.tsx:44-47`). It is the
+   first action an operator sees — against the canonical rule that campaigns are the
+   start point.
+
+2. **Should it be embedded under campaign execution instead?** Yes. Per §4/§6, SEO
+   Loop is an internal quality loop Crina invokes during execution. The route already
+   runs headlessly (verified via API). Codex should add an optional `campaign_id` to
+   the route, attach its output to the campaign package, and remove the operator-facing
+   launcher (keep only as an admin/diagnostic link).
+
+3. **Confusing labels for a non-technical operator:**
+   - "SEO Loop / Builder + Crina judge / Run SEO Loop" — jargon; an operator does not
+     know what a "loop" is.
+   - Every module card is badged "rebuild" (`marketing/page.tsx:12-17`) — internal dev
+     status leaking to the operator.
+   - Campaign "Draft" = DB status `planning`, and the subtitle explains the schema to
+     the user: "Draft means planning in the current Supabase schema"
+     (`campaigns/page.tsx:17`).
+   - Pipeline: "Send", "Move", "Card detail", "FALLBACK" — task-tracker jargon; "Send"
+     does not say what it does.
+   - Approvals: single queue only, "Crina reviewed 1x", "Send rejection to memory"
+     (`approvals/page.tsx:149, :191`) — never tells the operator which gate they are at.
+   - Two "Agents" entry points: global `/agents` nav (`os-shell.tsx:13`) and the
+     `/marketing/agents` module — ambiguous.
+   - "Content items" metric — internal data term.
+
+4. **What each page should show** (validated against §7):
+   - `/marketing` — campaign command center. Primary CTA "Create Campaign Objective"
+     (replaces the SEO launcher); stage metrics (draft objectives · awaiting direction
+     approval · in execution · awaiting final approval · ready for publishing prep);
+     recent Crina decisions + recent agent runs; governance banner.
+   - `/campaigns` — operator start point & source of truth: objective create/edit,
+     brand selector, source_material, platforms, primary_cta, direction-approval status,
+     execution stage, current owner, final-package status, detail drawer. Today it is
+     only a manual register that admits "Crina-created work can attach… later"
+     (`campaign-workspace.tsx:124`).
+   - `/pipeline` — answers "where is my campaign?": campaign-level cards across stage
+     columns (Approved → Research/SEO → Content → Visual → Crina Review → Final Package
+     → Human Approval → Publishing Prep → Ready / Needs Rework), current-owner +
+     provider/model/fallback badges, expandable internal tasks. Today it is a
+     per-content-item Kanban with a "Send" dispatcher — wrong altitude.
+   - `/approvals` — human decision desk with two sections: (1) Campaign direction
+     approvals, (2) Final pre-publish package approvals. Each card: brand · objective ·
+     status · Crina summary · what decision is needed · approve/reject/request-changes +
+     reason. Today there is only one undifferentiated SEO queue.
+
+5. **Exact UI copy** — see "Suggested UI labels" below.
+
+6. **Acceptance tests** — see "Acceptance tests" below.
+
+### Must fix
+
+1. Remove the SEO Loop launcher from `/marketing`. Replace with a "Create Campaign
+   Objective" CTA. (Phase M-A, task 1 — no migration needed.)
+2. Make `/campaigns` the start point. Add objective/source/platform/CTA +
+   direction-approval state; this is where the operator begins, not a "register for
+   admin setup."
+3. Split Approvals into two gates (direction vs final package). A single queue makes
+   the operator approve blindly.
+4. Re-scope Pipeline to campaigns (stages + current owner), not per-content-item tasks.
+5. Enforce single-brand context in SEO Loop. Default run currently injects both brands
+   ("Use both default brands where relevant", `seo-loop/route.ts:173`) — cross-brand
+   leakage by default, violating §3. When wiring `campaign_id`, require the campaign's
+   `brand_id` and pass only that brand's context.
+6. Drop operator-facing internal status badges — remove the "rebuild" badges and the
+   "…in the current Supabase schema" subtitle.
+
+### Nice to have
+
+- Governance banner component reused on `/marketing`, `/approvals`, `/pipeline`:
+  "Drafts only. Nothing posts without your final approval."
+- Recent Crina decisions / recent agent runs widget on the home (already logging to
+  `agent_runs`).
+- Collapse the two "Agents" surfaces, or rename the marketing one to "Marketing Agents".
+- `content_queue` already exists for SEO; reuse it for direction/package approvals
+  rather than inventing parallel tables where possible (§5).
+- Data-model smell: `brands` carries duplicated mirror columns (`pillars`+`content_pillars`,
+  `ctas`+`reusable_ctas`) from `0007`. They work today but will drift — pick one set
+  before building more on top.
+
+### Suggested UI labels
+
+| Location | Now | Change to |
+|---|---|---|
+| /marketing primary CTA | "Run SEO Loop" | "Create Campaign Objective" |
+| /marketing subtitle | "Crina-led content production…" | "Start a campaign. Crina runs the agents. You approve before anything ships." |
+| Module badges | "rebuild" | (remove) |
+| /campaigns subtitle | "…Draft means planning in the current Supabase schema." | "Create a campaign objective and approve its direction before Crina starts work." |
+| Campaign status "Draft" | "Draft" (=planning) | "Planning" (map status→label without exposing schema) |
+| Pipeline card "Send" | "Send" | "Start agent draft" |
+| Pipeline "Card detail" | "Card detail" | "Campaign detail" |
+| Approvals title | "Approvals" | "Decisions" with two tabs: "Campaign direction" / "Final review (pre-publish)" |
+| Approvals subtitle | "…Crina-reviewed SEO loop outputs." | "Two moments need you: approve a campaign's direction, then approve the final package. Approval never posts live." |
+| "Send rejection to memory" | as-is | "Send back to Crina with reason" |
+| "Crina reviewed 1x" | as-is | "Reviewed by Crina" |
+
+### Acceptance tests (after implementation)
+
+- **GridFactory flow:** create objective → submit → approve direction → Crina executes
+  → Pipeline shows campaign + current owner → internal SEO/content/visual loops run →
+  Crina assembles final package → Approvals shows final package → human approves →
+  Publishing Agent prepares draft package → no live post → feedback + run data visible.
+- **Gulf-EL / NexRide flow:** repeat and confirm Gulf-EL context used, GridFactory not
+  mixed in, mobility tone/CTAs respected.
+- **Fallback:** break a provider → run execution → UI shows `FALLBACK` → `agent_runs`
+  logs fallback → human final approval still required.
+- **Rejection:** reject final package with reason → Crina receives reason → feedback
+  memory stores it → campaign returns to rework.
+- **Framing:** `/marketing` no longer shows a Run SEO Loop launcher; operator sees
+  "Create Campaign Objective" as the start point.
+- **Green build:** `npm run build`, type-check, and `next lint` pass.
+
+### Risks
+
+- **Brand cross-leakage (high):** current default SEO run mixes GridFactory + Gulf-EL;
+  close before Crina orchestration goes wide, or packages risk mixed claims/CTAs.
+- **Scope creep on Pipeline:** full campaign-stage board is the biggest lift (M-D). Ship
+  M-A (copy/CTA only, no schema) first to fix perception, then M-B/M-C.
+- **Auth surface:** `seo-loop` is now reachable via localhost/agent-token + excluded
+  from middleware. Fine for an internal Crina-invoked subsystem, but if the operator
+  launcher is removed, confirm nothing else still calls it expecting an admin session.
+- **Migration numbering collision:** `0014` is taken by `seo_loop_queue`; the
+  campaign-orchestration migration must be `0015`, and the planned Quant Lab migration
+  also eyed `0014` — coordinate so two sprints do not both grab `0015`.
+- **"Approval" overload:** `content_items` already has an `approval` status/column and
+  there is a separate `content_queue` approval flow. Two approval concepts in one domain
+  will confuse operators and Codex — unify the vocabulary before adding a third
+  (final-package) gate.
+
+### Recommended first step
+
+Phase M-A only (home CTA + copy + governance banner + Approvals two-gate framing).
+No migration, low-risk, removes the wrong mental model immediately. Hold M-B→M-F until
+M-A copy is approved.

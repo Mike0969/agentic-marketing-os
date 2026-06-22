@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { AlertTriangle, CalendarDays, CheckCircle2, Loader2, Plus, Save, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Loader2, Plus, Save, ShieldCheck, Sparkles } from "lucide-react";
 import { OSBadge, OSButton, OSField, OSInput, OSPanel, OSSelect, OSTextarea } from "@/components/os/ui";
 import type { Brand, Campaign, CampaignStatus } from "@/lib/types";
 
@@ -83,6 +83,7 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
   const [form, setForm] = useState<CampaignForm>(() => emptyForm(brands));
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [executingId, setExecutingId] = useState<string | null>(null);
   const [reworkId, setReworkId] = useState<string | null>(null);
   const [reworkReasons, setReworkReasons] = useState<Record<string, string>>({});
   const [savedReasons, setSavedReasons] = useState<Record<string, string>>({});
@@ -151,6 +152,9 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
         setReworkReasons((current) => ({ ...current, [campaign.id]: "" }));
         setReworkId(null);
         setMessage(`${payload.campaign.title} was sent back to Crina with your reason.`);
+      } else if (status === "active") {
+        setMessage(`${payload.campaign.title} is approved. Crina is creating the first campaign ideas now...`);
+        await startCrina(payload.campaign);
       } else {
         setMessage(`${payload.campaign.title} is now ${statusOptions.find((option) => option.value === payload.campaign!.status)?.label ?? payload.campaign.status}.`);
       }
@@ -158,6 +162,27 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
       setMessage(error instanceof Error ? error.message : "Campaign status update failed.");
     } finally {
       setUpdatingId(null);
+    }
+  }
+
+  async function startCrina(campaign: Campaign) {
+    setExecutingId(campaign.id);
+
+    try {
+      const response = await fetch(`/api/marketing/campaigns/${campaign.id}/execute`, { method: "POST" });
+      const payload = (await response.json()) as { contentItems?: unknown[]; alreadyStarted?: boolean; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Crina could not start this campaign.");
+
+      const count = payload.contentItems?.length ?? 0;
+      setMessage(
+        payload.alreadyStarted
+          ? "Crina already created Pipeline items for this campaign. Open Pipeline to continue."
+          : `Crina created ${count} campaign item${count === 1 ? "" : "s"} in Pipeline. Open Pipeline to see what she is working on.`
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Crina could not start this campaign.");
+    } finally {
+      setExecutingId(null);
     }
   }
 
@@ -373,9 +398,17 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
               ) : null}
 
               {campaign.status === "active" ? (
-                <div className="mt-4 flex items-start gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-100">
-                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>Direction is approved. Next implementation step will let Crina execute this campaign and update Pipeline ownership.</span>
+                <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-100">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>Direction is approved. Crina should create the first campaign ideas and move them into Pipeline.</span>
+                  </div>
+                  <div className="mt-3">
+                    <OSButton onClick={() => startCrina(campaign)} disabled={executingId === campaign.id}>
+                      {executingId === campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {executingId === campaign.id ? "Crina is creating..." : "Start Crina / create Pipeline items"}
+                    </OSButton>
+                  </div>
                 </div>
               ) : null}
             </OSPanel>

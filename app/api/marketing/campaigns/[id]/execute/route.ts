@@ -1,0 +1,256 @@
+import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+import { recordAgentRun } from "@/lib/agents/agent-runs";
+import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
+import { appendLocalContentItems, readLocalDashboardData } from "@/lib/local-store";
+import { requireAdmin } from "@/lib/auth";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import type { Brand, Campaign, ContentItem } from "@/lib/types";
+
+type CampaignSeedItem = {
+  platform: string;
+  content_type: string;
+  title: string;
+  hook: string;
+  body: string;
+  CTA: string;
+  assigned_agent: string;
+  status?: "idea" | "brief";
+};
+
+type CampaignSeedOutput = {
+  campaign_summary: string;
+  items: CampaignSeedItem[];
+  crina_notes: string;
+};
+
+const outputSchema = {
+  campaign_summary: "Short strategic summary of the campaign direction.",
+  items: [
+    {
+      platform: "LinkedIn | X | Instagram | Facebook | Blog | TikTok | YouTube",
+      content_type: "Post, article, carousel, video script, thread, or campaign brief.",
+      title: "Clear operator-readable idea title.",
+      hook: "Opening hook.",
+      body: "Brief direction for the agent who will produce the draft.",
+      CTA: "One clear CTA.",
+      assigned_agent: "Content Creator Agent | SEO Agent | Visual & Video Agent | Competitor Intelligence Agent",
+      status: "idea | brief"
+    }
+  ],
+  crina_notes: "Notes about why these items were selected and what to review later."
+};
+
+function firstObjectiveLine(objective: string) {
+  return objective
+    .replace(/^Objective:\s*/i, "")
+    .split(/\n\s*(Source material \/ notes:|Platforms:|Primary CTA \/ offer:)/i)[0]
+    .trim();
+}
+
+function parsePlatforms(objective: string) {
+  const match = objective.match(/Platforms:\s*([\s\S]*?)(?:\n\n|Primary CTA \/ offer:|$)/i);
+  const raw = match?.[1] ?? "LinkedIn, Blog, X";
+  return raw
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function parseCTA(objective: string, brand: Brand | null) {
+  const match = objective.match(/Primary CTA \/ offer:\s*([\s\S]*?)(?:\n\n|$)/i);
+  return match?.[1]?.trim() || brand?.ctas?.split(/[;\n,]/)[0]?.trim() || "Learn more";
+}
+
+function normalizeItems(value: unknown): CampaignSeedItem[] {
+  if (!value || typeof value !== "object") return [];
+  const raw = value as { items?: unknown };
+  if (!Array.isArray(raw.items)) return [];
+
+  const items: CampaignSeedItem[] = [];
+  for (const item of raw.items) {
+    if (!item || typeof item !== "object") continue;
+    const data = item as Record<string, unknown>;
+    const title = typeof data.title === "string" ? data.title.trim() : "";
+    const hook = typeof data.hook === "string" ? data.hook.trim() : "";
+    const body = typeof data.body === "string" ? data.body.trim() : "";
+    const CTA = typeof data.CTA === "string" ? data.CTA.trim() : typeof data.cta === "string" ? data.cta.trim() : "";
+    if (!title || !hook || !body || !CTA) continue;
+    items.push({
+      platform: typeof data.platform === "string" ? data.platform.trim() : "LinkedIn",
+      content_type: typeof data.content_type === "string" ? data.content_type.trim() : "Campaign idea",
+      title,
+      hook,
+      body,
+      CTA,
+      assigned_agent: typeof data.assigned_agent === "string" ? data.assigned_agent.trim() : "Content Creator Agent",
+      status: data.status === "brief" ? "brief" : "idea"
+    });
+  }
+
+  return items.slice(0, 7);
+}
+
+function deterministicItems(campaign: Campaign, brand: Brand | null): CampaignSeedItem[] {
+  const objective = firstObjectiveLine(campaign.objective);
+  const platforms = parsePlatforms(campaign.objective);
+  const cta = parseCTA(campaign.objective, brand);
+
+  return platforms.slice(0, 4).map((platform, index) => ({
+    platform,
+    content_type: platform.toLowerCase().includes("blog") ? "SEO article brief" : index === 0 ? "Campaign anchor post" : "Platform post",
+    title: `${campaign.title}: ${platform} angle`,
+    hook: objective || campaign.title,
+    body: `Crina campaign seed for ${brand?.name ?? "the selected brand"}: turn the approved objective into a ${platform} draft focused on ${objective || campaign.title}. Keep claims conservative and prepare for final human approval.`,
+    CTA: cta,
+    assigned_agent: platform.toLowerCase().includes("blog") ? "SEO Agent" : "Content Creator Agent",
+    status: index === 0 ? "brief" : "idea"
+  }));
+}
+
+function toContentItems(args: {
+  items: CampaignSeedItem[];
+  campaign: Campaign;
+  brand: Brand | null;
+  fallback: boolean;
+  provider: string;
+  model: string | null;
+  crinaNotes: string;
+}) {
+  return args.items.map((item, index) => ({
+    id: `content-${args.campaign.id}-${Date.now()}-${index}`,
+    brand_id: args.campaign.brand_id,
+    campaign_id: args.campaign.id,
+    platform: item.platform,
+    content_type: item.content_type,
+    title: item.title,
+    body: item.body,
+    hook: item.hook,
+    CTA: item.CTA,
+    status: item.status ?? "idea",
+    assigned_agent: item.assigned_agent,
+    approval_status: "not_requested",
+    scheduled_at: null,
+    published_at: null,
+    performance_summary: `${args.fallback ? "FALLBACK: " : ""}Campaign execution seed by Crina. Provider: ${args.provider}/${args.model ?? "default"}. ${args.crinaNotes}`,
+    workflow_stage: "content_creation",
+    current_owner: item.assigned_agent,
+    next_owner: "Crina",
+    human_feedback_tags: null,
+    crina_review_notes: args.crinaNotes,
+    agent_handoff_summary: `Crina created this from approved campaign direction for ${args.brand?.name ?? "selected brand"}.`
+  })) satisfies ContentItem[];
+}
+
+async function readCampaignContext(id: string) {
+  if (!isSupabaseConfigured()) {
+    const data = await readLocalDashboardData();
+    const campaign = data.campaigns.find((item) => item.id === id) ?? null;
+    const brand = campaign ? data.brands.find((item) => item.id === campaign.brand_id) ?? null : null;
+    const existing = data.contentItems.filter((item) => item.campaign_id === id && item.performance_summary?.includes("Campaign execution seed by Crina"));
+    return { campaign, brand, existing };
+  }
+
+  const supabase = await createClient();
+  if (!supabase) return { campaign: null, brand: null, existing: [] as ContentItem[] };
+
+  const [{ data: campaign }, { data: brands }, { data: existing }] = await Promise.all([
+    supabase.from("campaigns").select("*").eq("id", id).maybeSingle(),
+    supabase.from("brands").select("*"),
+    supabase.from("content_items").select("*").eq("campaign_id", id).ilike("performance_summary", "%Campaign execution seed by Crina%")
+  ]);
+
+  const typedCampaign = (campaign as Campaign | null) ?? null;
+  return {
+    campaign: typedCampaign,
+    brand: typedCampaign ? ((brands ?? []) as Brand[]).find((item) => item.id === typedCampaign.brand_id) ?? null : null,
+    existing: (existing ?? []) as ContentItem[]
+  };
+}
+
+export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
+  const { id } = await context.params;
+  const { campaign, brand, existing } = await readCampaignContext(id);
+
+  if (!campaign) return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
+  if (campaign.status !== "active") {
+    return NextResponse.json({ error: "Campaign direction must be approved before Crina can execute it." }, { status: 409 });
+  }
+  if (existing.length) {
+    return NextResponse.json({ contentItems: existing, alreadyStarted: true, message: "Crina already created pipeline items for this campaign." });
+  }
+
+  const result = await runMarketingAgentModel({
+    agentId: "agent-crina",
+    fallbackAgentName: "Crina",
+    fallbackRole: "Marketing CEO Agent",
+    task: "Create Campaign Execution Seed",
+    instructions:
+      "Read the approved campaign objective and create the first campaign execution seed. Produce 4-7 pipeline items only. Keep the brand scope strict. Do not publish, schedule, or mark anything approved.",
+    outputSchema,
+    input: { campaign, brand },
+    brainFiles: ["brand-briefs.md", "workflow-contract.md", "voice-calendar-memory.md", "approval-rules.md"],
+    temperature: 0.35,
+    routeOrigin: "api.marketing.campaigns.execute"
+  });
+
+  const modelItems = normalizeItems(result.json);
+  const fallback = !result.ok || !modelItems.length;
+  const crinaNotes =
+    !fallback && result.json && typeof result.json === "object" && "crina_notes" in result.json
+      ? String((result.json as Record<string, unknown>).crina_notes)
+      : fallback
+        ? `FALLBACK: ${result.error ?? "Crina returned invalid campaign seed JSON."}`
+        : "Crina created initial campaign execution items.";
+  const contentItems = toContentItems({
+    items: fallback ? deterministicItems(campaign, brand) : modelItems,
+    campaign,
+    brand,
+    fallback,
+    provider: result.provider,
+    model: result.modelUsed,
+    crinaNotes
+  });
+
+  let saved: ContentItem[] = [];
+
+  if (!isSupabaseConfigured()) {
+    saved = await appendLocalContentItems(contentItems);
+  } else {
+    const supabase = await createClient();
+    if (!supabase) return NextResponse.json({ error: "Supabase is not available." }, { status: 503 });
+
+    const insertRows = contentItems.map(({ id: _id, ...item }) => item);
+    const { data, error } = await supabase.from("content_items").insert(insertRows).select("*");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    saved = (data ?? []) as ContentItem[];
+  }
+
+  await recordAgentRun({
+    agentName: "Crina",
+    agentId: "agent-crina",
+    workflowName: "Create Campaign Execution Seed",
+    provider: result.provider,
+    status: fallback ? "fallback" : "success",
+    input: { campaignId: campaign.id, campaignTitle: campaign.title, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.execute" },
+    output: { items_created: saved.length, fallback_used: fallback, provider: result.provider, model: result.modelUsed, crina_notes: crinaNotes },
+    error: fallback ? result.error ?? "Invalid campaign seed JSON." : null,
+    model: result.modelUsed,
+    tokensPrompt: result.usage.tokensPrompt,
+    tokensCompletion: result.usage.tokensCompletion,
+    tokensTotal: result.usage.tokensTotal,
+    durationMs: result.durationMs,
+    brainResourcesUsed: result.brainResourcesUsed,
+    providerResponseStatus: result.status
+  });
+
+  revalidatePath("/marketing/campaigns");
+  revalidatePath("/marketing/pipeline");
+  revalidatePath("/marketing");
+
+  return NextResponse.json({ contentItems: saved, fallback, provider: result.provider, model: result.modelUsed, crinaNotes });
+}
