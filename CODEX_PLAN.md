@@ -93,7 +93,7 @@ imports, build/tsc/lint green after each task. **Report after each task.**
   mirror existing patterns). Reuse `agent_runs` for observability.
 - Acceptance: a trading agent can be called and logs to `agent_runs`; build green.
 
-### T2 — FX Scanner screen `[UI]`/`[DATA]` (`app/(shell)/trading/fx-scanner`)
+### T2 — FX Scanner screen `[UI]`/`[DATA]` (`app/(shell)/trading/fx-scanner`) — DONE
 - Inputs: symbols `EUR/USD, GBP/USD, USD/JPY, USD/CHF`; timeframes `15m, 1H`
   (caller-provided `marketData` optional — if absent, score is null + a note).
 - "Run scan" → `app/api/trading/fx-scan` → `agent-fx-scanner` → output exactly the
@@ -102,14 +102,18 @@ imports, build/tsc/lint green after each task. **Report after each task.**
 - Real Hermes output or **FALLBACK** badge if down. No order UI anywhere.
 - Acceptance: scan returns + renders + logs; build green.
 
-### T3 — Quant Lab screen `[UI]`/`[ARCH]` (`app/(shell)/trading/quant-lab`)
-- Inputs: taskDescription, repoPath, targetFile, optional context.
-- `app/api/trading/quant-proposal` → `agent-quant-lab` → output: plan,
-  `proposedDiff`, filesTouched, explanation, testCommand, `testResult:null`, risks.
-- UI shows the diff + **"Hand to Claude Code"** action (copies a ready prompt:
-  apply diff to repoPath, run testCommand, report). Hermes never applies/runs/commits;
-  human + Claude Code execute; human pastes `testResult` back to store.
-- Acceptance: proposal renders with diff + handoff; `testResult` only set post-run; build green.
+### T3 — Quant Lab: strategy research & validation workspace `[DATA]`/`[API]`/`[UI]`
+**NOT a generic coding page.** Full spec: `docs/quant-lab-spec.md` (and IA in
+`docs/trading-os-spec.md`). It tracks strategy ideas → experiments → backtest
+artifacts (referenced from coding agents) → validation → promotion (idea → reviewed
+signal logic). Implement as sub-tasks **Q1–Q6** (see `docs/quant-lab-spec.md §6`):
+- **Q1** migration `0014_quant_lab.sql` (`quant_strategies`, `strategy_experiments`, `strategy_artifacts`, `strategy_notes`; RLS like `0013`).
+- **Q2** `lib/trading/quant-lab-store.ts` + types (CRUD via service-role client).
+- **Q3** API: `/api/trading/strategies*` (+ `/promote`, `/experiments`, `/notes`, `/artifacts`) and `/api/trading/quant-lab/analyze` (`agent-quant-lab` via `callModel`, strict JSON per spec §4, logs `agent_runs`).
+- **Q4** board page (status columns + New Strategy) replacing the skeleton.
+- **Q5** strategy detail page (hypothesis, config+versioning, experiments timeline, notes, artifacts +Attach, **Generate coding-agent prompt**, promotion stepper, agent runs).
+- **Q6** FALLBACK/RATE LIMITED badges + disclaimer; acceptance E2E (create → analyze → attach backtest artifact+metrics → promising note → promote to Reviewed). No code execution, no orders.
+- Coding agents (Codex/Claude/ZCode) implement & run backtests **outside** the app; results are attached as referenced artifacts.
 
 ### T4 — Risk Governor screen `[UI]`/`[DATA]` (`app/(shell)/trading/risk-governor`)
 - Inputs: accountEquity, equityCurve, openPositions, drawdown, riskRules.
