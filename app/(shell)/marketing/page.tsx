@@ -1,4 +1,5 @@
 import { ModuleCard, OSMetric, PageHeading } from "@/components/os/ui";
+import { SeoLoopLauncher } from "@/components/os/seo-loop-launcher";
 import { getDashboardData } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export default async function MarketingHome() {
         <OSMetric label="Content items" value={data.contentItems.length} hint="Pipeline records" />
         <OSMetric label="Pending approvals" value={pending} hint="Human gates" />
       </div>
+      <SeoLoopLauncher />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {modules.map((m) => (
           <ModuleCard key={m.href} {...m} />

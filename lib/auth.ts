@@ -50,6 +50,22 @@ export async function requireAgentAccess(request: Request): Promise<AdminCheck> 
   return requireAdmin();
 }
 
+/**
+ * Local developer smoke tests run through curl without browser cookies. Allow
+ * loopback-only access outside production, otherwise use the normal machine
+ * token/admin path.
+ */
+export async function requireAgentAccessOrLocalhost(request: Request): Promise<AdminCheck> {
+  if (process.env.NODE_ENV !== "production") {
+    const hostname = new URL(request.url).hostname;
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return { ok: true, mode: "local", email: null };
+    }
+  }
+
+  return requireAgentAccess(request);
+}
+
 export async function getShellAuthStatus() {
   if (!isSupabaseConfigured()) {
     return { supabaseConfigured: false, isAuthenticated: true, isAdmin: true, email: null };
