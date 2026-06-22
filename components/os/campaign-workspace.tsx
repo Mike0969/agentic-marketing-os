@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { CalendarDays, CheckCircle2, Loader2, Plus, Save, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CalendarDays, CheckCircle2, Loader2, Plus, Save, ShieldCheck } from "lucide-react";
 import { OSBadge, OSButton, OSField, OSInput, OSPanel, OSSelect, OSTextarea } from "@/components/os/ui";
 import type { Brand, Campaign, CampaignStatus } from "@/lib/types";
 
@@ -83,6 +83,9 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
   const [form, setForm] = useState<CampaignForm>(() => emptyForm(brands));
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [reworkId, setReworkId] = useState<string | null>(null);
+  const [reworkReasons, setReworkReasons] = useState<Record<string, string>>({});
+  const [savedReasons, setSavedReasons] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
 
@@ -122,7 +125,13 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
     }
   }
 
-  async function updateStatus(campaign: Campaign, status: CampaignStatus) {
+  async function updateStatus(campaign: Campaign, status: CampaignStatus, feedbackReason = "") {
+    if (status === "paused" && !feedbackReason.trim()) {
+      setReworkId(campaign.id);
+      setMessage("Add a reason so Crina and the agents can learn before this objective goes to rework.");
+      return;
+    }
+
     setUpdatingId(campaign.id);
     setMessage(null);
 
@@ -130,14 +139,21 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
       const response = await fetch(`/api/marketing/campaigns/${campaign.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, feedback_reason: feedbackReason.trim() })
       });
       const payload = (await response.json()) as { campaign?: Campaign; error?: string };
 
       if (!response.ok || !payload.campaign) throw new Error(payload.error ?? "Campaign status update failed.");
 
       setItems((current) => current.map((item) => (item.id === payload.campaign!.id ? payload.campaign! : item)));
-      setMessage(`${payload.campaign.title} is now ${statusOptions.find((option) => option.value === payload.campaign!.status)?.label ?? payload.campaign.status}.`);
+      if (status === "paused") {
+        setSavedReasons((current) => ({ ...current, [campaign.id]: feedbackReason.trim() }));
+        setReworkReasons((current) => ({ ...current, [campaign.id]: "" }));
+        setReworkId(null);
+        setMessage(`${payload.campaign.title} was sent back to Crina with your reason.`);
+      } else {
+        setMessage(`${payload.campaign.title} is now ${statusOptions.find((option) => option.value === payload.campaign!.status)?.label ?? payload.campaign.status}.`);
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Campaign status update failed.");
     } finally {
@@ -156,6 +172,9 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
             </div>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
               Create the campaign objective here. Crina starts only after direction approval. Internal SEO, content, visual, and publishing-prep loops stay inside the system until the final package needs your review.
+            </p>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
+              Rejected objectives do not disappear. They stay here as <span className="text-amber-300">Needs rework</span>, and your reason is saved as learning memory for Crina.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -290,7 +309,18 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
 
               <div className="mt-4 max-w-xs">
                 <OSField label="Operator stage">
-                  <OSSelect value={campaign.status} onChange={(event) => updateStatus(campaign, event.target.value as CampaignStatus)} disabled={updatingId === campaign.id}>
+                  <OSSelect
+                    value={campaign.status}
+                    onChange={(event) => {
+                      const nextStatus = event.target.value as CampaignStatus;
+                      if (nextStatus === "paused") {
+                        setReworkId(campaign.id);
+                        return;
+                      }
+                      updateStatus(campaign, nextStatus);
+                    }}
+                    disabled={updatingId === campaign.id}
+                  >
                     {statusOptions.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -299,6 +329,48 @@ export function CampaignWorkspace({ campaigns, brands }: { campaigns: Campaign[]
                   </OSSelect>
                 </OSField>
               </div>
+
+              {reworkId === campaign.id ? (
+                <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/5 p-4">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                    <div>
+                      <div className="text-sm font-medium text-amber-100">Why is this campaign direction rejected?</div>
+                      <p className="mt-1 text-sm leading-6 text-neutral-400">
+                        This reason is saved to feedback memory so Crina can avoid the same mistake next time.
+                      </p>
+                    </div>
+                  </div>
+                  <OSTextarea
+                    className="mt-3"
+                    value={reworkReasons[campaign.id] ?? ""}
+                    onChange={(event) => setReworkReasons((current) => ({ ...current, [campaign.id]: event.target.value }))}
+                    placeholder="Example: wrong target audience, weak CTA, too generic, missing proof, wrong platform mix, not aligned with brand tone..."
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <OSButton
+                      variant="danger"
+                      disabled={updatingId === campaign.id || !reworkReasons[campaign.id]?.trim()}
+                      onClick={() => updateStatus(campaign, "paused", reworkReasons[campaign.id] ?? "")}
+                    >
+                      Send back to Crina with reason
+                    </OSButton>
+                    <OSButton variant="secondary" onClick={() => setReworkId(null)} disabled={updatingId === campaign.id}>
+                      Cancel
+                    </OSButton>
+                  </div>
+                </div>
+              ) : null}
+
+              {campaign.status === "paused" ? (
+                <div className="mt-4 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-sm text-amber-100">
+                  <div className="font-medium">Needs rework</div>
+                  <p className="mt-1 leading-6 text-neutral-300">
+                    This campaign stays in Campaign Objectives until Crina receives revised direction.
+                    {savedReasons[campaign.id] ? ` Last reason: ${savedReasons[campaign.id]}` : " The rejection reason is stored in feedback memory."}
+                  </p>
+                </div>
+              ) : null}
 
               {campaign.status === "active" ? (
                 <div className="mt-4 flex items-start gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-100">

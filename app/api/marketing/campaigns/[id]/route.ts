@@ -28,6 +28,11 @@ function cleanPatch(body: Record<string, unknown>): Partial<Campaign> {
   return patch;
 }
 
+function asOptionalString(body: Record<string, unknown>, key: string) {
+  const value = body[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
@@ -38,6 +43,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   const patch = cleanPatch(body);
   if (!Object.keys(patch).length) return NextResponse.json({ error: "No editable campaign fields were provided." }, { status: 400 });
+
+  const feedbackReason = asOptionalString(body, "feedback_reason");
+  if (patch.status === "paused" && !feedbackReason) {
+    return NextResponse.json({ error: "A reason is required so Crina and the agents can learn from the rejection." }, { status: 400 });
+  }
 
   if (!isSupabaseConfigured()) {
     const campaign = await updateLocalCampaign(id, patch);
@@ -53,7 +63,34 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const { data, error } = await supabase.from("campaigns").update(patch).eq("id", id).select("*").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  await supabase.from("activity").insert(makeActivity("Campaign updated", `${data.title} was updated.`));
+  if (patch.status === "paused" || patch.status === "active") {
+    await supabase.from("feedback_memory").insert({
+      agent_id: "agent-crina",
+      content_type: "campaign_direction",
+      content_summary: `${data.title} — ${String(data.objective ?? "").slice(0, 400)}`,
+      content_full: {
+        campaign_id: data.id,
+        brand_id: data.brand_id,
+        title: data.title,
+        objective: data.objective,
+        target_audience: data.target_audience,
+        status: data.status
+      },
+      decision: patch.status === "active" ? "approved" : "rejected",
+      reason: patch.status === "active" ? feedbackReason || "Campaign direction approved for Crina execution." : feedbackReason,
+      decided_by: "human",
+      loop_iteration: 1
+    });
+  }
+
+  await supabase
+    .from("activity")
+    .insert(
+      makeActivity(
+        patch.status === "paused" ? "Campaign sent to rework" : patch.status === "active" ? "Campaign direction approved" : "Campaign updated",
+        patch.status === "paused" ? `${data.title} needs rework: ${feedbackReason}` : `${data.title} was updated.`
+      )
+    );
   revalidatePath("/marketing/campaigns");
   revalidatePath("/marketing");
   return NextResponse.json({ campaign: data as Campaign, mode: "supabase" });
