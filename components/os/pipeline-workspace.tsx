@@ -15,6 +15,20 @@ type DispatchResponse = {
   error?: string | null;
 };
 
+type OrchestrateResponse = {
+  contentItems?: ContentItem[];
+  results?: Array<{
+    itemId: string;
+    title: string;
+    step: string;
+    status: "advanced" | "fallback" | "skipped" | "error";
+    owner: string;
+    error?: string | null;
+  }>;
+  message?: string;
+  error?: string;
+};
+
 type CampaignExecution = {
   campaign: Campaign;
   brand: Brand | null;
@@ -144,6 +158,7 @@ export function PipelineWorkspace({
   const selectedItem = selectedExecution?.items.find((item) => item.id === selectedItemId) ?? selectedExecution?.items[0] ?? null;
   const [dispatchingId, setDispatchingId] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
+  const [orchestratingId, setOrchestratingId] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<DispatchResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -155,6 +170,13 @@ export function PipelineWorkspace({
   function updateItem(updated: ContentItem) {
     setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)).filter(activeStatuses));
     setSelectedItemId(updated.id);
+  }
+
+  function updateItems(updatedItems: ContentItem[]) {
+    if (!updatedItems.length) return;
+    const updatedById = new Map(updatedItems.map((item) => [item.id, item]));
+    setItems((current) => current.map((item) => updatedById.get(item.id) ?? item).filter(activeStatuses));
+    setSelectedItemId(updatedItems[0]?.id ?? null);
   }
 
   async function sendToAgent(item: ContentItem) {
@@ -194,6 +216,32 @@ export function PipelineWorkspace({
       setMessage(error instanceof Error ? error.message : "Pipeline move failed.");
     } finally {
       setMovingId(null);
+    }
+  }
+
+  async function continueWorkflow(execution: CampaignExecution) {
+    setOrchestratingId(execution.campaign.id);
+    setMessage(null);
+    setLastRun(null);
+
+    try {
+      const response = await fetch(`/api/marketing/campaigns/${execution.campaign.id}/orchestrate`, { method: "POST" });
+      const payload = (await response.json()) as OrchestrateResponse;
+      if (!response.ok) throw new Error(payload.error ?? "Campaign workflow could not continue.");
+
+      updateItems(payload.contentItems ?? []);
+      const advanced = payload.results?.filter((result) => result.status === "advanced" || result.status === "fallback").length ?? 0;
+      const fallback = payload.results?.filter((result) => result.status === "fallback").length ?? 0;
+      setMessage(
+        payload.message ??
+          (advanced
+            ? `${execution.campaign.title}: ${advanced} internal step${advanced === 1 ? "" : "s"} completed${fallback ? `, ${fallback} with FALLBACK` : ""}.`
+            : `${execution.campaign.title}: no eligible internal step right now.`)
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Campaign workflow could not continue.");
+    } finally {
+      setOrchestratingId(null);
     }
   }
 
@@ -248,6 +296,21 @@ export function PipelineWorkspace({
                 <Detail label="Next owner" value={selectedExecution.nextOwner} />
                 <Detail label="Stage" value={stageLabel(selectedExecution.lane)} />
                 <Detail label="Pieces" value={`${selectedExecution.items.length || 0}`} />
+              </div>
+
+              <div className="rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-medium text-cyan-100">Internal agent workflow</div>
+                    <p className="mt-1 text-xs leading-5 text-neutral-400">
+                      Continue Crina&apos;s internal chain. The workflow stops before publishing and waits for your final approval.
+                    </p>
+                  </div>
+                  <OSButton onClick={() => continueWorkflow(selectedExecution)} disabled={orchestratingId === selectedExecution.campaign.id || selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing"}>
+                    {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                    {selectedExecution.lane === "human_approval" ? "Waiting for you" : selectedExecution.lane === "publishing" ? "In publishing prep" : "Continue workflow"}
+                  </OSButton>
+                </div>
               </div>
 
               <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
