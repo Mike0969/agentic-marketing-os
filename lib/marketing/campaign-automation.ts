@@ -13,13 +13,15 @@ export type CampaignAutomationStatus =
 type AutomationPatch = {
   automation_status?: CampaignAutomationStatus;
   automation_locked_until?: string | null;
+  automation_running?: boolean;
+  automation_lease_until?: string | null;
   automation_last_tick_at?: string | null;
   automation_error?: string | null;
   automation_no_progress_count?: number;
   automation_started_at?: string | null;
 };
 
-const LOCK_MS = 1000 * 60 * 5;
+const LOCK_MS = 1000 * 60 * 2;
 
 async function getSupabase() {
   if (!isSupabaseConfigured()) return null;
@@ -38,13 +40,15 @@ export async function acquireCampaignAutomationLock(campaignId: string) {
     .from("campaigns")
     .update({
       automation_status: "running",
+      automation_running: true,
+      automation_lease_until: lockUntil(),
       automation_locked_until: lockUntil(),
       automation_last_tick_at: new Date().toISOString(),
       automation_error: null
     })
     .eq("id", campaignId)
-    .or(`automation_locked_until.is.null,automation_locked_until.lt.${new Date().toISOString()}`)
-    .select("id,automation_status")
+    .or(`automation_running.eq.false,automation_lease_until.is.null,automation_lease_until.lt.${new Date().toISOString()}`)
+    .select("id,automation_status,automation_running,automation_lease_until")
     .maybeSingle();
 
   if (error) {
@@ -54,8 +58,9 @@ export async function acquireCampaignAutomationLock(campaignId: string) {
   if (!data) {
     return {
       ok: false as const,
-      status: 409,
-      error: "Campaign automation is already running in another tab or process."
+      skipped: true as const,
+      status: 200,
+      reason: "already running"
     };
   }
 
@@ -82,6 +87,8 @@ export async function releaseCampaignAutomationLock(
 ) {
   await setCampaignAutomationState(campaignId, {
     automation_status: status,
+    automation_running: false,
+    automation_lease_until: null,
     automation_locked_until: null,
     automation_error: options.error ?? null,
     ...(typeof options.noProgressCount === "number" ? { automation_no_progress_count: options.noProgressCount } : {})

@@ -47,6 +47,8 @@ export type Campaign = {
   automation_status?: CampaignAutomationStatus | null;
   automation_mode?: CampaignAutomationMode | null;
   automation_locked_until?: string | null;
+  automation_running?: boolean | null;
+  automation_lease_until?: string | null;
   automation_last_tick_at?: string | null;
   automation_error?: string | null;
   automation_no_progress_count?: number | null;
@@ -105,6 +107,7 @@ export type ContentItem = {
   human_feedback_tags?: string[] | null;
   crina_review_notes?: string | null;
   agent_handoff_summary?: string | null;
+  loop_iteration?: number | null;
 };
 
 export type ApprovalDecision = "pending" | "approved" | "rejected" | "changes_requested";

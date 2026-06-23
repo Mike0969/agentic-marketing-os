@@ -17,6 +17,8 @@ type OrchestrateResponse = {
   }>;
   message?: string;
   error?: string;
+  skipped?: boolean;
+  reason?: string;
 };
 
 type CampaignExecution = {
@@ -180,6 +182,10 @@ export function PipelineWorkspace({
       const response = await fetch(endpoint, { method: "POST" });
       const payload = (await response.json()) as OrchestrateResponse;
       if (!response.ok) throw new Error(payload.error ?? "Campaign automation could not continue.");
+      if (payload.skipped) {
+        setMessage(`${execution.campaign.title}: automation is already running in another tab or process.`);
+        return;
+      }
 
       updateItems(payload.contentItems ?? []);
       setLastRun(payload);

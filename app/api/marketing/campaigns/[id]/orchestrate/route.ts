@@ -59,6 +59,8 @@ const visualSchema = {
   editorNotes: "Short note explaining creative fit and risks."
 };
 
+const MAX_REWORK_ITERATIONS = 3;
+
 function normalizeDraft(value: unknown): DraftOutput | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
@@ -192,7 +194,7 @@ async function runContentDraft(item: ContentItem, brand: Brand | null, campaign:
       "Create a platform-specific draft from this campaign plan piece. Do not publish, schedule, or approve. Keep brand scope strict and flag claim risks.",
     outputSchema: draftSchema,
     input: { contentItem: item, brand, campaign },
-    brainFiles: ["brand-voice.md", "content-formulas.md", "approval-rules.md", "reusable-ctas.md"],
+    brainFiles: ["content-formulas.md", "approval-rules.md"],
     temperature: 0.35,
     routeOrigin: "api.marketing.campaigns.orchestrate"
   });
@@ -240,7 +242,14 @@ async function runContentDraft(item: ContentItem, brand: Brand | null, campaign:
 
   return {
     item: updated,
-    result: { itemId: item.id, title: draft.title, step: "Content draft", status: fallback ? "fallback" : "advanced", owner: "Crina", error }
+    result: {
+      itemId: item.id,
+      title: draft.title,
+      step: "Content draft",
+      status: updated ? (fallback ? "fallback" : "advanced") : "error",
+      owner: updated ? "Crina" : agent.name,
+      error: updated ? error : error ?? "Draft was generated but could not be saved."
+    }
   };
 }
 
@@ -263,14 +272,17 @@ async function runCrinaDraftReview(item: ContentItem, brand: Brand | null, campa
   const review = fallback ? deterministicReview(item, run.error ?? "Invalid Crina review JSON.") : modelReview;
   const error = fallback ? run.error ?? `${run.provider} returned invalid review JSON.` : null;
   const approved = review.decision === "approve";
+  const nextLoopIteration = approved ? item.loop_iteration ?? 0 : (item.loop_iteration ?? 0) + 1;
+  const forceHumanReview = !approved && nextLoopIteration >= MAX_REWORK_ITERATIONS;
 
   const updated = await saveItem(item.id, {
-    status: approved ? "visual" : "draft",
-    approval_status: "not_requested",
-    workflow_stage: approved ? "visual_creation" : "content_creation",
-    current_owner: approved ? "Visual & Video Agent" : item.assigned_agent || "Content Creator Agent",
-    next_owner: "Crina",
-    crina_review_notes: `${fallback ? "FALLBACK: " : ""}${review.reason}${review.improvements?.length ? ` Improvements: ${review.improvements.join("; ")}` : ""}`,
+    status: approved ? "visual" : forceHumanReview ? "approval" : "draft",
+    approval_status: forceHumanReview ? "pending" : "not_requested",
+    workflow_stage: approved ? "visual_creation" : forceHumanReview ? "human_final_approval" : "content_creation",
+    current_owner: approved ? "Visual & Video Agent" : forceHumanReview ? "Human" : item.assigned_agent || "Content Creator Agent",
+    next_owner: approved ? "Crina" : forceHumanReview ? "Crina" : "Crina",
+    loop_iteration: nextLoopIteration,
+    crina_review_notes: `${fallback ? "FALLBACK: " : ""}${forceHumanReview ? "Needs human review after repeated internal rework. " : ""}${review.reason}${review.improvements?.length ? ` Improvements: ${review.improvements.join("; ")}` : ""}`,
     performance_summary: `${item.performance_summary ?? ""}\nCrina draft review (${run.provider}/${run.modelUsed ?? "default"}): ${review.reason}`.trim()
   });
 
@@ -296,7 +308,14 @@ async function runCrinaDraftReview(item: ContentItem, brand: Brand | null, campa
 
   return {
     item: updated,
-    result: { itemId: item.id, title: item.title, step: "Crina draft review", status: fallback ? "fallback" : "advanced", owner: approved ? "Visual & Video Agent" : item.assigned_agent, error }
+    result: {
+      itemId: item.id,
+      title: item.title,
+      step: "Crina draft review",
+      status: updated ? (fallback ? "fallback" : "advanced") : "error",
+      owner: forceHumanReview ? "Human" : approved ? "Visual & Video Agent" : item.assigned_agent,
+      error: updated ? error : error ?? "Crina review completed but could not be saved."
+    }
   };
 }
 
@@ -355,7 +374,14 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
 
   return {
     item: updated,
-    result: { itemId: item.id, title: item.title, step: "Visual direction", status: fallback ? "fallback" : "advanced", owner: "Crina", error }
+    result: {
+      itemId: item.id,
+      title: item.title,
+      step: "Visual direction",
+      status: updated ? (fallback ? "fallback" : "advanced") : "error",
+      owner: updated ? "Crina" : "Visual & Video Agent",
+      error: updated ? error : error ?? "Visual direction was generated but could not be saved."
+    }
   };
 }
 
@@ -378,14 +404,17 @@ async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campa
   const review = fallback ? deterministicReview(item, run.error ?? "Invalid Crina final review JSON.") : modelReview;
   const error = fallback ? run.error ?? `${run.provider} returned invalid final review JSON.` : null;
   const ready = review.decision === "approve";
+  const nextLoopIteration = ready ? item.loop_iteration ?? 0 : (item.loop_iteration ?? 0) + 1;
+  const forceHumanReview = !ready && nextLoopIteration >= MAX_REWORK_ITERATIONS;
 
   const updated = await saveItem(item.id, {
-    status: ready ? "approval" : "draft",
-    approval_status: ready ? "pending" : "changes_requested",
-    workflow_stage: ready ? "human_final_approval" : "content_creation",
-    current_owner: ready ? "Human" : item.assigned_agent || "Content Creator Agent",
-    next_owner: ready ? "Publishing Agent" : "Crina",
-    crina_review_notes: `${fallback ? "FALLBACK: " : ""}${review.reason}${review.improvements?.length ? ` Improvements: ${review.improvements.join("; ")}` : ""}`,
+    status: ready || forceHumanReview ? "approval" : "draft",
+    approval_status: ready || forceHumanReview ? "pending" : "changes_requested",
+    workflow_stage: ready || forceHumanReview ? "human_final_approval" : "content_creation",
+    current_owner: ready || forceHumanReview ? "Human" : item.assigned_agent || "Content Creator Agent",
+    next_owner: ready || forceHumanReview ? "Publishing Agent" : "Crina",
+    loop_iteration: nextLoopIteration,
+    crina_review_notes: `${fallback ? "FALLBACK: " : ""}${forceHumanReview ? "Needs human review after repeated internal rework. " : ""}${review.reason}${review.improvements?.length ? ` Improvements: ${review.improvements.join("; ")}` : ""}`,
     performance_summary: `${item.performance_summary ?? ""}\nCrina final review (${run.provider}/${run.modelUsed ?? "default"}): ${review.reason}`.trim()
   });
 
@@ -411,7 +440,14 @@ async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campa
 
   return {
     item: updated,
-    result: { itemId: item.id, title: item.title, step: "Crina final review", status: fallback ? "fallback" : "advanced", owner: ready ? "Human" : item.assigned_agent, error }
+    result: {
+      itemId: item.id,
+      title: item.title,
+      step: "Crina final review",
+      status: updated ? (fallback ? "fallback" : "advanced") : "error",
+      owner: ready || forceHumanReview ? "Human" : item.assigned_agent,
+      error: updated ? error : error ?? "Crina final review completed but could not be saved."
+    }
   };
 }
 
@@ -439,7 +475,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const { id } = await context.params;
   const lock = await acquireCampaignAutomationLock(id);
-  if (!lock.ok) return NextResponse.json({ error: lock.error }, { status: lock.status });
+  if (!lock.ok) {
+    const reason = "reason" in lock ? lock.reason : "error" in lock ? lock.error : "already running";
+    return NextResponse.json({ skipped: true, reason }, { status: lock.status });
+  }
 
   try {
   const { campaign, brand, items } = await readContext(id);

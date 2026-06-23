@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { POST as executeCampaign } from "@/app/api/marketing/campaigns/[id]/execute/route";
 import { POST as tickCampaign } from "@/app/api/marketing/campaigns/[id]/orchestrate/route";
+import { requireAdmin } from "@/lib/auth";
 import { acquireCampaignAutomationLock, releaseCampaignAutomationLock } from "@/lib/marketing/campaign-automation";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -10,16 +11,24 @@ async function jsonFrom(response: Response) {
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
   const { id } = await context.params;
   const paramsContext = { params: Promise.resolve({ id }) };
   const lock = await acquireCampaignAutomationLock(id);
-  if (!lock.ok) return NextResponse.json({ error: lock.error }, { status: lock.status });
+  if (!lock.ok) {
+    const reason = "reason" in lock ? lock.reason : "error" in lock ? lock.error : "already running";
+    return NextResponse.json({ skipped: true, reason }, { status: lock.status });
+  }
 
   let executeResponse: Response;
   let executePayload: Record<string, unknown>;
 
   try {
-    executeResponse = await executeCampaign(request, paramsContext);
+    const headers = new Headers(request.headers);
+    headers.set("x-campaign-automation-lock-held", "campaign-start-wrapper");
+    executeResponse = await executeCampaign(new Request(request.url, { method: "POST", headers }), paramsContext);
     executePayload = await jsonFrom(executeResponse);
   } catch (error) {
     await releaseCampaignAutomationLock(id, "needs_attention", { error: error instanceof Error ? error.message : "Campaign automation could not start." });

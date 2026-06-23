@@ -4,6 +4,7 @@ import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { appendLocalContentItems, readLocalDashboardData } from "@/lib/local-store";
 import { requireAdmin } from "@/lib/auth";
+import { acquireCampaignAutomationLock, releaseCampaignAutomationLock } from "@/lib/marketing/campaign-automation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ContentItem } from "@/lib/types";
 
@@ -139,7 +140,8 @@ function toContentItems(args: {
     next_owner: "Crina",
     human_feedback_tags: null,
     crina_review_notes: args.crinaNotes,
-    agent_handoff_summary: `Crina created this from approved campaign direction for ${args.brand?.name ?? "selected brand"}.`
+    agent_handoff_summary: `Crina created this from approved campaign direction for ${args.brand?.name ?? "selected brand"}.`,
+    loop_iteration: 0
   })) satisfies ContentItem[];
 }
 
@@ -169,11 +171,7 @@ async function readCampaignContext(id: string) {
   };
 }
 
-export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const admin = await requireAdmin();
-  if (!admin.ok) return admin.response;
-
-  const { id } = await context.params;
+async function executeCampaignPlan(id: string) {
   const { campaign, brand, existing } = await readCampaignContext(id);
 
   if (!campaign) return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
@@ -253,4 +251,30 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   revalidatePath("/marketing");
 
   return NextResponse.json({ contentItems: saved, fallback, provider: result.provider, model: result.modelUsed, crinaNotes });
+}
+
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin();
+  if (!admin.ok) return admin.response;
+
+  const { id } = await context.params;
+  const lockAlreadyHeld = request.headers.get("x-campaign-automation-lock-held") === "campaign-start-wrapper";
+  if (lockAlreadyHeld) return executeCampaignPlan(id);
+
+  const lock = await acquireCampaignAutomationLock(id);
+  if (!lock.ok) {
+    const reason = "reason" in lock ? lock.reason : "error" in lock ? lock.error : "already running";
+    return NextResponse.json({ skipped: true, reason }, { status: lock.status });
+  }
+
+  try {
+    const response = await executeCampaignPlan(id);
+    await releaseCampaignAutomationLock(id, response.ok ? "idle" : "needs_attention", {
+      error: response.ok ? null : "Crina campaign plan creation failed."
+    });
+    return response;
+  } catch (error) {
+    await releaseCampaignAutomationLock(id, "needs_attention", { error: error instanceof Error ? error.message : "Crina campaign plan creation failed." });
+    throw error;
+  }
 }
