@@ -4,9 +4,12 @@ import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { readLocalDashboardData, updateLocalContentItem } from "@/lib/local-store";
 import { requireAgentAccess } from "@/lib/auth";
+import { getFeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
 import { acquireCampaignAutomationLock, releaseCampaignAutomationLock } from "@/lib/marketing/campaign-automation";
+import { assetKindFor, desiredAssetCount, normalizeReadyPackage, readyPackageSchema, saveContentAssets } from "@/lib/marketing/ready-package";
+import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import type { Brand, Campaign, ContentItem } from "@/lib/types";
+import type { Brand, Campaign, ContentItem, ReadyPackageAsset } from "@/lib/types";
 
 type StepResult = {
   itemId: string;
@@ -183,8 +186,17 @@ async function saveItem(id: string, patch: Partial<ContentItem>) {
   return data as ContentItem;
 }
 
+async function memoryForItem(item: ContentItem) {
+  return getFeedbackMemoryContext({
+    brandId: item.brand_id,
+    platform: item.platform,
+    contentType: item.content_type
+  });
+}
+
 async function runContentDraft(item: ContentItem, brand: Brand | null, campaign: Campaign): Promise<{ item: ContentItem | null; result: StepResult }> {
   const agent = agentForItem(item);
+  const feedbackMemory = await memoryForItem(item);
   const run = await runMarketingAgentModel({
     agentId: agent.id,
     fallbackAgentName: agent.name,
@@ -193,7 +205,7 @@ async function runContentDraft(item: ContentItem, brand: Brand | null, campaign:
     instructions:
       "Create a platform-specific draft from this campaign plan piece. Do not publish, schedule, or approve. Keep brand scope strict and flag claim risks.",
     outputSchema: draftSchema,
-    input: { contentItem: item, brand, campaign },
+    input: { contentItem: item, brand, campaign, feedbackMemory },
     brainFiles: ["content-formulas.md", "approval-rules.md"],
     temperature: 0.35,
     routeOrigin: "api.marketing.campaigns.orchestrate"
@@ -226,7 +238,7 @@ async function runContentDraft(item: ContentItem, brand: Brand | null, campaign:
     workflowName: "Campaign Internal Draft",
     provider: run.provider,
     status: fallback ? "fallback" : "success",
-    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.orchestrate" },
+    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, feedbackMemory, routeOrigin: "api.marketing.campaigns.orchestrate" },
     output: { ...(draft as unknown as Record<string, unknown>), fallback_used: fallback, model: run.modelUsed },
     error,
     model: run.modelUsed,
@@ -254,6 +266,7 @@ async function runContentDraft(item: ContentItem, brand: Brand | null, campaign:
 }
 
 async function runCrinaDraftReview(item: ContentItem, brand: Brand | null, campaign: Campaign): Promise<{ item: ContentItem | null; result: StepResult }> {
+  const feedbackMemory = await memoryForItem(item);
   const run = await runMarketingAgentModel({
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
@@ -262,7 +275,7 @@ async function runCrinaDraftReview(item: ContentItem, brand: Brand | null, campa
     instructions:
       "Review this draft for brand fit, campaign fit, platform fit, clarity, and approval risk. Return approve to continue to visual creation, or rework if it must return to content. Do not ask the human yet.",
     outputSchema: reviewSchema,
-    input: { contentItem: item, brand, campaign },
+    input: { contentItem: item, brand, campaign, feedbackMemory },
     brainFiles: ["workflow-contract.md", "approval-rules.md", "voice-calendar-memory.md"],
     temperature: 0.2,
     routeOrigin: "api.marketing.campaigns.orchestrate"
@@ -292,7 +305,7 @@ async function runCrinaDraftReview(item: ContentItem, brand: Brand | null, campa
     workflowName: "Review Campaign Draft",
     provider: run.provider,
     status: fallback ? "fallback" : "success",
-    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.orchestrate" },
+    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, feedbackMemory, routeOrigin: "api.marketing.campaigns.orchestrate" },
     output: { ...(review as unknown as Record<string, unknown>), fallback_used: fallback, model: run.modelUsed },
     error,
     model: run.modelUsed,
@@ -320,6 +333,7 @@ async function runCrinaDraftReview(item: ContentItem, brand: Brand | null, campa
 }
 
 async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campaign): Promise<{ item: ContentItem | null; result: StepResult }> {
+  const feedbackMemory = await memoryForItem(item);
   const run = await runMarketingAgentModel({
     agentId: "agent-visual-video",
     fallbackAgentName: "Visual & Video Agent",
@@ -328,7 +342,7 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
     instructions:
       "Create visual, carousel, or short-video production direction for this draft. Do not generate a live post or publish. Return a useful prompt/direction for later asset generation.",
     outputSchema: visualSchema,
-    input: { contentItem: item, brand, campaign },
+    input: { contentItem: item, brand, campaign, feedbackMemory },
     brainFiles: ["visual-video-soul.md", "approval-rules.md"],
     temperature: 0.35,
     routeOrigin: "api.marketing.campaigns.orchestrate"
@@ -338,16 +352,38 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
   const visual = fallback ? deterministicVisual(item, run.error ?? "Invalid visual JSON.") : modelVisual;
   const error = fallback ? run.error ?? `${run.provider} returned invalid visual JSON.` : null;
 
+  const assetCount = desiredAssetCount(item);
+  const assetKind = assetKindFor(item);
+  const generatedAssets: ReadyPackageAsset[] = [];
+  for (let index = 0; index < assetCount; index += 1) {
+    const prompt = assetCount > 1 ? `${visual.assetPrompt}\nCarousel slide ${index + 1} of ${assetCount}. Keep visual continuity and no unverified claims.` : visual.assetPrompt;
+    const image = await generateMarketingImage(prompt, { contentItemId: item.id, position: index + 1, kind: assetKind });
+    generatedAssets.push({
+      kind: assetKind,
+      url: image.url,
+      prompt,
+      position: index + 1,
+      model: image.model,
+      provider: image.provider,
+      status: image.status,
+      error: image.error
+    });
+  }
+  await saveContentAssets(item.id, generatedAssets);
+  const firstAsset = generatedAssets[0];
+  const assetFailed = generatedAssets.every((asset) => asset.status !== "generated");
+
   const updated = await saveItem(item.id, {
     status: "visual",
     approval_status: "not_requested",
     workflow_stage: "crina_final_review",
     current_owner: "Crina",
     next_owner: "Human",
-    visual_asset_status: fallback ? "placeholder" : "generated",
+    visual_asset_url: firstAsset?.url ?? null,
+    visual_asset_status: fallback || assetFailed ? "placeholder" : "generated",
     visual_asset_prompt: `${visual.format}: ${visual.assetPrompt}`,
-    visual_asset_model: run.modelUsed,
-    visual_asset_error: error,
+    visual_asset_model: firstAsset?.model ?? run.modelUsed,
+    visual_asset_error: assetFailed ? firstAsset?.error ?? error : error,
     agent_handoff_summary: `Visual & Video Agent prepared creative direction and handed it to Crina for final package review.`,
     performance_summary: `${item.performance_summary ?? ""}\nVisual direction (${run.provider}/${run.modelUsed ?? "default"}): ${visual.visualConcept}. ${visual.editorNotes}`.trim()
   });
@@ -358,7 +394,7 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
     workflowName: "Create Campaign Visual Direction",
     provider: run.provider,
     status: fallback ? "fallback" : "success",
-    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.orchestrate" },
+    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, feedbackMemory, routeOrigin: "api.marketing.campaigns.orchestrate" },
     output: { ...(visual as unknown as Record<string, unknown>), fallback_used: fallback, model: run.modelUsed },
     error,
     model: run.modelUsed,
@@ -386,6 +422,7 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
 }
 
 async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campaign: Campaign): Promise<{ item: ContentItem | null; result: StepResult }> {
+  const feedbackMemory = await memoryForItem(item);
   const run = await runMarketingAgentModel({
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
@@ -394,7 +431,7 @@ async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campa
     instructions:
       "Review the draft and visual direction as a final package. If it is coherent, mark it ready for human final approval. If not, request rework. Never approve on behalf of the human.",
     outputSchema: reviewSchema,
-    input: { contentItem: item, brand, campaign },
+    input: { contentItem: item, brand, campaign, feedbackMemory },
     brainFiles: ["workflow-contract.md", "approval-rules.md", "voice-calendar-memory.md"],
     temperature: 0.2,
     routeOrigin: "api.marketing.campaigns.orchestrate"
@@ -407,6 +444,54 @@ async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campa
   const nextLoopIteration = ready ? item.loop_iteration ?? 0 : (item.loop_iteration ?? 0) + 1;
   const forceHumanReview = !ready && nextLoopIteration >= MAX_REWORK_ITERATIONS;
 
+  let readyPackage = item.ready_package ?? null;
+  let packageFallback = false;
+  let packageError: string | null = null;
+
+  if (ready || forceHumanReview) {
+    const packagingRun = await runMarketingAgentModel({
+      agentId: "agent-publishing",
+      fallbackAgentName: "Publishing Agent",
+      fallbackRole: "Draft Packaging",
+      task: "Package Campaign Item Ready To Post",
+      instructions:
+        "Create a platform-ready draft package for manual posting/export only. Do not publish, schedule, connect accounts, or approve. X text must be 280 characters or less. Instagram video must include script and storyboard only; real video generation is COMING SOON.",
+      outputSchema: readyPackageSchema,
+      input: { contentItem: item, brand, campaign, feedbackMemory, visualAssetUrl: item.visual_asset_url, visualAssetPrompt: item.visual_asset_prompt },
+      brainFiles: ["draft-publishing-safety.md", "workflow-contract.md", "approval-rules.md"],
+      temperature: 0.25,
+      routeOrigin: "api.marketing.campaigns.orchestrate.ready_package"
+    });
+    packageFallback = !packagingRun.ok || !packagingRun.json;
+    packageError = packageFallback ? packagingRun.error ?? "Publishing Agent returned invalid package JSON." : null;
+    readyPackage = {
+      ...normalizeReadyPackage(packageFallback ? null : packagingRun.json, item, packageFallback),
+      provider: packagingRun.provider,
+      model: packagingRun.modelUsed,
+      fallback_used: packageFallback
+    };
+
+    await recordAgentRun({
+      agentName: "Publishing Agent",
+      agentId: "agent-publishing",
+      workflowName: "Package Campaign Item Ready To Post",
+      provider: packagingRun.provider,
+      status: packageFallback ? "fallback" : "success",
+      input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, feedbackMemory, routeOrigin: "api.marketing.campaigns.orchestrate.ready_package" },
+      output: { ready_package: readyPackage, fallback_used: packageFallback, model: packagingRun.modelUsed },
+      error: packageError,
+      model: packagingRun.modelUsed,
+      tokensPrompt: packagingRun.usage.tokensPrompt,
+      tokensCompletion: packagingRun.usage.tokensCompletion,
+      tokensTotal: packagingRun.usage.tokensTotal,
+      durationMs: packagingRun.durationMs,
+      brainResourcesUsed: packagingRun.brainResourcesUsed,
+      handoffFrom: "Crina",
+      handoffTo: "Human",
+      providerResponseStatus: packagingRun.status
+    });
+  }
+
   const updated = await saveItem(item.id, {
     status: ready || forceHumanReview ? "approval" : "draft",
     approval_status: ready || forceHumanReview ? "pending" : "changes_requested",
@@ -414,8 +499,9 @@ async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campa
     current_owner: ready || forceHumanReview ? "Human" : item.assigned_agent || "Content Creator Agent",
     next_owner: ready || forceHumanReview ? "Publishing Agent" : "Crina",
     loop_iteration: nextLoopIteration,
+    ready_package: readyPackage,
     crina_review_notes: `${fallback ? "FALLBACK: " : ""}${forceHumanReview ? "Needs human review after repeated internal rework. " : ""}${review.reason}${review.improvements?.length ? ` Improvements: ${review.improvements.join("; ")}` : ""}`,
-    performance_summary: `${item.performance_summary ?? ""}\nCrina final review (${run.provider}/${run.modelUsed ?? "default"}): ${review.reason}`.trim()
+    performance_summary: `${item.performance_summary ?? ""}\nCrina final review (${run.provider}/${run.modelUsed ?? "default"}): ${review.reason}${packageFallback ? `\nFALLBACK ready package: ${packageError}` : ""}`.trim()
   });
 
   await recordAgentRun({
@@ -424,7 +510,7 @@ async function runCrinaFinalReview(item: ContentItem, brand: Brand | null, campa
     workflowName: "Assemble Final Campaign Package",
     provider: run.provider,
     status: fallback ? "fallback" : "success",
-    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.orchestrate" },
+    input: { contentItemId: item.id, campaignId: campaign.id, brand: brand?.name ?? null, feedbackMemory, routeOrigin: "api.marketing.campaigns.orchestrate" },
     output: { ...(review as unknown as Record<string, unknown>), fallback_used: fallback, model: run.modelUsed },
     error,
     model: run.modelUsed,

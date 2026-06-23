@@ -19,6 +19,12 @@ Open items across all reviewed commits, highest value first:
 1. **Manual multi-tab acceptance test still recommended (medium).** The code now has a
    server-side lease lock, but the exact browser-tab race should be tested against a live
    campaign after this hardening pass.
+2. **End-to-end media provider test still needed (medium).** Ready-to-post assets now route
+   through GPT Image → Flux/Stability-style fallbacks, but this needs a live provider-key
+   smoke test to confirm real URLs are produced in the `marketing-assets` bucket.
+3. **Real video generation intentionally off (low, product decision).** IG video packages
+   produce script/storyboard/cover frame only and are labeled COMING SOON / DRAFT ASSET
+   until enough approved manual video packages justify enabling an automatic video model.
 
 Closed in the latest Codex hardening pass:
 
@@ -39,6 +45,24 @@ Closed in the latest Codex hardening pass:
   fails.
 - **React updater side effect:** `setAttentionIds` was lifted out of the
   `setNoProgressCounts` updater.
+
+Closed in the Ready to Post implementation pass:
+
+- **Feedback read-back:** campaign seed/draft/review/visual/package prompts now receive
+  recent human-approved/rejected `feedback_memory` scoped to brand/platform/content type.
+- **Immediate rejection learning:** human reject/change reasons are written onto
+  `content_items.crina_review_notes` as well as `feedback_memory`.
+- **Ready package storage:** `content_items.ready_package` stores channel-ready text,
+  hashtags, alt text, post-time suggestion, checklist, and video script/storyboard where
+  relevant.
+- **Image/carousel assets:** `content_assets` and the `marketing-assets` Supabase Storage
+  bucket hold generated or placeholder image assets. Provider order is GPT Image first,
+  then Flux/Stability-compatible fallbacks where configured.
+- **Ready to Post tab:** `/marketing/ready-to-post` groups final packages by campaign and
+  shows realistic previews, final decisions, copy/export actions, fallback badges, and
+  COMING SOON labels for video.
+- **Clean-slate reset:** `/api/marketing/reset` plus a guarded Marketing-home action clears
+  campaigns/content/assets/approvals/marketing runs without manual SQL.
 
 ---
 

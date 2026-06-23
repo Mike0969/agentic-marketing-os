@@ -5,6 +5,7 @@ import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { appendLocalContentItems, readLocalDashboardData } from "@/lib/local-store";
 import { requireAdmin } from "@/lib/auth";
 import { acquireCampaignAutomationLock, releaseCampaignAutomationLock } from "@/lib/marketing/campaign-automation";
+import { getFeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ContentItem } from "@/lib/types";
 
@@ -182,6 +183,7 @@ async function executeCampaignPlan(id: string) {
     return NextResponse.json({ contentItems: existing, alreadyStarted: true, message: "Crina already created pipeline items for this campaign." });
   }
 
+  const feedbackMemory = await getFeedbackMemoryContext({ brandId: campaign.brand_id });
   const result = await runMarketingAgentModel({
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
@@ -190,7 +192,7 @@ async function executeCampaignPlan(id: string) {
     instructions:
       "Read the approved campaign objective and create the complete first campaign plan for execution. Produce 4-7 campaign pieces that cover the requested platforms, campaign angles, draft direction, visual/video needs when relevant, and CTA. Keep the brand scope strict: use only the provided brand object and campaign. Do not borrow claims, CTAs, tone, or positioning from any other brand. Do not publish, schedule, or mark anything approved.",
     outputSchema,
-    input: { campaign, brand },
+    input: { campaign, brand, feedbackMemory },
     brainFiles: ["workflow-contract.md", "voice-calendar-memory.md", "approval-rules.md"],
     temperature: 0.35,
     routeOrigin: "api.marketing.campaigns.execute"
@@ -234,7 +236,7 @@ async function executeCampaignPlan(id: string) {
     workflowName: "Create Campaign Plan For Execution",
     provider: result.provider,
     status: fallback ? "fallback" : "success",
-    input: { campaignId: campaign.id, campaignTitle: campaign.title, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.execute" },
+    input: { campaignId: campaign.id, campaignTitle: campaign.title, brand: brand?.name ?? null, feedbackMemory, routeOrigin: "api.marketing.campaigns.execute" },
     output: { items_created: saved.length, fallback_used: fallback, provider: result.provider, model: result.modelUsed, crina_notes: crinaNotes },
     error: fallback ? result.error ?? "Invalid campaign seed JSON." : null,
     model: result.modelUsed,

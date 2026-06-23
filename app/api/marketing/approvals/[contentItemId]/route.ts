@@ -69,6 +69,7 @@ export async function POST(request: Request, context: { params: Promise<{ conten
     });
     if (!result) return NextResponse.json({ error: "Content item not found." }, { status: 404 });
     revalidatePath("/marketing/approvals");
+    revalidatePath("/marketing/ready-to-post");
     revalidatePath("/marketing/pipeline");
     revalidatePath("/marketing");
     return NextResponse.json({ ...result, mode: "local" });
@@ -77,21 +78,27 @@ export async function POST(request: Request, context: { params: Promise<{ conten
   const supabase = await createClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not available." }, { status: 503 });
 
+  const updatePayload: Partial<ContentItem> = {
+    status: nextStatus,
+    approval_status: approvalStatus(decision),
+    workflow_stage: workflowStage(gate, decision),
+    current_owner: currentOwner(gate, decision),
+    next_owner: nextOwner(gate, decision),
+    performance_summary:
+      decision === "approved"
+        ? gate === "gate_1"
+          ? "Gate 1 approved. Move to visual production. Live publishing remains disabled."
+          : "Gate 2 approved. Move to scheduled draft. Live publishing remains disabled."
+        : `Human feedback: ${feedback}`
+  };
+
+  if (decision !== "approved") {
+    updatePayload.crina_review_notes = `Human ${decision.replaceAll("_", " ")}: ${feedback}. Crina and assigned agents must address this before returning to final approval.`;
+  }
+
   const { data: contentItem, error: contentError } = await supabase
     .from("content_items")
-    .update({
-      status: nextStatus,
-      approval_status: approvalStatus(decision),
-      workflow_stage: workflowStage(gate, decision),
-      current_owner: currentOwner(gate, decision),
-      next_owner: nextOwner(gate, decision),
-      performance_summary:
-        decision === "approved"
-          ? gate === "gate_1"
-            ? "Gate 1 approved. Move to visual production. Live publishing remains disabled."
-            : "Gate 2 approved. Move to scheduled draft. Live publishing remains disabled."
-          : `Human feedback: ${feedback}`
-    })
+    .update(updatePayload)
     .eq("id", contentItemId)
     .select("*")
     .single();
@@ -146,6 +153,7 @@ export async function POST(request: Request, context: { params: Promise<{ conten
   await supabase.from("activity").insert(makeActivity("Approval decision recorded", `${contentItem.title} was marked ${decision.replaceAll("_", " ")}.`));
 
   revalidatePath("/marketing/approvals");
+  revalidatePath("/marketing/ready-to-post");
   revalidatePath("/marketing/pipeline");
   revalidatePath("/marketing");
   return NextResponse.json({ contentItem: contentItem as ContentItem, approval: approvalResult.data as Approval, mode: "supabase" });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BarChart3, CalendarDays, CheckCircle2, FileText, ImageIcon, Lightbulb, Megaphone, Route, Sparkles } from "lucide-react";
 import { ModuleCard, OSBadge, OSMetric, OSPanel, PageHeading } from "@/components/os/ui";
+import { MarketingResetAction } from "@/components/os/marketing-reset-action";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,8 @@ export default async function MarketingHome() {
   const modules = [
     { href: "/marketing/campaigns", title: "Campaigns", description: "Create objectives, approve direction, and track campaign packages.", badge: "Start here" },
     { href: "/marketing/pipeline", title: "Pipeline", description: "See where each campaign is: Crina, SEO, content, visuals, review, or publishing prep.", badge: "Execution" },
-    { href: "/marketing/approvals", title: "Approvals", description: "Human decision desk for campaign direction and final pre-publish approval.", badge: "Human gate" },
+    { href: "/marketing/ready-to-post", title: "Ready to Post", description: "Preview final packages with images, approve or send back, then copy/export manually.", badge: "Preview" },
+    { href: "/marketing/approvals", title: "Approvals", description: "Direction approvals and legacy decision queue. Final packages live in Ready to Post.", badge: "Human gate" },
     { href: "/marketing/brands", title: "Brands", description: "Brand voice, pillars, SEO targets, CTAs, and approval rules for each project.", badge: "Context" },
     { href: "/marketing/agents", title: "Agents", description: "Crina and specialist agents with model, memory, run, and fallback status.", badge: "Brains" },
     { href: "/marketing/analytics", title: "Analytics", description: "Search Console learning plus clearly labelled sample panels until connectors are live.", badge: "Improve" }
@@ -132,6 +134,10 @@ export default async function MarketingHome() {
             )}
           </div>
         </OSPanel>
+      </div>
+
+      <div className="mb-6">
+        <MarketingResetAction />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

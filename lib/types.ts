@@ -108,6 +108,54 @@ export type ContentItem = {
   crina_review_notes?: string | null;
   agent_handoff_summary?: string | null;
   loop_iteration?: number | null;
+  ready_package?: ReadyPackage | null;
+};
+
+export type ReadyPackageAsset = {
+  kind: "image" | "carousel_slide" | "cover_frame" | "video_placeholder";
+  url?: string | null;
+  prompt?: string | null;
+  position?: number;
+  model?: string | null;
+  provider?: string | null;
+  status?: "generated" | "placeholder" | "error";
+  error?: string | null;
+};
+
+export type ReadyPackage = {
+  platform: string;
+  content_type: string;
+  text: string;
+  title?: string;
+  meta_description?: string;
+  body?: string;
+  caption?: string;
+  hashtags?: string[];
+  mentions?: string[];
+  alt_text?: string;
+  suggested_post_time?: string;
+  asset_checklist?: string[];
+  script?: string;
+  storyboard?: string[];
+  video_status?: "coming_soon" | "draft_asset";
+  provider?: string;
+  model?: string | null;
+  fallback_used?: boolean;
+  assets?: ReadyPackageAsset[];
+};
+
+export type ContentAsset = {
+  id: string;
+  content_item_id: string;
+  kind: ReadyPackageAsset["kind"];
+  url: string | null;
+  prompt: string | null;
+  position: number;
+  model: string | null;
+  provider?: string | null;
+  status: "generated" | "placeholder" | "error";
+  error: string | null;
+  created_at?: string;
 };
 
 export type ApprovalDecision = "pending" | "approved" | "rejected" | "changes_requested";

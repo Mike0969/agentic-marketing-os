@@ -1,0 +1,274 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { CheckCircle2, Copy, Download, Loader2, XCircle } from "lucide-react";
+import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
+import type { Brand, Campaign, ContentAsset, ContentItem, ReadyPackage } from "@/lib/types";
+
+type Props = {
+  brands: Brand[];
+  campaigns: Campaign[];
+  contentItems: ContentItem[];
+  assets: ContentAsset[];
+};
+
+function fallbackMarked(item: ContentItem) {
+  return item.performance_summary?.toUpperCase().includes("FALLBACK") || item.ready_package?.fallback_used;
+}
+
+function packageFor(item: ContentItem): ReadyPackage {
+  return (
+    item.ready_package ?? {
+      platform: item.platform,
+      content_type: item.content_type,
+      text: item.body || item.hook || item.title,
+      title: item.title,
+      caption: item.body,
+      alt_text: `Visual for ${item.title}`,
+      hashtags: [],
+      asset_checklist: ["Verify claims", "Confirm CTA", "Check image crop"],
+      fallback_used: true
+    }
+  );
+}
+
+function platformTone(platform: string): "info" | "demo" | "off" {
+  const normalized = platform.toLowerCase();
+  if (normalized.includes("instagram")) return "demo";
+  if (normalized.includes("linkedin") || normalized === "x") return "info";
+  return "off";
+}
+
+export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }: Props) {
+  const [items, setItems] = useState(contentItems);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string | null>(null);
+  const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
+  const campaignMap = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
+  const assetsByItem = useMemo(() => {
+    const grouped = new Map<string, ContentAsset[]>();
+    for (const asset of assets) {
+      grouped.set(asset.content_item_id, [...(grouped.get(asset.content_item_id) ?? []), asset]);
+    }
+    return grouped;
+  }, [assets]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, ContentItem[]>();
+    for (const item of items) {
+      map.set(item.campaign_id, [...(map.get(item.campaign_id) ?? []), item]);
+    }
+    return [...map.entries()];
+  }, [items]);
+
+  async function decide(item: ContentItem, decision: "approved" | "rejected" | "changes_requested") {
+    const feedback = reasons[item.id]?.trim() ?? "";
+    if (decision !== "approved" && !feedback) {
+      setRejectId(item.id);
+      setMessage("Add a reason so Crina can learn and rework the package.");
+      return;
+    }
+
+    setBusyId(item.id);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/marketing/approvals/${item.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina" })
+      });
+      const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
+      if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Decision failed.");
+      setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.contentItem! : candidate)));
+      setRejectId(null);
+      setMessage(decision === "approved" ? "Package approved. It is ready to post manually; no network posting occurred." : "Sent back to Crina with your reason.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Decision failed.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function copyPackage(item: ContentItem) {
+    const pkg = packageFor(item);
+    await navigator.clipboard.writeText([pkg.title, pkg.text, pkg.caption, pkg.body, pkg.hashtags?.join(" ")].filter(Boolean).join("\n\n"));
+    setMessage("Package text copied.");
+  }
+
+  function downloadPackage(item: ContentItem) {
+    const pkg = packageFor(item);
+    const blob = new Blob([JSON.stringify({ item, ready_package: pkg, assets: assetsByItem.get(item.id) ?? [] }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${item.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-ready-package.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="space-y-5">
+      {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
+      {grouped.map(([campaignId, campaignItems]) => {
+        const campaign = campaignMap.get(campaignId);
+        const brand = campaign ? brandMap.get(campaign.brand_id) : null;
+        return (
+          <OSPanel key={campaignId}>
+            <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-start">
+              <div>
+                <div className="text-xs uppercase tracking-wider text-neutral-500">{brand?.name ?? "Unknown brand"}</div>
+                <h2 className="mt-1 text-lg font-semibold text-neutral-50">{campaign?.title ?? "Campaign package"}</h2>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-neutral-400">Preview, approve, request changes, reject, copy, or export. No live posting occurs.</p>
+              </div>
+              <OSBadge tone="warn">{campaignItems.filter((item) => item.approval_status === "pending").length} need decision</OSBadge>
+            </div>
+            <div className="grid gap-4 xl:grid-cols-2">
+              {campaignItems.map((item) => (
+                <ReadyCard
+                  key={item.id}
+                  item={item}
+                  assets={assetsByItem.get(item.id) ?? []}
+                  busy={busyId === item.id}
+                  rejecting={rejectId === item.id}
+                  reason={reasons[item.id] ?? ""}
+                  onReason={(reason) => setReasons((current) => ({ ...current, [item.id]: reason }))}
+                  onApprove={() => decide(item, "approved")}
+                  onReject={() => decide(item, "rejected")}
+                  onRequestChanges={() => decide(item, "changes_requested")}
+                  onOpenReject={() => setRejectId(item.id)}
+                  onCopy={() => copyPackage(item)}
+                  onDownload={() => downloadPackage(item)}
+                />
+              ))}
+            </div>
+          </OSPanel>
+        );
+      })}
+      {!grouped.length ? (
+        <OSPanel>
+          <p className="text-sm text-neutral-500">No ready-to-post packages yet. Approve a campaign objective, then let Crina run the internal loop to final review.</p>
+        </OSPanel>
+      ) : null}
+    </div>
+  );
+}
+
+function ReadyCard({
+  item,
+  assets,
+  busy,
+  rejecting,
+  reason,
+  onReason,
+  onApprove,
+  onReject,
+  onRequestChanges,
+  onOpenReject,
+  onCopy,
+  onDownload
+}: {
+  item: ContentItem;
+  assets: ContentAsset[];
+  busy: boolean;
+  rejecting: boolean;
+  reason: string;
+  onReason: (reason: string) => void;
+  onApprove: () => void;
+  onReject: () => void;
+  onRequestChanges: () => void;
+  onOpenReject: () => void;
+  onCopy: () => void;
+  onDownload: () => void;
+}) {
+  const pkg = packageFor(item);
+  const pending = item.approval_status === "pending" || item.workflow_stage === "human_final_approval";
+  const isVideo = `${item.platform} ${item.content_type}`.toLowerCase().includes("video");
+  const imageAssets = assets.filter((asset) => asset.url);
+  const primaryImage = imageAssets[0]?.url ?? item.visual_asset_url;
+
+  return (
+    <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <OSBadge tone={platformTone(item.platform)}>{item.platform}</OSBadge>
+        <OSBadge tone={pending ? "warn" : item.approval_status === "approved" ? "ok" : "off"}>{pending ? "Needs decision" : item.approval_status}</OSBadge>
+        {fallbackMarked(item) ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
+        {primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
+        {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900">
+        {primaryImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={primaryImage} alt={pkg.alt_text ?? item.title} className="aspect-video w-full object-cover" />
+        ) : (
+          <div className="flex aspect-video items-center justify-center bg-neutral-950 text-sm text-neutral-600">Draft asset placeholder</div>
+        )}
+        {imageAssets.length > 1 ? (
+          <div className="flex gap-2 overflow-x-auto border-t border-neutral-800 p-2">
+            {imageAssets.map((asset) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={asset.id} src={asset.url!} alt={`Slide ${asset.position}`} className="h-20 w-20 shrink-0 rounded object-cover" />
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-900/70 p-3">
+        <div className="text-sm font-semibold text-neutral-50">{pkg.title ?? item.title}</div>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{pkg.text}</p>
+        {pkg.body ? <p className="mt-3 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-neutral-400">{pkg.body}</p> : null}
+        {pkg.hashtags?.length ? <div className="mt-3 text-sm text-cyan-300">{pkg.hashtags.join(" ")}</div> : null}
+        {isVideo ? (
+          <div className="mt-3 rounded-md border border-violet-500/20 bg-violet-500/5 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-violet-300">Manual video package</div>
+            <p className="mt-2 text-sm leading-6 text-neutral-300">{pkg.script ?? item.body}</p>
+            {pkg.storyboard?.length ? (
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-neutral-400">
+                {pkg.storyboard.map((beat) => <li key={beat}>{beat}</li>)}
+              </ol>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {rejecting ? (
+        <div className="mt-3">
+          <OSTextarea value={reason} onChange={(event) => onReason(event.target.value)} placeholder="Why should Crina rework this? Be specific: weak hook, wrong tone, bad visual, wrong CTA, too generic..." />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <OSButton variant="danger" onClick={onReject} disabled={busy || !reason.trim()}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+              Reject
+            </OSButton>
+            <OSButton variant="secondary" onClick={onRequestChanges} disabled={busy || !reason.trim()}>
+              Request changes
+            </OSButton>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {pending ? (
+          <>
+            <OSButton onClick={onApprove} disabled={busy}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Approve
+            </OSButton>
+            <OSButton variant="secondary" onClick={onOpenReject} disabled={busy}>
+              Request changes / Reject
+            </OSButton>
+          </>
+        ) : null}
+        <OSButton variant="secondary" onClick={onCopy}>
+          <Copy className="h-4 w-4" />
+          Copy text
+        </OSButton>
+        <OSButton variant="secondary" onClick={onDownload}>
+          <Download className="h-4 w-4" />
+          Export
+        </OSButton>
+      </div>
+    </div>
+  );
+}
