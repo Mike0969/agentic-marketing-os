@@ -462,8 +462,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
 
   const results: StepResult[] = [];
   const updatedItems: ContentItem[] = [];
-  const maxRounds = 4;
-  const maxSteps = 12;
+  const maxRounds = 2;
+  const maxSteps = 3;
 
   for (let round = 0; round < maxRounds && results.length < maxSteps; round += 1) {
     const roundEligible = currentItems.filter(
@@ -512,7 +512,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     message: waitingForHuman
       ? "Internal agent workflow reached the human final approval gate."
       : stepLimitReached
-        ? "Internal workflow paused at the step limit. Continue again if more internal work remains."
+        ? "Internal automation completed a safe batch. More internal work may remain."
         : "Internal agent workflow advanced as far as it can right now."
   });
 }

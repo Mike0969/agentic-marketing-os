@@ -1,19 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowRight, Eye, Loader2, Send, UserRoundCheck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Eye, Loader2, Pause, Play, UserRoundCheck } from "lucide-react";
 import { OSBadge, OSButton, OSPanel } from "@/components/os/ui";
-import type { Brand, Campaign, ContentItem, ContentStatus } from "@/lib/types";
-
-type DispatchResponse = {
-  contentItem: ContentItem;
-  output: { title: string; hook: string; body: string; CTA: string; editorNotes: string };
-  fallback: boolean;
-  provider: string;
-  model?: string | null;
-  routeOrigin?: string;
-  error?: string | null;
-};
+import type { Brand, Campaign, ContentItem } from "@/lib/types";
 
 type OrchestrateResponse = {
   contentItems?: ContentItem[];
@@ -56,24 +46,8 @@ const lanes: Lane[] = [
   { key: "publishing", label: "Publishing prep", hint: "Draft package, no live posting" }
 ];
 
-const nextStatus: Partial<Record<ContentStatus, ContentStatus>> = {
-  idea: "draft",
-  brief: "draft",
-  draft: "visual",
-  visual: "approval",
-  approval: "scheduled"
-};
-
 function fallbackMarked(item: ContentItem) {
   return item.performance_summary?.toUpperCase().includes("FALLBACK") ?? false;
-}
-
-function statusPatch(status: ContentStatus) {
-  if (status === "approval") return { status, approval_status: "pending", workflow_stage: "human_final_approval", current_owner: "Human", next_owner: "Crina" };
-  if (status === "scheduled") return { status, approval_status: "approved", workflow_stage: "publishing_prep", current_owner: "Publishing Agent", next_owner: "Human" };
-  if (status === "visual") return { status, approval_status: "not_requested", workflow_stage: "visual_creation", current_owner: "Visual & Video Agent", next_owner: "Crina" };
-  if (status === "draft") return { status, approval_status: "not_requested", workflow_stage: "content_creation" };
-  return { status, approval_status: "not_requested" };
 }
 
 function laneForCampaign(campaign: Campaign, items: ContentItem[]): LaneKey {
@@ -156,10 +130,10 @@ export function PipelineWorkspace({
   const selectedExecution = executions.find((execution) => execution.campaign.id === selectedCampaignId) ?? executions[0] ?? null;
   const [selectedItemId, setSelectedItemId] = useState<string | null>(selectedExecution?.items[0]?.id ?? null);
   const selectedItem = selectedExecution?.items.find((item) => item.id === selectedItemId) ?? selectedExecution?.items[0] ?? null;
-  const [dispatchingId, setDispatchingId] = useState<string | null>(null);
-  const [movingId, setMovingId] = useState<string | null>(null);
   const [orchestratingId, setOrchestratingId] = useState<string | null>(null);
-  const [lastRun, setLastRun] = useState<DispatchResponse | null>(null);
+  const [pausedIds, setPausedIds] = useState<Record<string, boolean>>({});
+  const [autoRuns, setAutoRuns] = useState<Record<string, number>>({});
+  const [lastRun, setLastRun] = useState<OrchestrateResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   function selectExecution(execution: CampaignExecution) {
@@ -167,83 +141,60 @@ export function PipelineWorkspace({
     setSelectedItemId(execution.items[0]?.id ?? null);
   }
 
-  function updateItem(updated: ContentItem) {
-    setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)).filter(activeStatuses));
-    setSelectedItemId(updated.id);
-  }
-
-  function updateItems(updatedItems: ContentItem[]) {
+  const updateItems = useCallback((updatedItems: ContentItem[]) => {
     if (!updatedItems.length) return;
     const updatedById = new Map(updatedItems.map((item) => [item.id, item]));
     setItems((current) => current.map((item) => updatedById.get(item.id) ?? item).filter(activeStatuses));
     setSelectedItemId(updatedItems[0]?.id ?? null);
-  }
+  }, []);
 
-  async function sendToAgent(item: ContentItem) {
-    setDispatchingId(item.id);
-    setMessage(null);
-    setLastRun(null);
-
-    try {
-      const response = await fetch(`/api/marketing/content-items/${item.id}/dispatch`, { method: "POST" });
-      const payload = (await response.json()) as DispatchResponse & { error?: string };
-      if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Agent dispatch failed.");
-      updateItem(payload.contentItem);
-      setLastRun(payload);
-      setMessage(payload.fallback ? `FALLBACK draft created after ${payload.provider} failed.` : `${payload.provider} draft created and saved.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Agent dispatch failed.");
-    } finally {
-      setDispatchingId(null);
-    }
-  }
-
-  async function moveItem(item: ContentItem, status: ContentStatus) {
-    setMovingId(item.id);
-    setMessage(null);
-
-    try {
-      const response = await fetch(`/api/marketing/content-items/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(statusPatch(status))
-      });
-      const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
-      if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Pipeline move failed.");
-      updateItem(payload.contentItem);
-      setMessage(`${payload.contentItem.title} moved to ${payload.contentItem.status}.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Pipeline move failed.");
-    } finally {
-      setMovingId(null);
-    }
-  }
-
-  async function continueWorkflow(execution: CampaignExecution) {
+  const runAutomation = useCallback(async (execution: CampaignExecution, mode: "auto" | "manual" = "manual") => {
     setOrchestratingId(execution.campaign.id);
     setMessage(null);
     setLastRun(null);
 
     try {
-      const response = await fetch(`/api/marketing/campaigns/${execution.campaign.id}/orchestrate`, { method: "POST" });
+      const endpoint = execution.items.length
+        ? `/api/marketing/campaigns/${execution.campaign.id}/automation/tick`
+        : `/api/marketing/campaigns/${execution.campaign.id}/automation/start`;
+      const response = await fetch(endpoint, { method: "POST" });
       const payload = (await response.json()) as OrchestrateResponse;
-      if (!response.ok) throw new Error(payload.error ?? "Campaign workflow could not continue.");
+      if (!response.ok) throw new Error(payload.error ?? "Campaign automation could not continue.");
 
       updateItems(payload.contentItems ?? []);
+      setLastRun(payload);
+      setAutoRuns((current) => ({ ...current, [execution.campaign.id]: (current[execution.campaign.id] ?? 0) + 1 }));
       const advanced = payload.results?.filter((result) => result.status === "advanced" || result.status === "fallback").length ?? 0;
       const fallback = payload.results?.filter((result) => result.status === "fallback").length ?? 0;
       setMessage(
         payload.message ??
           (advanced
             ? `${execution.campaign.title}: ${advanced} internal step${advanced === 1 ? "" : "s"} completed${fallback ? `, ${fallback} with FALLBACK` : ""}.`
-            : `${execution.campaign.title}: no eligible internal step right now.`)
+            : mode === "auto"
+              ? `${execution.campaign.title}: automation is watching for the next eligible step.`
+              : `${execution.campaign.title}: no eligible internal step right now.`)
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Campaign workflow could not continue.");
+      setPausedIds((current) => ({ ...current, [execution.campaign.id]: true }));
+      setMessage(error instanceof Error ? error.message : "Campaign automation could not continue.");
     } finally {
       setOrchestratingId(null);
     }
-  }
+  }, [updateItems]);
+
+  useEffect(() => {
+    if (!selectedExecution) return;
+    if (pausedIds[selectedExecution.campaign.id]) return;
+    if (orchestratingId) return;
+    if (selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing") return;
+    if ((autoRuns[selectedExecution.campaign.id] ?? 0) >= 8) return;
+
+    const timer = window.setTimeout(() => {
+      void runAutomation(selectedExecution, "auto");
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [autoRuns, orchestratingId, pausedIds, runAutomation, selectedExecution]);
 
   return (
     <div className="space-y-5">
@@ -301,15 +252,42 @@ export function PipelineWorkspace({
               <div className="rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="text-sm font-medium text-cyan-100">Internal agent workflow</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-medium text-cyan-100">Agent automation</div>
+                      <OSBadge tone={pausedIds[selectedExecution.campaign.id] ? "warn" : orchestratingId === selectedExecution.campaign.id ? "info" : "ok"}>
+                        {pausedIds[selectedExecution.campaign.id] ? "Paused" : orchestratingId === selectedExecution.campaign.id ? "Running" : "Auto"}
+                      </OSBadge>
+                    </div>
                     <p className="mt-1 text-xs leading-5 text-neutral-400">
-                      Continue Crina&apos;s internal chain. The workflow stops before publishing and waits for your final approval.
+                      Crina runs the internal agent loop. You only step in for final approval or if automation needs attention.
                     </p>
                   </div>
-                  <OSButton onClick={() => continueWorkflow(selectedExecution)} disabled={orchestratingId === selectedExecution.campaign.id || selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing"}>
-                    {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                    {selectedExecution.lane === "human_approval" ? "Waiting for you" : selectedExecution.lane === "publishing" ? "In publishing prep" : "Continue workflow"}
-                  </OSButton>
+                  {selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing" ? (
+                    <OSBadge tone={selectedExecution.lane === "human_approval" ? "warn" : "ok"}>
+                      {selectedExecution.lane === "human_approval" ? "Waiting for you" : "Publishing prep"}
+                    </OSBadge>
+                  ) : pausedIds[selectedExecution.campaign.id] ? (
+                    <OSButton
+                      onClick={() => {
+                        setPausedIds((current) => ({ ...current, [selectedExecution.campaign.id]: false }));
+                        setAutoRuns((current) => ({ ...current, [selectedExecution.campaign.id]: 0 }));
+                        void runAutomation(selectedExecution, "manual");
+                      }}
+                      disabled={orchestratingId === selectedExecution.campaign.id}
+                    >
+                      {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                      Resume automation
+                    </OSButton>
+                  ) : (
+                    <OSButton
+                      variant="secondary"
+                      onClick={() => setPausedIds((current) => ({ ...current, [selectedExecution.campaign.id]: true }))}
+                      disabled={orchestratingId === selectedExecution.campaign.id}
+                    >
+                      {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
+                      Pause automation
+                    </OSButton>
+                  )}
                 </div>
               </div>
 
@@ -357,20 +335,6 @@ export function PipelineWorkspace({
                     <Detail label="CTA" value={selectedItem.CTA || "Not set"} />
                     {selectedItem.performance_summary ? <Detail label="Run note" value={selectedItem.performance_summary} tall /> : null}
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {(selectedItem.status === "idea" || selectedItem.status === "brief") ? (
-                      <OSButton onClick={() => sendToAgent(selectedItem)} disabled={dispatchingId === selectedItem.id}>
-                        {dispatchingId === selectedItem.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                        Start agent draft
-                      </OSButton>
-                    ) : null}
-                    {nextStatus[selectedItem.status] ? (
-                      <OSButton variant="secondary" onClick={() => moveItem(selectedItem, nextStatus[selectedItem.status]!)} disabled={movingId === selectedItem.id}>
-                        {movingId === selectedItem.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-                        Move to next stage
-                      </OSButton>
-                    ) : null}
-                  </div>
                 </div>
               ) : null}
             </div>
@@ -381,11 +345,18 @@ export function PipelineWorkspace({
           {lastRun ? (
             <div className="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-neutral-200">Last agent output</div>
-                <OSBadge tone={lastRun.fallback ? "warn" : "ok"}>{lastRun.fallback ? "FALLBACK" : lastRun.provider}</OSBadge>
+                <div className="text-sm font-medium text-neutral-200">Last automation batch</div>
+                <OSBadge tone={lastRun.results?.some((result) => result.status === "fallback") ? "warn" : "ok"}>
+                  {lastRun.results?.length ?? 0} steps
+                </OSBadge>
               </div>
-              <div className="mt-1 text-xs text-neutral-600">{lastRun.model ? `${lastRun.provider}/${lastRun.model}` : lastRun.provider}</div>
-              <p className="mt-2 text-sm leading-6 text-neutral-400">{lastRun.output.editorNotes}</p>
+              <div className="mt-2 space-y-1">
+                {lastRun.results?.slice(0, 4).map((result) => (
+                  <div key={`${result.itemId}-${result.step}`} className="text-xs text-neutral-500">
+                    {result.step}: {result.status} → {result.owner}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
         </OSPanel>

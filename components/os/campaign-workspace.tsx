@@ -224,25 +224,33 @@ export function CampaignWorkspace({
     setExecutingId(campaign.id);
 
     try {
-      const response = await fetch(`/api/marketing/campaigns/${campaign.id}/execute`, { method: "POST" });
-      const payload = (await response.json()) as ExecuteResponse;
-      if (!response.ok) throw new Error(payload.error ?? "Crina could not start this campaign.");
+      const response = await fetch(`/api/marketing/campaigns/${campaign.id}/automation/start`, { method: "POST" });
+      const payload = (await response.json()) as ExecuteResponse & {
+        execute?: ExecuteResponse;
+        tick?: { contentItems?: ContentItem[]; results?: unknown[]; message?: string };
+        message?: string;
+      };
+      if (!response.ok) throw new Error(payload.error ?? "Crina automation could not start this campaign.");
 
-      const count = payload.contentItems?.length ?? 0;
-      if (payload.contentItems?.length) {
+      const createdItems = payload.contentItems ?? payload.execute?.contentItems ?? [];
+      const updatedItems = payload.tick?.contentItems ?? [];
+      const allItems = [...createdItems, ...updatedItems];
+      if (allItems.length) {
         setPlanItems((current) => {
-          const incoming = new Map(payload.contentItems!.map((item) => [item.id, item]));
+          const incoming = new Map(allItems.map((item) => [item.id, item]));
           const existing = current.filter((item) => !incoming.has(item.id));
-          return [...payload.contentItems!, ...existing];
+          return [...allItems, ...existing];
         });
       }
+      const count = createdItems.length;
+      const steps = payload.tick?.results?.length ?? 0;
       setMessage(
-        payload.alreadyStarted
-          ? "Crina already created Pipeline items for this campaign. Open Pipeline to continue."
-          : `${payload.fallback ? "FALLBACK: " : ""}Crina created ${count} campaign plan item${count === 1 ? "" : "s"} in Pipeline${payload.provider ? ` using ${payload.provider}${payload.model ? `/${payload.model}` : ""}` : ""}.`
+        payload.execute?.alreadyStarted
+          ? `Crina automation resumed. ${payload.tick?.message ?? "Open Pipeline to watch progress."}`
+          : `${payload.execute?.fallback ? "FALLBACK: " : ""}Crina created ${count} campaign plan item${count === 1 ? "" : "s"} and ran ${steps} internal automation step${steps === 1 ? "" : "s"}.`
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Crina could not start this campaign.");
+      setMessage(error instanceof Error ? error.message : "Crina automation could not start this campaign.");
     } finally {
       setExecutingId(null);
     }
@@ -507,7 +515,7 @@ export function CampaignWorkspace({
                   <div className="mt-3 flex flex-wrap gap-2">
                     <OSButton onClick={() => startCrina(campaign)} disabled={executingId === campaign.id}>
                       {executingId === campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                      {executingId === campaign.id ? "Crina is creating..." : campaignPlanItems.length ? "Refresh Crina plan" : "Start Crina plan"}
+                      {executingId === campaign.id ? "Crina is working..." : campaignPlanItems.length ? "Resume automation" : "Start Crina automation"}
                     </OSButton>
                     {campaignPlanItems.length ? (
                       <Link
