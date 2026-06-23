@@ -132,7 +132,8 @@ export function PipelineWorkspace({
   const selectedItem = selectedExecution?.items.find((item) => item.id === selectedItemId) ?? selectedExecution?.items[0] ?? null;
   const [orchestratingId, setOrchestratingId] = useState<string | null>(null);
   const [pausedIds, setPausedIds] = useState<Record<string, boolean>>({});
-  const [autoRuns, setAutoRuns] = useState<Record<string, number>>({});
+  const [attentionIds, setAttentionIds] = useState<Record<string, boolean>>({});
+  const [noProgressCounts, setNoProgressCounts] = useState<Record<string, number>>({});
   const [lastRun, setLastRun] = useState<OrchestrateResponse | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -163,9 +164,18 @@ export function PipelineWorkspace({
 
       updateItems(payload.contentItems ?? []);
       setLastRun(payload);
-      setAutoRuns((current) => ({ ...current, [execution.campaign.id]: (current[execution.campaign.id] ?? 0) + 1 }));
       const advanced = payload.results?.filter((result) => result.status === "advanced" || result.status === "fallback").length ?? 0;
       const fallback = payload.results?.filter((result) => result.status === "fallback").length ?? 0;
+      setNoProgressCounts((current) => {
+        const nextCount = advanced ? 0 : (current[execution.campaign.id] ?? 0) + 1;
+        if (nextCount >= 3) {
+          setAttentionIds((attention) => ({ ...attention, [execution.campaign.id]: true }));
+        }
+        return { ...current, [execution.campaign.id]: nextCount };
+      });
+      if (advanced) {
+        setAttentionIds((current) => ({ ...current, [execution.campaign.id]: false }));
+      }
       setMessage(
         payload.message ??
           (advanced
@@ -175,7 +185,7 @@ export function PipelineWorkspace({
               : `${execution.campaign.title}: no eligible internal step right now.`)
       );
     } catch (error) {
-      setPausedIds((current) => ({ ...current, [execution.campaign.id]: true }));
+      setAttentionIds((current) => ({ ...current, [execution.campaign.id]: true }));
       setMessage(error instanceof Error ? error.message : "Campaign automation could not continue.");
     } finally {
       setOrchestratingId(null);
@@ -183,18 +193,21 @@ export function PipelineWorkspace({
   }, [updateItems]);
 
   useEffect(() => {
-    if (!selectedExecution) return;
-    if (pausedIds[selectedExecution.campaign.id]) return;
+    const runnable = executions.find((execution) => {
+      if (pausedIds[execution.campaign.id]) return false;
+      if (attentionIds[execution.campaign.id]) return false;
+      if (execution.lane === "human_approval" || execution.lane === "publishing") return false;
+      return true;
+    });
+    if (!runnable) return;
     if (orchestratingId) return;
-    if (selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing") return;
-    if ((autoRuns[selectedExecution.campaign.id] ?? 0) >= 8) return;
 
     const timer = window.setTimeout(() => {
-      void runAutomation(selectedExecution, "auto");
+      void runAutomation(runnable, "auto");
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [autoRuns, orchestratingId, pausedIds, runAutomation, selectedExecution]);
+  }, [attentionIds, executions, orchestratingId, pausedIds, runAutomation]);
 
   return (
     <div className="space-y-5">
@@ -254,8 +267,8 @@ export function PipelineWorkspace({
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-sm font-medium text-cyan-100">Agent automation</div>
-                      <OSBadge tone={pausedIds[selectedExecution.campaign.id] ? "warn" : orchestratingId === selectedExecution.campaign.id ? "info" : "ok"}>
-                        {pausedIds[selectedExecution.campaign.id] ? "Paused" : orchestratingId === selectedExecution.campaign.id ? "Running" : "Auto"}
+                      <OSBadge tone={attentionIds[selectedExecution.campaign.id] ? "danger" : pausedIds[selectedExecution.campaign.id] ? "warn" : orchestratingId === selectedExecution.campaign.id ? "info" : "ok"}>
+                        {attentionIds[selectedExecution.campaign.id] ? "Needs attention" : pausedIds[selectedExecution.campaign.id] ? "Paused" : orchestratingId === selectedExecution.campaign.id ? "Running" : "Auto"}
                       </OSBadge>
                     </div>
                     <p className="mt-1 text-xs leading-5 text-neutral-400">
@@ -266,17 +279,18 @@ export function PipelineWorkspace({
                     <OSBadge tone={selectedExecution.lane === "human_approval" ? "warn" : "ok"}>
                       {selectedExecution.lane === "human_approval" ? "Waiting for you" : "Publishing prep"}
                     </OSBadge>
-                  ) : pausedIds[selectedExecution.campaign.id] ? (
+                  ) : pausedIds[selectedExecution.campaign.id] || attentionIds[selectedExecution.campaign.id] ? (
                     <OSButton
                       onClick={() => {
                         setPausedIds((current) => ({ ...current, [selectedExecution.campaign.id]: false }));
-                        setAutoRuns((current) => ({ ...current, [selectedExecution.campaign.id]: 0 }));
+                        setAttentionIds((current) => ({ ...current, [selectedExecution.campaign.id]: false }));
+                        setNoProgressCounts((current) => ({ ...current, [selectedExecution.campaign.id]: 0 }));
                         void runAutomation(selectedExecution, "manual");
                       }}
                       disabled={orchestratingId === selectedExecution.campaign.id}
                     >
                       {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                      Resume automation
+                      {attentionIds[selectedExecution.campaign.id] ? "Resume after attention" : "Resume automation"}
                     </OSButton>
                   ) : (
                     <OSButton
