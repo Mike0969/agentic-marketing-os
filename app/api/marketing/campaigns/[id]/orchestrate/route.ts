@@ -353,10 +353,11 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
   const error = fallback ? run.error ?? `${run.provider} returned invalid visual JSON.` : null;
 
   const assetCount = desiredAssetCount(item);
+  const inTickAssetCount = Math.min(assetCount, 1);
   const assetKind = assetKindFor(item);
   const generatedAssets: ReadyPackageAsset[] = [];
-  for (let index = 0; index < assetCount; index += 1) {
-    const prompt = assetCount > 1 ? `${visual.assetPrompt}\nCarousel slide ${index + 1} of ${assetCount}. Keep visual continuity and no unverified claims.` : visual.assetPrompt;
+  for (let index = 0; index < inTickAssetCount; index += 1) {
+    const prompt = assetCount > 1 ? `${visual.assetPrompt}\nCarousel hero / slide 1 of ${assetCount}. Keep visual continuity and no unverified claims. Remaining slides are generated asynchronously from Ready to Post.` : visual.assetPrompt;
     const image = await generateMarketingImage(prompt, { contentItemId: item.id, position: index + 1, kind: assetKind });
     generatedAssets.push({
       kind: assetKind,
@@ -385,7 +386,7 @@ async function runVisual(item: ContentItem, brand: Brand | null, campaign: Campa
     visual_asset_model: firstAsset?.model ?? run.modelUsed,
     visual_asset_error: assetFailed ? firstAsset?.error ?? error : error,
     agent_handoff_summary: `Visual & Video Agent prepared creative direction and handed it to Crina for final package review.`,
-    performance_summary: `${item.performance_summary ?? ""}\nVisual direction (${run.provider}/${run.modelUsed ?? "default"}): ${visual.visualConcept}. ${visual.editorNotes}`.trim()
+    performance_summary: `${item.performance_summary ?? ""}\nVisual direction (${run.provider}/${run.modelUsed ?? "default"}): ${visual.visualConcept}. ${visual.editorNotes}${assetCount > 1 ? " Remaining carousel slides deferred to Ready to Post." : ""}`.trim()
   });
 
   await recordAgentRun({

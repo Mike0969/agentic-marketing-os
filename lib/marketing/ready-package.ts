@@ -77,12 +77,17 @@ export function normalizeReadyPackage(value: unknown, item: ContentItem, fallbac
   };
 }
 
-export async function saveContentAssets(contentItemId: string, assets: ReadyPackageAsset[]) {
+export async function saveContentAssets(contentItemId: string, assets: ReadyPackageAsset[], options: { replace?: boolean } = {}) {
   if (!isSupabaseConfigured()) return [] as ContentAsset[];
   const supabase = createServiceClient() ?? (await createClient());
   if (!supabase || !assets.length) return [] as ContentAsset[];
 
-  await supabase.from("content_assets").delete().eq("content_item_id", contentItemId);
+  if (options.replace ?? true) {
+    await supabase.from("content_assets").delete().eq("content_item_id", contentItemId);
+  } else {
+    const positions = assets.map((asset, index) => asset.position ?? index + 1);
+    await supabase.from("content_assets").delete().eq("content_item_id", contentItemId).in("position", positions);
+  }
   const { data } = await supabase
     .from("content_assets")
     .insert(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Download, Loader2, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import type { Brand, Campaign, ContentAsset, ContentItem, ReadyPackage } from "@/lib/types";
@@ -39,9 +39,18 @@ function platformTone(platform: string): "info" | "demo" | "off" {
   return "off";
 }
 
+function desiredAssetCount(item: ContentItem) {
+  const raw = `${item.platform} ${item.content_type}`.toLowerCase();
+  if (raw.includes("carousel")) return 5;
+  return 1;
+}
+
 export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }: Props) {
   const [items, setItems] = useState(contentItems);
+  const [assetItems, setAssetItems] = useState(assets);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [generatingAssetIds, setGeneratingAssetIds] = useState<Record<string, boolean>>({});
+  const [attemptedAssetIds, setAttemptedAssetIds] = useState<Record<string, boolean>>({});
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -49,11 +58,11 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
   const campaignMap = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
   const assetsByItem = useMemo(() => {
     const grouped = new Map<string, ContentAsset[]>();
-    for (const asset of assets) {
+    for (const asset of assetItems) {
       grouped.set(asset.content_item_id, [...(grouped.get(asset.content_item_id) ?? []), asset]);
     }
     return grouped;
-  }, [assets]);
+  }, [assetItems]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, ContentItem[]>();
@@ -108,6 +117,32 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
     URL.revokeObjectURL(url);
   }
 
+  useEffect(() => {
+    for (const item of items) {
+      const desired = desiredAssetCount(item);
+      if (desired <= 1) continue;
+      const existing = assetsByItem.get(item.id) ?? [];
+      if (existing.length >= desired || generatingAssetIds[item.id] || attemptedAssetIds[item.id]) continue;
+
+      setGeneratingAssetIds((current) => ({ ...current, [item.id]: true }));
+      setAttemptedAssetIds((current) => ({ ...current, [item.id]: true }));
+      void fetch(`/api/marketing/content-items/${item.id}/assets/generate`, { method: "POST" })
+        .then(async (response) => {
+          const payload = (await response.json().catch(() => ({}))) as { assets?: ContentAsset[]; error?: string };
+          if (!response.ok) throw new Error(payload.error ?? "Deferred asset generation failed.");
+          if (payload.assets?.length) {
+            setAssetItems((current) => {
+              const incoming = new Map(payload.assets!.map((asset) => [`${asset.content_item_id}:${asset.position}`, asset]));
+              const existingAssets = current.filter((asset) => !incoming.has(`${asset.content_item_id}:${asset.position}`));
+              return [...existingAssets, ...payload.assets!].sort((a, b) => a.position - b.position);
+            });
+          }
+        })
+        .catch((error) => setMessage(error instanceof Error ? error.message : "Deferred asset generation failed."))
+        .finally(() => setGeneratingAssetIds((current) => ({ ...current, [item.id]: false })));
+    }
+  }, [assetsByItem, attemptedAssetIds, generatingAssetIds, items]);
+
   return (
     <div className="space-y-5">
       {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
@@ -130,6 +165,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
                   key={item.id}
                   item={item}
                   assets={assetsByItem.get(item.id) ?? []}
+                  generatingAssets={generatingAssetIds[item.id] ?? false}
                   busy={busyId === item.id}
                   rejecting={rejectId === item.id}
                   reason={reasons[item.id] ?? ""}
@@ -158,6 +194,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
 function ReadyCard({
   item,
   assets,
+  generatingAssets,
   busy,
   rejecting,
   reason,
@@ -171,6 +208,7 @@ function ReadyCard({
 }: {
   item: ContentItem;
   assets: ContentAsset[];
+  generatingAssets: boolean;
   busy: boolean;
   rejecting: boolean;
   reason: string;
@@ -195,6 +233,7 @@ function ReadyCard({
         <OSBadge tone={pending ? "warn" : item.approval_status === "approved" ? "ok" : "off"}>{pending ? "Needs decision" : item.approval_status}</OSBadge>
         {fallbackMarked(item) ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
         {primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
+        {generatingAssets ? <OSBadge tone="info">Generating slides</OSBadge> : null}
         {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}
       </div>
 
