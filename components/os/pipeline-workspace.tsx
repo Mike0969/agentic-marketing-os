@@ -91,6 +91,25 @@ function activeStatuses(item: ContentItem) {
   return ["idea", "brief", "draft", "visual", "approval", "scheduled"].includes(item.status);
 }
 
+function automationTone(status: string | null | undefined, attention: boolean, paused: boolean, running: boolean): "ok" | "warn" | "danger" | "info" | "off" {
+  if (attention || status === "needs_attention") return "danger";
+  if (paused || status === "paused") return "warn";
+  if (running || status === "running") return "info";
+  if (status === "waiting_human") return "warn";
+  if (status === "publishing_prep" || status === "complete") return "ok";
+  return "off";
+}
+
+function automationLabel(status: string | null | undefined, attention: boolean, paused: boolean, running: boolean) {
+  if (attention || status === "needs_attention") return "Needs attention";
+  if (paused || status === "paused") return "Paused";
+  if (running || status === "running") return "Running";
+  if (status === "waiting_human") return "Waiting for you";
+  if (status === "publishing_prep") return "Publishing prep";
+  if (status === "complete") return "Complete";
+  return "Auto";
+}
+
 export function PipelineWorkspace({
   contentItems,
   brands,
@@ -168,9 +187,6 @@ export function PipelineWorkspace({
       const fallback = payload.results?.filter((result) => result.status === "fallback").length ?? 0;
       setNoProgressCounts((current) => {
         const nextCount = advanced ? 0 : (current[execution.campaign.id] ?? 0) + 1;
-        if (nextCount >= 3) {
-          setAttentionIds((attention) => ({ ...attention, [execution.campaign.id]: true }));
-        }
         return { ...current, [execution.campaign.id]: nextCount };
       });
       if (advanced) {
@@ -193,10 +209,27 @@ export function PipelineWorkspace({
   }, [updateItems]);
 
   useEffect(() => {
+    const attentionCampaigns = Object.entries(noProgressCounts).filter(([, count]) => count >= 3);
+    if (!attentionCampaigns.length) return;
+
+    setAttentionIds((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [campaignId] of attentionCampaigns) {
+        if (!next[campaignId]) {
+          next[campaignId] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [noProgressCounts]);
+
+  useEffect(() => {
     const runnable = executions.find((execution) => {
       if (pausedIds[execution.campaign.id]) return false;
       if (attentionIds[execution.campaign.id]) return false;
-      if (execution.lane === "human_approval" || execution.lane === "publishing") return false;
+      if (execution.lane === "waiting" || execution.lane === "human_approval" || execution.lane === "publishing") return false;
       return true;
     });
     if (!runnable) return;
@@ -232,6 +265,9 @@ export function PipelineWorkspace({
                       key={execution.campaign.id}
                       execution={execution}
                       selected={selectedExecution?.campaign.id === execution.campaign.id}
+                      attention={attentionIds[execution.campaign.id] || execution.campaign.automation_status === "needs_attention"}
+                      paused={pausedIds[execution.campaign.id] || execution.campaign.automation_status === "paused"}
+                      running={orchestratingId === execution.campaign.id || execution.campaign.automation_status === "running"}
                       onSelect={() => selectExecution(execution)}
                     />
                   ))}
@@ -267,15 +303,29 @@ export function PipelineWorkspace({
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="text-sm font-medium text-cyan-100">Agent automation</div>
-                      <OSBadge tone={attentionIds[selectedExecution.campaign.id] ? "danger" : pausedIds[selectedExecution.campaign.id] ? "warn" : orchestratingId === selectedExecution.campaign.id ? "info" : "ok"}>
-                        {attentionIds[selectedExecution.campaign.id] ? "Needs attention" : pausedIds[selectedExecution.campaign.id] ? "Paused" : orchestratingId === selectedExecution.campaign.id ? "Running" : "Auto"}
+                      <OSBadge
+                        tone={automationTone(
+                          selectedExecution.campaign.automation_status,
+                          attentionIds[selectedExecution.campaign.id],
+                          pausedIds[selectedExecution.campaign.id],
+                          orchestratingId === selectedExecution.campaign.id
+                        )}
+                      >
+                        {automationLabel(
+                          selectedExecution.campaign.automation_status,
+                          attentionIds[selectedExecution.campaign.id],
+                          pausedIds[selectedExecution.campaign.id],
+                          orchestratingId === selectedExecution.campaign.id
+                        )}
                       </OSBadge>
                     </div>
                     <p className="mt-1 text-xs leading-5 text-neutral-400">
                       Crina runs the internal agent loop. You only step in for final approval or if automation needs attention.
                     </p>
                   </div>
-                  {selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing" ? (
+                  {selectedExecution.lane === "waiting" ? (
+                    <OSBadge tone="off">Start from Campaigns</OSBadge>
+                  ) : selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing" ? (
                     <OSBadge tone={selectedExecution.lane === "human_approval" ? "warn" : "ok"}>
                       {selectedExecution.lane === "human_approval" ? "Waiting for you" : "Publishing prep"}
                     </OSBadge>
@@ -379,7 +429,21 @@ export function PipelineWorkspace({
   );
 }
 
-function CampaignPipelineCard({ execution, selected, onSelect }: { execution: CampaignExecution; selected: boolean; onSelect: () => void }) {
+function CampaignPipelineCard({
+  execution,
+  selected,
+  attention,
+  paused,
+  running,
+  onSelect
+}: {
+  execution: CampaignExecution;
+  selected: boolean;
+  attention: boolean;
+  paused: boolean;
+  running: boolean;
+  onSelect: () => void;
+}) {
   return (
     <button
       type="button"
@@ -391,7 +455,12 @@ function CampaignPipelineCard({ execution, selected, onSelect }: { execution: Ca
           <div className="text-xs text-neutral-500">{execution.brand?.name ?? "Unknown brand"}</div>
           <h3 className="mt-1 line-clamp-3 text-sm font-semibold leading-5 text-neutral-100">{execution.campaign.title}</h3>
         </div>
-        {execution.fallback ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <OSBadge tone={automationTone(execution.campaign.automation_status, attention, paused, running)}>
+            {automationLabel(execution.campaign.automation_status, attention, paused, running)}
+          </OSBadge>
+          {execution.fallback ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
+        </div>
       </div>
       <div className="mt-3 space-y-2 text-xs text-neutral-500">
         <div className="flex items-center gap-2">
@@ -401,8 +470,23 @@ function CampaignPipelineCard({ execution, selected, onSelect }: { execution: Ca
         <div>{execution.items.length} plan piece{execution.items.length === 1 ? "" : "s"}</div>
         <div>Next: {execution.nextOwner}</div>
       </div>
+      {execution.items.length ? (
+        <div className="mt-3 space-y-1.5 border-t border-neutral-900 pt-3">
+          {execution.items.slice(0, 3).map((item) => (
+            <div key={item.id} className="flex items-center justify-between gap-2 rounded bg-neutral-900/60 px-2 py-1.5">
+              <span className="line-clamp-1 text-xs text-neutral-300">{item.title}</span>
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-neutral-600">{item.platform}</span>
+            </div>
+          ))}
+          {execution.items.length > 3 ? <div className="text-xs text-neutral-600">+{execution.items.length - 3} more pieces</div> : null}
+        </div>
+      ) : (
+        <div className="mt-3 rounded border border-dashed border-neutral-800 px-2 py-2 text-xs text-neutral-600">
+          No Crina plan yet. Approve/start from Campaigns.
+        </div>
+      )}
       <div className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-neutral-300">
-        Inspect <Eye className="h-3.5 w-3.5" />
+        Click to inspect campaign work <Eye className="h-3.5 w-3.5" />
       </div>
     </button>
   );

@@ -31,6 +31,8 @@ export type Agent = {
 };
 
 export type CampaignStatus = "planning" | "active" | "paused" | "completed";
+export type CampaignAutomationStatus = "idle" | "running" | "paused" | "needs_attention" | "waiting_human" | "publishing_prep" | "complete";
+export type CampaignAutomationMode = "human_gate" | "autopilot";
 
 export type Campaign = {
   id: string;
@@ -42,6 +44,13 @@ export type Campaign = {
   start_date: string;
   end_date: string;
   created_at?: string;
+  automation_status?: CampaignAutomationStatus | null;
+  automation_mode?: CampaignAutomationMode | null;
+  automation_locked_until?: string | null;
+  automation_last_tick_at?: string | null;
+  automation_error?: string | null;
+  automation_no_progress_count?: number | null;
+  automation_started_at?: string | null;
 };
 
 export const contentStatuses = [

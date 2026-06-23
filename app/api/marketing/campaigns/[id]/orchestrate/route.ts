@@ -3,7 +3,8 @@ import { revalidatePath } from "next/cache";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { readLocalDashboardData, updateLocalContentItem } from "@/lib/local-store";
-import { requireAdmin } from "@/lib/auth";
+import { requireAgentAccess } from "@/lib/auth";
+import { acquireCampaignAutomationLock, releaseCampaignAutomationLock } from "@/lib/marketing/campaign-automation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ContentItem } from "@/lib/types";
 
@@ -432,16 +433,29 @@ async function processItem(item: ContentItem, brand: Brand | null, campaign: Cam
   };
 }
 
-export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
-  const admin = await requireAdmin();
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const admin = await requireAgentAccess(request);
   if (!admin.ok) return admin.response;
 
   const { id } = await context.params;
+  const lock = await acquireCampaignAutomationLock(id);
+  if (!lock.ok) return NextResponse.json({ error: lock.error }, { status: lock.status });
+
+  try {
   const { campaign, brand, items } = await readContext(id);
 
-  if (!campaign) return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
-  if (campaign.status !== "active") return NextResponse.json({ error: "Campaign must be approved before orchestration can continue." }, { status: 409 });
-  if (!items.length) return NextResponse.json({ error: "No Crina campaign plan exists yet. Start Crina plan first." }, { status: 409 });
+  if (!campaign) {
+    await releaseCampaignAutomationLock(id, "needs_attention", { error: "Campaign not found." });
+    return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
+  }
+  if (campaign.status !== "active") {
+    await releaseCampaignAutomationLock(id, "idle", { error: "Campaign must be approved before orchestration can continue." });
+    return NextResponse.json({ error: "Campaign must be approved before orchestration can continue." }, { status: 409 });
+  }
+  if (!items.length) {
+    await releaseCampaignAutomationLock(id, "idle", { error: "No Crina campaign plan exists yet. Start Crina plan first." });
+    return NextResponse.json({ error: "No Crina campaign plan exists yet. Start Crina plan first." }, { status: 409 });
+  }
 
   let currentItems = items;
   const eligible = currentItems.filter(
@@ -453,6 +467,9 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   );
 
   if (!eligible.length) {
+    const waitingForHuman = currentItems.some((item) => item.workflow_stage === "human_final_approval" || item.approval_status === "pending");
+    const publishingPrep = currentItems.some((item) => item.workflow_stage === "publishing_prep" || item.status === "scheduled");
+    await releaseCampaignAutomationLock(id, waitingForHuman ? "waiting_human" : publishingPrep ? "publishing_prep" : "idle");
     return NextResponse.json({
       campaign,
       results: [],
@@ -503,7 +520,25 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   revalidatePath("/marketing");
 
   const waitingForHuman = currentItems.some((item) => item.workflow_stage === "human_final_approval" || item.approval_status === "pending");
+  const publishingPrep = currentItems.some((item) => item.workflow_stage === "publishing_prep" || item.status === "scheduled");
   const stepLimitReached = results.length >= maxSteps;
+  const advanced = results.filter((result) => result.status === "advanced" || result.status === "fallback").length;
+  const hasError = results.some((result) => result.status === "error");
+  const nextNoProgressCount = advanced ? 0 : (campaign.automation_no_progress_count ?? 0) + 1;
+  const automationStatus = waitingForHuman
+    ? "waiting_human"
+    : publishingPrep
+      ? "publishing_prep"
+      : hasError && !advanced
+        ? "needs_attention"
+        : nextNoProgressCount >= 3
+          ? "needs_attention"
+          : "running";
+
+  await releaseCampaignAutomationLock(id, automationStatus, {
+    error: hasError ? results.find((result) => result.status === "error")?.error ?? "Internal automation error." : null,
+    noProgressCount: nextNoProgressCount
+  });
 
   return NextResponse.json({
     campaign,
@@ -515,4 +550,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         ? "Internal automation completed a safe batch. More internal work may remain."
         : "Internal agent workflow advanced as far as it can right now."
   });
+  } catch (error) {
+    await releaseCampaignAutomationLock(id, "needs_attention", { error: error instanceof Error ? error.message : "Internal campaign automation failed." });
+    throw error;
+  }
 }
