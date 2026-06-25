@@ -101,6 +101,7 @@ export type ContentItem = {
   visual_asset_status?: "not_requested" | "generated" | "placeholder" | "error" | null;
   visual_asset_model?: string | null;
   visual_asset_error?: string | null;
+  notified_at?: string | null;
   workflow_stage?: ContentWorkflowStage | null;
   current_owner?: string | null;
   next_owner?: string | null;

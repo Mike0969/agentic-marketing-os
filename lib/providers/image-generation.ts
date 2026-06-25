@@ -17,6 +17,7 @@ export type ImageGenerationResult = {
 };
 
 const GPT_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+const GPT_IMAGE_QUALITY = process.env.OPENAI_IMAGE_QUALITY || "low";
 const FLUX_MODEL = process.env.FLUX_IMAGE_MODEL || "black-forest-labs/FLUX.1-schnell";
 const STABILITY_MODEL = process.env.STABILITY_IMAGE_MODEL || "stabilityai/stable-diffusion-xl-base-1.0";
 
@@ -36,7 +37,8 @@ async function generateGptImage(prompt: string): Promise<ImageGenerationResult> 
     const response = await client.images.generate({
       model: GPT_IMAGE_MODEL,
       prompt,
-      size: "1024x1024"
+      size: "1024x1024",
+      quality: GPT_IMAGE_QUALITY
     } as never);
     const image = response.data?.[0] as { b64_json?: string; url?: string } | undefined;
     const bytes = image?.b64_json ? Buffer.from(image.b64_json, "base64") : image?.url ? await fetchBytes(image.url) : null;
@@ -60,7 +62,7 @@ async function generateHuggingFace(prompt: string, provider: "flux" | "stability
   }
 
   try {
-    const response = await fetch(`https://api-inference.huggingface.co/models/${model}`, {
+    const response = await fetch(`https://router.huggingface.co/hf-inference/models/${model}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
@@ -144,7 +146,7 @@ export async function generateMarketingImage(prompt: string, context: { contentI
 }
 
 export const mediaCapabilities = {
-  gptImage: { provider: "gpt-image", model: GPT_IMAGE_MODEL, capabilities: ["image_generation"] },
+  gptImage: { provider: "gpt-image", model: GPT_IMAGE_MODEL, quality: GPT_IMAGE_QUALITY, capabilities: ["image_generation"] },
   flux: { provider: "flux", model: FLUX_MODEL, capabilities: ["image_generation", "video_generation_partial"] },
   stability: { provider: "stability", model: STABILITY_MODEL, capabilities: ["image_generation", "video_generation_partial"] },
   videoGeneration: { enabled: false, capabilities: ["video_generation"], status: "coming_soon" }

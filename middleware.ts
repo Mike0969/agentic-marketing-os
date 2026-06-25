@@ -64,6 +64,6 @@ function isPublicPath(pathname: string) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/auth/logout|api/health|api/agents/team|api/marketing/seo-loop|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    "/((?!_next/static|_next/image|favicon.ico|api/auth/logout|api/health|api/agents/team|api/marketing/seo-loop|api/marketing/automation/cron|api/marketing/campaigns/.*/orchestrate|api/marketing/campaigns/.*/automation/tick|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
   ]
 };

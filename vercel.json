@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/marketing/automation/cron",
+      "schedule": "*/2 * * * *"
+    }
+  ]
+}

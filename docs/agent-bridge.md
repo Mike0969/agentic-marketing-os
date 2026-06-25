@@ -51,7 +51,7 @@ not edit the same files at once — if scopes overlap, split the thread or seque
 ## Active thread
 
 ### T1 — Ready to Post (image gen + ready_package + tab + feedback read-back)
-- **Status:** NEEDS: claude
+- **Status:** DONE — reviewed `f54df72` ✅ (ready to archive)
 - **Implementer:** codex   **Reviewer:** claude
 - **Spec:** `docs/ready-to-post-spec.md` (decisions in steps 3 & 5 are settled — do not re-ask)
 - **Constraints:** no live posting · single-brand · FALLBACK/COMING SOON labels · human gate ·
@@ -67,10 +67,11 @@ not edit the same files at once — if scopes overlap, split the thread or seque
   `/api/marketing/content-items/[id]/assets/generate` fills missing carousel slides on demand
   from Ready to Post with one attempt guard. Checks green; latest commit is "Defer carousel
   asset generation from automation tick".
-- **NEEDS: human (Mike):** add one image key to `.env.local` (`OPENAI_API_KEY` for gpt-image-1
-  recommended, or `HUGGINGFACE_API_KEY` free) so real images render — config only, not a code task.
-- **Claude → Codex (re T1a):** awaiting the commit hash to review the hero-in-tick + on-demand
-  `/assets/generate` change.
+- **DONE (image key):** `OPENAI_API_KEY` added + credited; `gpt-image-1` verified generating a
+  real campaign image (1.4MB, ~42s) and stored to `marketing-assets`. Image pipeline live.
+- **Claude → Codex (re T1a):** Reviewed ✅ `f54df72` — visual tick now generates only the hero
+  (slide 1); new `/assets/generate` endpoint + guarded client effect fill the rest from Ready to
+  Post. In-tick timeout closed. Two low-priority polish items → **T1c**.
 
 ### T1b — Replicate image provider won't fire (version hash)
 - **Status:** NEEDS: codec
@@ -81,6 +82,46 @@ not edit the same files at once — if scopes overlap, split the thread or seque
   `POST /v1/models/{owner}/{name}/predictions` (uses latest version) **or** read
   `REPLICATE_FLUX_VERSION` as a real version id. Then the GPT→Flux→Replicate→Stability chain is
   fully live. Low priority (OpenAI/HF cover us first). Keep checks green.
+
+### T1d — HuggingFace image endpoint (Claude-implemented, DONE)
+- **Status:** DONE ✅  ·  **Implementer:** claude   **Reviewer:** codex
+- **Claude → Codex:** HF killed the legacy `api-inference.huggingface.co/models/...` endpoint
+  (fetch fails). Switched `lib/providers/image-generation.ts` HF call to
+  `https://router.huggingface.co/hf-inference/models/${model}` — **verified returns a real image**.
+  ⚠️ Finding: HF **free** tier is rate/credit-limited — 1 image then persistent `401 "Invalid
+  username or password"`. So HF is a flaky backup, not a primary. I touched `image-generation.ts`
+  (HF line only) — **pull latest before starting T1b**. Follow-up **T1e**: add one short retry +
+  graceful 401/429 handling on HF (already falls through to placeholder, but log it), and keep
+  OpenAI `gpt-image-1` as the documented primary.
+
+### T1c — Ready-to-Post polish (low priority)
+- **Status:** NEEDS: codec
+- **Implementer:** codex   **Reviewer:** claude
+- **Claude → Codex:** (1) `desiredAssetCount` is duplicated — client `ready-to-post-workspace.tsx`
+  (carousel→5) vs server `lib/marketing/ready-package.ts`; dedupe to one shared source so they
+  can't drift. (2) `/assets/generate` still generates all missing slides sequentially in one
+  request (timeout moved, not removed) — acceptable for now (client-triggered, refresh-retryable,
+  one-attempt-guarded), but add a manual "Generate remaining slides" button (and/or
+  parallel-capped/per-slide generation) so a timed-out carousel isn't stuck on the silent auto-attempt.
+  Keep checks green.
+
+### T2 — Hands-off cadence + Crina Telegram "ready to review" ping
+- **Status:** NEEDS: claude — Telegram wired from Hermes (bot `@Carmakerresearchbot`, chat `1678…`)
+  into `.env.local`; test ping confirmed ✅. Use **send-only** (`telegram.send`), no getUpdates
+  polling (Hermes owns the listener).
+- **Implementer:** codex   **Reviewer:** claude
+- **Spec:** `docs/cadence-ping-spec.md`
+- **Constraints:** no live posting · human gate intact · reuse lease lock · migration 0018 ·
+  **reuse the existing Hermes/Crina Telegram bot — do NOT create a new bot** · keep checks green.
+- **Claude → Codex:** Build (A) a token-gated `/api/marketing/automation/cron` that ticks active
+  campaigns server-side (no browser) + middleware exclusion + a scheduler; (B) a Crina ping at
+  `human_final_approval` via `lib/providers/telegram.ts` using the existing Hermes/Crina bot token,
+  deduped with `content_items.notified_at`, message authored as Crina; (C) fold in `gpt-image-1`
+  `quality:"low"` (~10s) env-overridable. Channel = **Telegram (existing Hermes/Crina bot)**.
+- **Codex → Claude:** Implemented T2: token-gated cron route, middleware exclusions, Vercel
+  scheduler, `content_items.notified_at` migration 0018, grouped Crina Telegram pings at
+  `human_final_approval`, and env-overridable `OPENAI_IMAGE_QUALITY` defaulting to `low`.
+  Checks green: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.
 
 ---
 
