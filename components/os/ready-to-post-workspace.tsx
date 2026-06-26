@@ -49,6 +49,8 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
   const [items, setItems] = useState(contentItems);
   const [assetItems, setAssetItems] = useState(assets);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [reworkingIds, setReworkingIds] = useState<Record<string, boolean>>({});
+  const [reworkedIds, setReworkedIds] = useState<Record<string, boolean>>({});
   const [generatingAssetIds, setGeneratingAssetIds] = useState<Record<string, boolean>>({});
   const [attemptedAssetIds, setAttemptedAssetIds] = useState<Record<string, boolean>>({});
   const [rejectId, setRejectId] = useState<string | null>(null);
@@ -83,16 +85,38 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
     setBusyId(item.id);
     setMessage(null);
     try {
-      const response = await fetch(`/api/marketing/approvals/${item.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina" })
-      });
-      const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
-      if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Decision failed.");
-      setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.contentItem! : candidate)));
-      setRejectId(null);
-      setMessage(decision === "approved" ? "Package approved. It is ready to post manually; no network posting occurred." : "Sent back to Crina with your reason.");
+      if (decision === "approved") {
+        const response = await fetch(`/api/marketing/approvals/${item.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina" })
+        });
+        const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
+        if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Decision failed.");
+        setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+        setRejectId(null);
+        setMessage("Approved — ready to post manually; nothing posted live.");
+      } else {
+        // Reject / request changes → Crina reroutes to Visual or Content and regenerates a better version.
+        setReworkingIds((current) => ({ ...current, [item.id]: true }));
+        setRejectId(null);
+        setMessage(`Crina is reworking "${item.title}" based on your remark — regenerating (~20-40s)...`);
+        try {
+          const response = await fetch(`/api/marketing/content-items/${item.id}/rework`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ remark: feedback })
+          });
+          const payload = (await response.json()) as { contentItem?: ContentItem; routedTo?: string[]; error?: string };
+          if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Rework failed.");
+          setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.contentItem! : candidate)));
+          setReworkedIds((current) => ({ ...current, [item.id]: true }));
+          setReasons((current) => ({ ...current, [item.id]: "" }));
+          setMessage(`Crina reworked it (routed to ${(payload.routedTo ?? ["Content"]).join(" + ")}). The new version is ready — review it again.`);
+        } finally {
+          setReworkingIds((current) => ({ ...current, [item.id]: false }));
+        }
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Decision failed.");
     } finally {
@@ -167,6 +191,8 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
                   assets={assetsByItem.get(item.id) ?? []}
                   generatingAssets={generatingAssetIds[item.id] ?? false}
                   busy={busyId === item.id}
+                  reworking={reworkingIds[item.id] ?? false}
+                  reworked={reworkedIds[item.id] ?? false}
                   rejecting={rejectId === item.id}
                   reason={reasons[item.id] ?? ""}
                   onReason={(reason) => setReasons((current) => ({ ...current, [item.id]: reason }))}
@@ -196,6 +222,8 @@ function ReadyCard({
   assets,
   generatingAssets,
   busy,
+  reworking,
+  reworked,
   rejecting,
   reason,
   onReason,
@@ -210,6 +238,8 @@ function ReadyCard({
   assets: ContentAsset[];
   generatingAssets: boolean;
   busy: boolean;
+  reworking: boolean;
+  reworked: boolean;
   rejecting: boolean;
   reason: string;
   onReason: (reason: string) => void;
@@ -230,7 +260,15 @@ function ReadyCard({
     <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-4">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <OSBadge tone={platformTone(item.platform)}>{item.platform}</OSBadge>
-        <OSBadge tone={pending ? "warn" : item.approval_status === "approved" ? "ok" : "off"}>{pending ? "Needs decision" : item.approval_status}</OSBadge>
+        {reworking ? (
+          <OSBadge tone="info">⟳ Reworking…</OSBadge>
+        ) : reworked ? (
+          <OSBadge tone="info">Reworked · review again</OSBadge>
+        ) : pending ? (
+          <OSBadge tone="warn">Ready to review</OSBadge>
+        ) : (
+          <OSBadge tone={item.approval_status === "approved" ? "ok" : "off"}>{item.approval_status}</OSBadge>
+        )}
         {fallbackMarked(item) ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
         {primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
         {generatingAssets ? <OSBadge tone="info">Generating slides</OSBadge> : null}

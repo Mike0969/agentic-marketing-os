@@ -31,7 +31,10 @@ export async function getDashboardData(): Promise<DashboardData> {
     return readLocalDashboardData();
   }
 
-  if (!brands.data?.length || !agents.data?.length || !campaigns.data?.length) {
+  // Only fall back to local data if the DB is genuinely unseeded (no brands/agents).
+  // An empty campaigns list is a VALID fresh-start state and must still read Supabase,
+  // otherwise clearing campaigns wrongly hides brands/agents behind the local fallback.
+  if (!brands.data?.length || !agents.data?.length) {
     return readLocalDashboardData();
   }
 

@@ -1010,3 +1010,9 @@ the current UI contradicts it. Feedback for Codex below — no files changed.
 Phase M-A only (home CTA + copy + governance banner + Approvals two-gate framing).
 No migration, low-risk, removes the wrong mental model immediately. Hold M-B→M-F until
 M-A copy is approved.
+
+## 13. Commit Reviews
+
+Per-commit review notes and the consolidated open-issues list now live in
+`docs/commit-reviews.md` (kept separate so this plan stays the product spec).
+Start there for the current outstanding risks before the next automation sprint.

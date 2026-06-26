@@ -30,7 +30,7 @@ export type Agent = {
   brand_scope: string;
 };
 
-export type CampaignStatus = "planning" | "active" | "paused" | "completed";
+export type CampaignStatus = "idea" | "planning" | "active" | "paused" | "completed" | "archived";
 export type CampaignAutomationStatus = "idle" | "running" | "paused" | "needs_attention" | "waiting_human" | "publishing_prep" | "complete";
 export type CampaignAutomationMode = "human_gate" | "autopilot";
 
@@ -44,6 +44,9 @@ export type Campaign = {
   start_date: string;
   end_date: string;
   created_at?: string;
+  idea_brief?: Record<string, unknown> | null;
+  selected_at?: string | null;
+  archived_at?: string | null;
   automation_status?: CampaignAutomationStatus | null;
   automation_mode?: CampaignAutomationMode | null;
   automation_locked_until?: string | null;

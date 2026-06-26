@@ -120,3 +120,25 @@ File: `components/os/pipeline-workspace.tsx`. Resolves the df37ae0 stall bug. No
   tick at a time per client. Effect now depends on memoized `executions` (fresher).
 - No manual task buttons; still stops at human/publishing. **Confirmed.**
 - **Remaining:** issues #1, #2, #5, #7 above.
+
+## 4a7d28b — Hands-off cadence + Crina Telegram ping (T2)
+
+Files: `app/api/marketing/automation/cron/route.ts` (new), `lib/marketing/crina-telegram.ts`
+(new), `middleware.ts`, `lib/providers/image-generation.ts`, migration `0018_content_item_notifications`,
+`vercel.json`, `lib/types.ts`. Reviewed ✅ — correct and checks green (tsc/lint, 0017+0018 live).
+
+- Cron token-gated (`requireAgentAccess`), lease-locked ticks, bounded ≤3 campaigns × maxSteps,
+  skips paused/attention/human-gate. Middleware excludes cron/orchestrate/automation-tick. ✅
+- Telegram: send-only grouped Crina message at `human_final_approval`; **atomic claim**
+  (`update … .is('notified_at',null)`) dedupes across concurrent crons. ✅
+- `gpt-image-1` `quality:"low"` default, env-overridable (`OPENAI_IMAGE_QUALITY`). ✅
+- No live posting; human final gate intact. ✅
+
+Follow-ups (non-blocking for local):
+1. **T2a (medium, pre-deploy):** Vercel GET cron won't satisfy `requireAgentAccess` — Vercel sends
+   `Authorization: Bearer $CRON_SECRET` only if `CRON_SECRET` is set. Accept `CRON_SECRET` in the
+   route or document `CRON_SECRET = AGENT_TRIGGER_TOKEN`. Hobby caps cron at 1/day (`*/2` needs Pro);
+   set function `maxDuration`.
+2. **T2b (medium):** `notified_at` is claimed before `telegram.send`; a failed send leaves the item
+   notified and never retried. Roll back `notified_at=null` on send failure.
+3. **T2c (low):** cron timeout — 3 campaigns × ≤3 steps with image gen may exceed function limits.

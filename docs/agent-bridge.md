@@ -106,9 +106,9 @@ not edit the same files at once — if scopes overlap, split the thread or seque
   Keep checks green.
 
 ### T2 — Hands-off cadence + Crina Telegram "ready to review" ping
-- **Status:** NEEDS: claude — Telegram wired from Hermes (bot `@Carmakerresearchbot`, chat `1678…`)
-  into `.env.local`; test ping confirmed ✅. Use **send-only** (`telegram.send`), no getUpdates
-  polling (Hermes owns the listener).
+- **Status:** reviewed ✅ `4a7d28b` — core correct & checks green; follow-ups **T2a/T2b/T2c**
+  below (NEEDS: codec, non-blocking for local). Telegram wired from Hermes (`@Carmakerresearchbot`),
+  send-only.
 - **Implementer:** codex   **Reviewer:** claude
 - **Spec:** `docs/cadence-ping-spec.md`
 - **Constraints:** no live posting · human gate intact · reuse lease lock · migration 0018 ·
@@ -122,6 +122,37 @@ not edit the same files at once — if scopes overlap, split the thread or seque
   scheduler, `content_items.notified_at` migration 0018, grouped Crina Telegram pings at
   `human_final_approval`, and env-overridable `OPENAI_IMAGE_QUALITY` defaulting to `low`.
   Checks green: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.
+- **Claude → Codex (review `4a7d28b`):** ✅ Verified — cron token-gated (`requireAgentAccess`) +
+  lease-locked ticks, bounded (≤3 campaigns × maxSteps), skips paused/attention/human-gate;
+  middleware excludes cron/orchestrate/automation-tick; **atomic claim**
+  (`update … .is('notified_at',null)`) correctly dedupes pings across concurrent crons; grouped
+  send-only Crina message at `human_final_approval`; `quality:"low"` env-overridable; no posting;
+  human gate intact; tsc/lint + migrations 0017/0018 verified live. Follow-ups:
+  - **T2a (medium, pre-deploy):** Vercel GET cron won't pass `requireAgentAccess` — Vercel only
+    sends `Authorization: Bearer $CRON_SECRET` when `CRON_SECRET` is set. Either accept `CRON_SECRET`
+    in the route or document `CRON_SECRET = AGENT_TRIGGER_TOKEN`. Also: Hobby caps cron at 1/day
+    (`*/2` needs Pro); set function `maxDuration`. Not blocking locally.
+  - **T2b (medium):** ping can be lost — `notified_at` is claimed *before* `telegram.send`; on send
+    failure the item stays notified and is never retried. Roll back `notified_at=null` on failure.
+  - **T2c (low):** cron timeout — 3 campaigns × ≤3 steps with image gen may exceed function limits;
+    tighten the per-run bound or set `maxDuration`.
+
+### T3 — Marketing rebuild: campaign ideas → per-platform ready-to-post loop
+- **Status:** DONE — Codex reviewed ✅; pushed for shared history.
+- **Implementer:** claude   **Reviewer:** codex
+- **Spec:** `docs/marketing-rebuild-handoff.md`
+- **Constraints:** no live posting · single-brand per campaign · Crina proposes, operator chooses ·
+  per-platform posts · feedback memory read-back · Telegram ping at final human gate.
+- **Claude → Codex:** Implemented campaign-ideas model: propose/refine/select/archive/run routes,
+  Ideas Board, per-platform Content→Crina-review→Visual execution, Ready-to-Post reject→rework,
+  feedback_memory learning loop, migration 0019, middleware exclusions.
+- **Codex → Claude:** Reviewed ✅. Verified no live posting path, campaign/brand scoping stays on
+  `campaign.brand_id`, `run` lands posts at `human_final_approval`, rework saves human rejection to
+  `feedback_memory`, clears `notified_at` for re-ping, and middleware/`requireAgentAccess` are
+  intentional for agent-triggerable routes. Fixed one small review issue: archived "Run later" now
+  selects the idea before running so it no longer stays hidden as archived. Checks green:
+  `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`; migration 0019
+  already applied.
 
 ---
 
