@@ -20,10 +20,10 @@ export function ConversionAnalyzeAction({ brands }: { brands: Brand[] }) {
         body: JSON.stringify({ brand_id: brandId })
       });
       const p = await r.json();
-      if (!r.ok) throw new Error(p.error ?? "Analysis failed.");
+      if (!r.ok) throw new Error(p.error ?? "Capital analysis failed.");
       window.location.reload();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "Analysis failed.");
+      setMsg(e instanceof Error ? e.message : "Capital analysis failed.");
       setBusy(false);
     }
   }
@@ -37,7 +37,7 @@ export function ConversionAnalyzeAction({ brands }: { brands: Brand[] }) {
       </OSSelect>
       <OSButton onClick={analyze} disabled={busy || !brandId} className="shrink-0">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        {busy ? "Analyzing..." : "Analyze conversion"}
+        {busy ? "Analyzing..." : "Analyze capital conversion"}
       </OSButton>
       {msg ? <span className="text-xs text-rose-300">{msg}</span> : null}
     </div>

@@ -8,12 +8,21 @@ import type { Brand } from "@/lib/types";
 
 const conversionSchema = {
   funnel_estimates: [
-    { campaign_id: "string", platform: "string", awareness: 0, signups: 0, activations: 0, paid: 0, revenue_estimate: 0, confidence: "low | medium | high" }
+    {
+      campaign_id: "string",
+      platform: "string",
+      awareness: "Reach / impressions count.",
+      signups: "Leads captured count.",
+      activations: "Qualified investor conversations or due-diligence steps count.",
+      paid: "Investors committed count.",
+      revenue_estimate: "Capital committed in USD.",
+      confidence: "low | medium | high"
+    }
   ],
   what_converts: [
-    { rank: 0, insight: "what is converting and why", hook: "the converting hook", platform: "string", content_type: "string", paid_conversion_rate: 0, evidence: "short evidence" }
+    { rank: 0, insight: "what is converting leads into investors/capital and why", hook: "the converting hook", platform: "string", content_type: "string", paid_conversion_rate: "investors / leads", evidence: "short evidence" }
   ],
-  recommendations_for_crina: ["specific instruction to raise next-campaign conversion"]
+  recommendations_for_crina: ["specific instruction to raise next-campaign leads, investor conversion, and capital committed"]
 };
 
 function num(v: unknown): number {
@@ -60,10 +69,10 @@ export async function runConversionAnalysis(args: { brandId: string; campaignId?
   const run = await runMarketingAgentModel({
     agentId: "agent-conversion",
     fallbackAgentName: "Conversion Agent",
-    fallbackRole: "Sales/Conversion analyst",
-    task: "Estimate Funnel Conversion",
+    fallbackRole: "Investor conversion analyst",
+    task: "Estimate Investor Capital Funnel",
     instructions:
-      "Estimate the funnel (Awareness → Signup → Activation → Paid) per campaign from the signals provided (GSC clicks/impressions, post engagement notes in performance_summary, and any operator-logged outcomes). Be conservative and mark confidence. Then RANK what converts (hooks/angles/platforms) and give specific, concrete recommendations for Crina to raise next-campaign conversion. Estimates only — never post, never call external services.",
+      "Estimate the investor-capital funnel (Reach → Lead → Investor → Capital committed $) per campaign from the signals provided (GSC clicks/impressions, post engagement notes in performance_summary, and any operator-logged outcomes). IMPORTANT field mapping: awareness = Reach, signups = Leads, activations = qualified investor conversations / due-diligence steps, paid = Investors committed, revenue_estimate = capital committed in USD. Be conservative and mark confidence. Then RANK what converts leads into investors and dollars raised (hooks/angles/platforms) and give specific, concrete recommendations for Crina to raise next-campaign leads, investor conversion, and capital committed. Estimates only — never post, never call external services.",
     outputSchema: conversionSchema,
     input: { brand, campaigns, content_items: items, prior_outcomes: priorOutcomes, gsc_totals: gscTotals, gsc_connected: gscConnected },
     brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -76,7 +85,8 @@ export async function runConversionAnalysis(args: { brandId: string; campaignId?
   const whatConverts = Array.isArray(json.what_converts) ? json.what_converts : [];
   const recs = Array.isArray(json.recommendations_for_crina) ? json.recommendations_for_crina.map(String) : [];
 
-  // (a) funnel facts → conversion_outcomes (agent-estimated)
+  // (a) investor-capital funnel facts → conversion_outcomes (agent-estimated).
+  // DB names stay generic: signups=leads, paid=investors, revenue=capital committed.
   const outcomeRows = funnel.map((entry) => {
     const f = rec(entry);
     const awareness = num(f.awareness);
@@ -138,7 +148,7 @@ export async function runConversionAnalysis(args: { brandId: string; campaignId?
   await recordAgentRun({
     agentName: "Conversion Agent",
     agentId: "agent-conversion",
-    workflowName: "Analyze Conversion",
+    workflowName: "Analyze Investor Capital Conversion",
     provider: run.provider,
     status: run.ok ? "success" : "fallback",
     input: { brandId: args.brandId, campaignId: args.campaignId ?? null, gsc_connected: gscConnected, routeOrigin: "api.sales.analyze" },

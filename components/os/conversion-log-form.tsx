@@ -8,6 +8,14 @@ import type { Brand, Campaign } from "@/lib/types";
 const FIELDS = ["awareness", "signups", "activations", "paid", "revenue"] as const;
 type FieldKey = (typeof FIELDS)[number];
 
+const LABELS: Record<FieldKey, string> = {
+  awareness: "Reach",
+  signups: "Leads",
+  activations: "Investor conversations",
+  paid: "Investors",
+  revenue: "Capital committed ($)"
+};
+
 export function ConversionLogForm({ brands, campaigns }: { brands: Brand[]; campaigns: Campaign[] }) {
   const [brandId, setBrandId] = useState(brands[0]?.id ?? "");
   const [campaignId, setCampaignId] = useState("");
@@ -28,7 +36,7 @@ export function ConversionLogForm({ brands, campaigns }: { brands: Brand[]; camp
       });
       const p = await r.json();
       if (!r.ok) throw new Error(p.error ?? "Failed to log.");
-      setMsg("Logged — refreshing...");
+      setMsg("Investor outcome logged — refreshing...");
       window.location.reload();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "Failed to log.");
@@ -53,7 +61,7 @@ export function ConversionLogForm({ brands, campaigns }: { brands: Brand[]; camp
       </div>
       <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
         {FIELDS.map((k) => (
-          <OSField key={k} label={k[0].toUpperCase() + k.slice(1)}>
+          <OSField key={k} label={LABELS[k]}>
             <OSInput type="number" min={0} value={vals[k]} onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))} />
           </OSField>
         ))}
@@ -61,7 +69,7 @@ export function ConversionLogForm({ brands, campaigns }: { brands: Brand[]; camp
       {msg ? <p className="text-sm text-neutral-400">{msg}</p> : null}
       <OSButton onClick={submit} disabled={saving || !brandId}>
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-        Log outcome
+        Log investor outcome
       </OSButton>
     </div>
   );
