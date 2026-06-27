@@ -4,6 +4,7 @@ import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { requireAgentAccess } from "@/lib/auth";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { Brand } from "@/lib/types";
 
@@ -102,15 +103,17 @@ export async function POST(request: Request) {
   const { data: brand } = await supabase.from("brands").select("*").eq("id", brandId).maybeSingle();
   if (!brand) return NextResponse.json({ error: "Brand not found." }, { status: 404 });
 
+  const conversion = await getConversionMemoryContext({ brandId });
+
   const run = await runMarketingAgentModel({
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
     fallbackRole: "Marketing CEO Agent",
     task: "Propose Campaign Ideas",
     instructions:
-      `Propose ${count} distinct campaign ideas for this single brand only. Each idea must be specific, on-brand, and conservative with claims. Do not start or execute anything; these are proposals for a human to choose from. Keep all ideas scoped to this one brand — no cross-brand mixing.`,
+      `Propose ${count} distinct campaign ideas for this single brand only. Each idea must be specific, on-brand, and conservative with claims. Do not start or execute anything; these are proposals for a human to choose from. Keep all ideas scoped to this one brand — no cross-brand mixing.\n\nWhat has converted best for this brand (bias new ideas toward these):\n${conversionMemoryText(conversion)}`,
     outputSchema: ideaSchema,
-    input: { brand, count, theme: body.theme ?? null },
+    input: { brand, count, theme: body.theme ?? null, conversion_insights: conversion.insights },
     brainFiles: ["content-formulas.md", "approval-rules.md"],
     temperature: 0.6,
     routeOrigin: "api.marketing.campaigns.propose-ideas"

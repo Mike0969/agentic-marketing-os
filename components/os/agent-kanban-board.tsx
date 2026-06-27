@@ -23,7 +23,7 @@ export type AgentKanbanRun = {
 export type AgentKanbanCard = {
   agentId: string;
   name: string;
-  domain: "Marketing" | "Trading" | "Founder";
+  domain: "Marketing";
   provider: string;
   model: string;
   column: ColumnKey;
@@ -164,7 +164,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                         <div>
                           <h3 className="font-semibold text-neutral-100">{card.name}</h3>
                           <div className="mt-1 flex flex-wrap gap-1.5">
-                            <OSBadge tone={card.domain === "Marketing" ? "ok" : card.domain === "Trading" ? "warn" : "info"}>{card.domain}</OSBadge>
+                            <OSBadge tone="ok">{card.domain}</OSBadge>
                             <OSBadge tone={isRateLimited ? "warn" : tone(card.column, isFallback)}>{isRateLimited ? "RATE LIMITED" : isFallback ? "FALLBACK" : card.column}</OSBadge>
                           </div>
                         </div>

@@ -4,6 +4,8 @@ import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
+import { runConversionAnalysis } from "@/lib/marketing/conversion-agent";
+import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
 import { getFeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -65,6 +67,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   for (const platform of platforms) {
     const memory = await getFeedbackMemoryContext({ brandId: campaign.brand_id, platform });
+    const conversion = await getConversionMemoryContext({ brandId: campaign.brand_id, platform });
     let draft: PostDraft | null = null;
     let improvements: string[] = [];
     let loops = 0;
@@ -79,9 +82,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Content Creator Agent",
         fallbackRole: "Copy and Editorial",
         task: `Create ${platform} post`,
-        instructions: `Write ONE post tailored specifically to ${platform} (its format, length, tone). Use the brand voice and the campaign idea. Address the operator's past feedback. Do not publish.\n\nMemory:\n${memoryText(memory)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
+        instructions: `Write ONE post tailored specifically to ${platform} (its format, length, tone). Use the brand voice and the campaign idea. Address the operator's past feedback. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
         outputSchema: contentSchema,
-        input: { brand, campaign_idea: idea, platform, previous: draft },
+        input: { brand, campaign_idea: idea, platform, previous: draft, conversion_insights: conversion.insights },
         brainFiles: ["content-formulas.md", "approval-rules.md"],
         temperature: 0.5,
         routeOrigin: "api.marketing.campaigns.run"
@@ -98,9 +101,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: "Review post",
-        instructions: `Review this ${platform} post for brand fit, platform fit, hook strength, and the operator's past feedback. Approve if strong; otherwise return rework with specific improvements.\n\nMemory:\n${memoryText(memory)}`,
+        instructions: `Review this ${platform} post for brand fit, platform fit, hook strength, the operator's past feedback, and whether it leans into what converts. Approve if strong; otherwise return rework with specific improvements.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
         outputSchema: reviewSchema,
-        input: { brand, platform, post: draft, campaign_idea: idea },
+        input: { brand, platform, post: draft, campaign_idea: idea, conversion_insights: conversion.insights },
         brainFiles: ["workflow-contract.md", "approval-rules.md"],
         temperature: 0.2,
         routeOrigin: "api.marketing.campaigns.run"
@@ -163,6 +166,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // Ping the operator (Crina) that posts are ready to review.
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
   const notifications = await sendCrinaReadyToPostPings({ campaignIds: [id], baseUrl });
+
+  // Close the loop: refresh conversion estimates + insights for the next run (best-effort).
+  try {
+    await runConversionAnalysis({ brandId: campaign.brand_id, campaignId: id });
+  } catch {
+    // never break the run on conversion-analysis failure
+  }
 
   revalidatePath("/marketing/campaigns");
   revalidatePath("/marketing/ready-to-post");

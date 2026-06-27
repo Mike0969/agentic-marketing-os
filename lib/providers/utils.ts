@@ -1,6 +1,6 @@
 import type { ProviderChatResult, ProviderHealth, ProviderModel, ProviderModelsResult, ProviderTestResult } from "@/lib/providers/types";
 
-export const DEFAULT_TIMEOUT_MS = 15000;
+export const DEFAULT_TIMEOUT_MS = Number(process.env.PROVIDER_TIMEOUT_MS ?? process.env.HERMES_AGENT_TIMEOUT_MS ?? 30000);
 
 export function now() {
   return Date.now();

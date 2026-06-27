@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, BriefcaseBusiness, Gauge, LineChart, LogOut, Megaphone, Settings } from "lucide-react";
+import { Bot, Gauge, LogOut, Megaphone, Settings, TrendingUp } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
   { href: "/", label: "Home", icon: Gauge },
   { href: "/marketing", label: "Marketing", icon: Megaphone },
-  { href: "/trading", label: "Trading", icon: LineChart },
-  { href: "/founder", label: "Founder Ops", icon: BriefcaseBusiness },
+  { href: "/sales", label: "Sales", icon: TrendingUp },
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/settings", label: "Settings", icon: Settings }
 ];

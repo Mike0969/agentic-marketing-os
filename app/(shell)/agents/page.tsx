@@ -2,6 +2,7 @@ import { AgentKanbanBoard, type AgentKanbanCard, type AgentKanbanRun } from "@/c
 import { OSMetric, PageHeading } from "@/components/os/ui";
 import { listAgentConfigs, resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { readHermesRegistry } from "@/lib/agents/hermes-registry";
+import { registeredAgents } from "@/lib/agents/registry";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { getProvider, isConfigured, PROVIDERS } from "@/lib/providers";
 import type { Agent, AgentRun, AgentRunStatus } from "@/lib/types";
@@ -16,10 +17,7 @@ const domainByAgent: Record<string, AgentKanbanCard["domain"]> = {
   "agent-competitor-intelligence": "Marketing",
   "agent-publishing": "Marketing",
   "agent-analytics": "Marketing",
-  "agent-fx-scanner": "Trading",
-  "agent-quant-lab": "Trading",
-  "agent-risk-governor": "Trading",
-  "agent-founder-operator": "Founder"
+  "agent-conversion": "Marketing"
 };
 
 function normalize(value: string) {
@@ -102,7 +100,17 @@ export default async function AgentsKanbanPage() {
   });
 
   for (const profile of profiles) {
-    if (!seen.has(profile.id)) baseAgents.push({ agentId: profile.id, name: profile.name });
+    if (!seen.has(profile.id)) {
+      seen.add(profile.id);
+      baseAgents.push({ agentId: profile.id, name: profile.name });
+    }
+  }
+
+  for (const agent of registeredAgents) {
+    if (!seen.has(agent.id)) {
+      seen.add(agent.id);
+      baseAgents.push({ agentId: agent.id, name: agent.name });
+    }
   }
 
   const cards: AgentKanbanCard[] = await Promise.all(

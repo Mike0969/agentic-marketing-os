@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, BriefcaseBusiness, LineChart, Megaphone } from "lucide-react";
+import { ArrowRight, Megaphone, TrendingUp } from "lucide-react";
 import { OSBadge, OSPanel, PageHeading } from "@/components/os/ui";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { getHermesHealth } from "@/lib/agents/hermes-health";
@@ -26,24 +26,14 @@ export default async function OsHomePage() {
       action: "Open Marketing"
     },
     {
-      href: "/trading",
-      title: "Trading OS",
-      icon: LineChart,
-      tone: "warn" as const,
-      status: "No backend yet",
-      metricLabel: "FX signals",
+      href: "/sales",
+      title: "Sales OS",
+      icon: TrendingUp,
+      tone: "ok" as const,
+      status: "Live",
+      metricLabel: "Conversion loop",
       metric: "—",
-      action: "Open Trading"
-    },
-    {
-      href: "/founder",
-      title: "Founder Ops",
-      icon: BriefcaseBusiness,
-      tone: "info" as const,
-      status: "No backend yet",
-      metricLabel: "Open tasks",
-      metric: "—",
-      action: "Open Founder Ops"
+      action: "Open Sales"
     }
   ];
 
@@ -52,7 +42,7 @@ export default async function OsHomePage() {
       <PageHeading
         eyebrow="Agentic OS"
         title="Personal Command Center"
-        subtitle="One Hermes-backed operating system for Marketing, Trading, and Founder Ops. Research and drafts only — no live posting, no broker orders."
+        subtitle="One Hermes-backed operating system for Marketing and Sales conversion. Drafts only — no live posting."
         action={<OSBadge tone={hermes.connected ? "ok" : hermes.configured ? "warn" : "off"}>{hermes.connected ? "Hermes connected" : hermes.configured ? "Hermes configured" : "Hermes offline"}</OSBadge>}
       />
 
@@ -116,14 +106,10 @@ export default async function OsHomePage() {
               <span>Run Crina weekly content plan</span>
               <ArrowRight className="h-4 w-4 text-neutral-500" />
             </Link>
-            <div className="flex items-center justify-between rounded-md border border-dashed border-neutral-800 px-3 py-2.5 text-sm text-neutral-500">
-              <span>Run FX scan</span>
-              <OSBadge tone="demo">soon</OSBadge>
-            </div>
-            <div className="flex items-center justify-between rounded-md border border-dashed border-neutral-800 px-3 py-2.5 text-sm text-neutral-500">
-              <span>Generate founder daily brief</span>
-              <OSBadge tone="demo">soon</OSBadge>
-            </div>
+            <Link href="/sales" className="flex items-center justify-between rounded-md border border-neutral-800 px-3 py-2.5 text-sm hover:bg-neutral-900">
+              <span>Open Sales conversion</span>
+              <ArrowRight className="h-4 w-4 text-neutral-500" />
+            </Link>
           </div>
         </OSPanel>
       </div>

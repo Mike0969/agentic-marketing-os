@@ -3,7 +3,7 @@ import "@/app/globals.css";
 
 export const metadata: Metadata = {
   title: "Agentic OS",
-  description: "Personal Command Center — Marketing, Trading, and Founder Ops on one Hermes-backed operating system."
+  description: "Personal Command Center — a Hermes-backed Marketing & Sales operating system."
 };
 
 // Auth-gated dashboard with per-request data; render dynamically (matches prior

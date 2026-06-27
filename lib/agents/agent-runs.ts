@@ -31,7 +31,7 @@ export type RecordAgentRunInput = {
  * had the observability migration applied, the insert falls back to the base
  * columns so a run is still recorded (never fabricates data).
  */
-export async function recordAgentRun(input: RecordAgentRunInput) {
+export async function recordAgentRun(input: RecordAgentRunInput): Promise<string | null> {
   if (isSupabaseConfigured()) {
     // Prefer the service-role client so runs triggered without a browser session
     // (Hermes / n8n via AGENT_TRIGGER_TOKEN) are not blocked by RLS.
@@ -63,12 +63,14 @@ export async function recordAgentRun(input: RecordAgentRunInput) {
         provider_response_status: input.providerResponseStatus ?? null
       };
 
-      const { error } = await supabase.from("agent_runs").insert(fullRow);
+      const { data, error } = await supabase.from("agent_runs").insert(fullRow).select("id").single();
 
       // Observability columns may not exist yet on an older database. Retry with
       // the base columns so the run is still recorded.
+      let runId = data?.id ?? null;
       if (error) {
-        await supabase.from("agent_runs").insert(baseRow);
+        const retry = await supabase.from("agent_runs").insert(baseRow).select("id").single();
+        runId = retry.data?.id ?? null;
       }
 
       if (input.status === "fallback") {
@@ -76,7 +78,7 @@ export async function recordAgentRun(input: RecordAgentRunInput) {
           .from("activity")
           .insert(makeActivity(`${input.agentName} used deterministic fallback`, input.error ?? "Hermes was unavailable, so deterministic output was used."));
       }
-      return;
+      return runId;
     }
   }
 
@@ -100,4 +102,5 @@ export async function recordAgentRun(input: RecordAgentRunInput) {
     handoff_to: input.handoffTo ?? null,
     provider_response_status: input.providerResponseStatus ?? null
   });
+  return null;
 }
