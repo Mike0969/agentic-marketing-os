@@ -238,3 +238,16 @@ not edit the same files at once — if scopes overlap, split the thread or seque
 
 Rule: T4 and T5 touch disjoint files → safe to run in parallel. Each sets NEEDS: <reviewer> + commit
 hash when done; the other reviews.
+
+### T6 — CEO-agent loop spec + enriched agent context
+- **Status:** NEEDS: claude  ·  **Implementer:** claude/codex   **Reviewer:** claude
+- **Spec:** `docs/ceo-agent-loop-spec.md`
+- **Codex review:** Claude's CEO-loop spec is directionally approved: it matches the operator goal
+  of Crina as CEO/judge, specialist maker agents, scored bounded loops, champion rule, stop
+  conditions, receipt storage, memory scope, and final Ready-to-Post human gate. No code/schema
+  should be implemented until Mike approves the spec.
+- **Codex context pass:** Added `docs/agent-skill-context.md` and enriched the live Hermes brain
+  `agent-*-memory.md` files with compact CEO-loop skill context for Crina, Content, Visual,
+  Publishing, SEO, Competitor Intelligence, Analytics, and Conversion. This improves runtime
+  prompt context without changing app code. Live brain path:
+  `/Users/dubai/.hermes/profiles/buddy/resources/agentic-marketing-os-brain/`.
