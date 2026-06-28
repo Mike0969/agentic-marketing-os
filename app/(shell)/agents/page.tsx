@@ -16,7 +16,6 @@ const domainByAgent: Record<string, AgentKanbanCard["domain"]> = {
   "agent-visual-video": "Marketing",
   "agent-competitor-intelligence": "Marketing",
   "agent-publishing": "Marketing",
-  "agent-analytics": "Marketing",
   "agent-conversion": "Marketing"
 };
 
@@ -31,7 +30,6 @@ function registryIdFor(agent: Agent, registryIds: string[], namesById: Map<strin
   if (agent.name.toLowerCase().includes("visual")) return "agent-visual-video";
   if (agent.name.toLowerCase().includes("competitor")) return "agent-competitor-intelligence";
   if (agent.name.toLowerCase().includes("publishing")) return "agent-publishing";
-  if (agent.name.toLowerCase().includes("analytics")) return "agent-analytics";
   if (agent.name.toLowerCase().includes("seo")) return "agent-seo";
   if (agent.name.toLowerCase().includes("crina")) return "agent-crina";
   return agent.id;

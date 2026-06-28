@@ -34,7 +34,8 @@ Current published loops are the source of truth; the above are adaptations for o
   against a rubric, sends back for rework within bounds, assembles the final package, and only
   then hands to the human at the Ready-to-Post gate.
 - **Subagents do specialist work only** (Content Creator, Visual & Video, Publishing, SEO,
-  Analytics, Conversion, Competitor Intelligence). They produce one candidate per request.
+  Conversion, Competitor Intelligence). They produce one candidate per request. **Crina (CEO)
+  absorbs performance analysis** — there is no separate Analytics agent.
 - **Subagents never decide final readiness.** Only Crina scores; only the human approves to post.
 - **Crina judges every specialist output** with a concrete 100-point rubric (Section D) and
   returns `{ score, decision, judge_notes, improvements }`.

@@ -95,15 +95,6 @@ export const agents: Agent[] = [
     model_preference: "GPT-5 mini",
     status: "standby",
     brand_scope: "All brands"
-  },
-  {
-    id: "agent-analytics",
-    name: "Analytics Agent",
-    role: "Performance Analysis",
-    description: "Summarizes content performance, campaign ROI, and next-best actions.",
-    model_preference: "GPT-5",
-    status: "active",
-    brand_scope: "All brands"
   }
 ];
 
@@ -227,7 +218,7 @@ export const contentItems: ContentItem[] = [
     hook: "The next mobility platform wins by aligning incentives.",
     CTA: "Talk to the NexRide team",
     status: "analyzed",
-    assigned_agent: "Analytics Agent",
+    assigned_agent: "Crina",
     approval_status: "approved",
     scheduled_at: "2026-06-12T08:30:00.000Z",
     published_at: "2026-06-12T08:30:00.000Z",
@@ -255,7 +246,7 @@ export const activity = [
   },
   {
     id: "activity-2",
-    label: "Analytics Agent summarized performance",
+    label: "Crina summarized performance",
     detail: "NexRide market note produced strong fleet-partner intent signals.",
     timestamp: "Yesterday, 18:40"
   },

@@ -30,7 +30,6 @@ function registryIdFor(agent: Agent, registry: Awaited<ReturnType<typeof readHer
   if (agent.name.toLowerCase().includes("visual")) return "agent-visual-video";
   if (agent.name.toLowerCase().includes("competitor")) return "agent-competitor-intelligence";
   if (agent.name.toLowerCase().includes("publishing")) return "agent-publishing";
-  if (agent.name.toLowerCase().includes("analytics")) return "agent-analytics";
   if (agent.name.toLowerCase().includes("seo")) return "agent-seo";
   if (agent.name.toLowerCase().includes("crina")) return "agent-crina";
   return agent.id;
