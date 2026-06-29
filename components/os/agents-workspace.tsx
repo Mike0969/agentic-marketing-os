@@ -89,6 +89,9 @@ export function AgentsWorkspace({ agents }: { agents: AgentCardData[] }) {
 
   return (
     <div className="space-y-5">
+      <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-400">
+        Observability only. Campaign agents are normally orchestrated by Crina — manual runs here are diagnostics and do not post or run campaigns.
+      </div>
       {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -145,9 +148,9 @@ export function AgentsWorkspace({ agents }: { agents: AgentCardData[] }) {
               ) : null}
 
               <div className="mt-4">
-                <OSButton onClick={() => runAgent(agent)} disabled={running}>
+                <OSButton variant="secondary" onClick={() => runAgent(agent)} disabled={running}>
                   {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  Run
+                  Test agent only
                 </OSButton>
               </div>
             </OSPanel>

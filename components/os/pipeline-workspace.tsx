@@ -1,25 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Eye, Loader2, Pause, Play, UserRoundCheck } from "lucide-react";
-import { OSBadge, OSButton, OSPanel } from "@/components/os/ui";
+import { useMemo, useState } from "react";
+import { Eye, UserRoundCheck } from "lucide-react";
+import { OSBadge, OSPanel } from "@/components/os/ui";
 import type { Brand, Campaign, ContentItem } from "@/lib/types";
 
-type OrchestrateResponse = {
-  contentItems?: ContentItem[];
-  results?: Array<{
-    itemId: string;
-    title: string;
-    step: string;
-    status: "advanced" | "fallback" | "skipped" | "error";
-    owner: string;
-    error?: string | null;
-  }>;
-  message?: string;
-  error?: string;
-  skipped?: boolean;
-  reason?: string;
-};
+// Read-only operational tracking. Crina runs the internal agent loop automatically; this view only
+// answers "where is my campaign now?" — it is not a control panel and not an approval screen.
+// Final approval happens on Ready to Post.
 
 type CampaignExecution = {
   campaign: Campaign;
@@ -29,27 +17,29 @@ type CampaignExecution = {
   currentOwner: string;
   nextOwner: string;
   fallback: boolean;
+  safetyBlocked: boolean;
+  score: string | null;
 };
 
 type LaneKey = "waiting" | "content" | "visual" | "crina_review" | "human_approval" | "publishing";
 
-type Lane = {
-  key: LaneKey;
-  label: string;
-  hint: string;
-};
+type Lane = { key: LaneKey; label: string; hint: string };
 
 const lanes: Lane[] = [
-  { key: "waiting", label: "Waiting for Crina", hint: "Approved objective, no plan yet" },
-  { key: "content", label: "Content / SEO", hint: "Drafts, blog briefs, platform copy" },
-  { key: "visual", label: "Visual / Video", hint: "Creative direction and assets" },
-  { key: "crina_review", label: "Crina review", hint: "Internal quality and brand check" },
-  { key: "human_approval", label: "Needs you", hint: "Final package approval only" },
+  { key: "waiting", label: "Waiting for Crina", hint: "Selected idea, plan not started" },
+  { key: "content", label: "Content / SEO", hint: "Crina + Content drafting" },
+  { key: "visual", label: "Visual / Video", hint: "Crina + Visual creating assets" },
+  { key: "crina_review", label: "Crina review", hint: "Internal quality + brand check" },
+  { key: "human_approval", label: "Needs you", hint: "Final package approval" },
   { key: "publishing", label: "Publishing prep", hint: "Draft package, no live posting" }
 ];
 
 function fallbackMarked(item: ContentItem) {
-  return item.performance_summary?.toUpperCase().includes("FALLBACK") ?? false;
+  return (item.performance_summary?.toUpperCase().includes("FALLBACK") ?? false) || Boolean(item.ready_package?.fallback_used);
+}
+
+function safetyMarked(item: ContentItem) {
+  return (item.crina_review_notes?.toUpperCase().includes("SAFETY-BLOCKED") ?? false) || item.approval_status === "changes_requested";
 }
 
 function laneForCampaign(campaign: Campaign, items: ContentItem[]): LaneKey {
@@ -66,17 +56,15 @@ function currentOwnerFor(items: ContentItem[], lane: LaneKey) {
   if (lane === "waiting") return "Crina";
   if (lane === "human_approval") return "You";
   if (lane === "publishing") return "Publishing Agent";
-
   const owners = new Map<string, number>();
   for (const item of items) {
     const owner = item.current_owner || item.assigned_agent || "Crina";
     owners.set(owner, (owners.get(owner) ?? 0) + 1);
   }
-
   return [...owners.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Crina";
 }
 
-function nextOwnerFor(items: ContentItem[], lane: LaneKey) {
+function nextOwnerFor(lane: LaneKey) {
   if (lane === "waiting") return "Content Creator / SEO";
   if (lane === "content") return "Crina review";
   if (lane === "visual") return "Crina final review";
@@ -89,27 +77,16 @@ function stageLabel(key: LaneKey) {
   return lanes.find((lane) => lane.key === key)?.label ?? "In execution";
 }
 
+// Latest Crina score chip across a campaign's pieces (e.g. "92/100 · 3 round(s) · pass").
+function latestScore(items: ContentItem[]): string | null {
+  for (const item of items) {
+    if (item.crina_review_notes && /\d+\/100/.test(item.crina_review_notes)) return item.crina_review_notes;
+  }
+  return null;
+}
+
 function activeStatuses(item: ContentItem) {
   return ["idea", "brief", "draft", "visual", "approval", "scheduled"].includes(item.status);
-}
-
-function automationTone(status: string | null | undefined, attention: boolean, paused: boolean, running: boolean): "ok" | "warn" | "danger" | "info" | "off" {
-  if (attention || status === "needs_attention") return "danger";
-  if (paused || status === "paused") return "warn";
-  if (running || status === "running") return "info";
-  if (status === "waiting_human") return "warn";
-  if (status === "publishing_prep" || status === "complete") return "ok";
-  return "off";
-}
-
-function automationLabel(status: string | null | undefined, attention: boolean, paused: boolean, running: boolean) {
-  if (attention || status === "needs_attention") return "Needs attention";
-  if (paused || status === "paused") return "Paused";
-  if (running || status === "running") return "Running";
-  if (status === "waiting_human") return "Waiting for you";
-  if (status === "publishing_prep") return "Publishing prep";
-  if (status === "complete") return "Complete";
-  return "Auto";
 }
 
 export function PipelineWorkspace({
@@ -121,7 +98,7 @@ export function PipelineWorkspace({
   brands: Brand[];
   campaigns: Campaign[];
 }) {
-  const [items, setItems] = useState(contentItems.filter(activeStatuses));
+  const items = useMemo(() => contentItems.filter(activeStatuses), [contentItems]);
   const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
 
   const executions = useMemo<CampaignExecution[]>(() => {
@@ -136,8 +113,10 @@ export function PipelineWorkspace({
           items: campaignItems,
           lane,
           currentOwner: currentOwnerFor(campaignItems, lane),
-          nextOwner: nextOwnerFor(campaignItems, lane),
-          fallback: campaignItems.some(fallbackMarked)
+          nextOwner: nextOwnerFor(lane),
+          fallback: campaignItems.some(fallbackMarked),
+          safetyBlocked: campaignItems.some(safetyMarked),
+          score: latestScore(campaignItems)
         };
       })
       .sort((a, b) => {
@@ -151,106 +130,12 @@ export function PipelineWorkspace({
   const selectedExecution = executions.find((execution) => execution.campaign.id === selectedCampaignId) ?? executions[0] ?? null;
   const [selectedItemId, setSelectedItemId] = useState<string | null>(selectedExecution?.items[0]?.id ?? null);
   const selectedItem = selectedExecution?.items.find((item) => item.id === selectedItemId) ?? selectedExecution?.items[0] ?? null;
-  const [orchestratingId, setOrchestratingId] = useState<string | null>(null);
-  const [pausedIds, setPausedIds] = useState<Record<string, boolean>>({});
-  const [attentionIds, setAttentionIds] = useState<Record<string, boolean>>({});
-  const [noProgressCounts, setNoProgressCounts] = useState<Record<string, number>>({});
-  const [lastRun, setLastRun] = useState<OrchestrateResponse | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  function selectExecution(execution: CampaignExecution) {
-    setSelectedCampaignId(execution.campaign.id);
-    setSelectedItemId(execution.items[0]?.id ?? null);
-  }
-
-  const updateItems = useCallback((updatedItems: ContentItem[]) => {
-    if (!updatedItems.length) return;
-    const updatedById = new Map(updatedItems.map((item) => [item.id, item]));
-    setItems((current) => current.map((item) => updatedById.get(item.id) ?? item).filter(activeStatuses));
-    setSelectedItemId(updatedItems[0]?.id ?? null);
-  }, []);
-
-  const runAutomation = useCallback(async (execution: CampaignExecution, mode: "auto" | "manual" = "manual") => {
-    setOrchestratingId(execution.campaign.id);
-    setMessage(null);
-    setLastRun(null);
-
-    try {
-      const endpoint = execution.items.length
-        ? `/api/marketing/campaigns/${execution.campaign.id}/automation/tick`
-        : `/api/marketing/campaigns/${execution.campaign.id}/automation/start`;
-      const response = await fetch(endpoint, { method: "POST" });
-      const payload = (await response.json()) as OrchestrateResponse;
-      if (!response.ok) throw new Error(payload.error ?? "Campaign automation could not continue.");
-      if (payload.skipped) {
-        setMessage(`${execution.campaign.title}: automation is already running in another tab or process.`);
-        return;
-      }
-
-      updateItems(payload.contentItems ?? []);
-      setLastRun(payload);
-      const advanced = payload.results?.filter((result) => result.status === "advanced" || result.status === "fallback").length ?? 0;
-      const fallback = payload.results?.filter((result) => result.status === "fallback").length ?? 0;
-      setNoProgressCounts((current) => {
-        const nextCount = advanced ? 0 : (current[execution.campaign.id] ?? 0) + 1;
-        return { ...current, [execution.campaign.id]: nextCount };
-      });
-      if (advanced) {
-        setAttentionIds((current) => ({ ...current, [execution.campaign.id]: false }));
-      }
-      setMessage(
-        payload.message ??
-          (advanced
-            ? `${execution.campaign.title}: ${advanced} internal step${advanced === 1 ? "" : "s"} completed${fallback ? `, ${fallback} with FALLBACK` : ""}.`
-            : mode === "auto"
-              ? `${execution.campaign.title}: automation is watching for the next eligible step.`
-              : `${execution.campaign.title}: no eligible internal step right now.`)
-      );
-    } catch (error) {
-      setAttentionIds((current) => ({ ...current, [execution.campaign.id]: true }));
-      setMessage(error instanceof Error ? error.message : "Campaign automation could not continue.");
-    } finally {
-      setOrchestratingId(null);
-    }
-  }, [updateItems]);
-
-  useEffect(() => {
-    const attentionCampaigns = Object.entries(noProgressCounts).filter(([, count]) => count >= 3);
-    if (!attentionCampaigns.length) return;
-
-    setAttentionIds((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const [campaignId] of attentionCampaigns) {
-        if (!next[campaignId]) {
-          next[campaignId] = true;
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [noProgressCounts]);
-
-  useEffect(() => {
-    const runnable = executions.find((execution) => {
-      if (pausedIds[execution.campaign.id]) return false;
-      if (attentionIds[execution.campaign.id]) return false;
-      if (execution.lane === "waiting" || execution.lane === "human_approval" || execution.lane === "publishing") return false;
-      return true;
-    });
-    if (!runnable) return;
-    if (orchestratingId) return;
-
-    const timer = window.setTimeout(() => {
-      void runAutomation(runnable, "auto");
-    }, 900);
-
-    return () => window.clearTimeout(timer);
-  }, [attentionIds, executions, orchestratingId, pausedIds, runAutomation]);
 
   return (
     <div className="space-y-5">
-      {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
+      <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-400">
+        Read-only tracking — Crina runs the agent loop automatically. Approve final packages in Ready to Post.
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.45fr_0.75fr]">
         <div className="grid gap-4 lg:grid-cols-3 2xl:grid-cols-6">
@@ -271,10 +156,10 @@ export function PipelineWorkspace({
                       key={execution.campaign.id}
                       execution={execution}
                       selected={selectedExecution?.campaign.id === execution.campaign.id}
-                      attention={attentionIds[execution.campaign.id] || execution.campaign.automation_status === "needs_attention"}
-                      paused={pausedIds[execution.campaign.id] || execution.campaign.automation_status === "paused"}
-                      running={orchestratingId === execution.campaign.id || execution.campaign.automation_status === "running"}
-                      onSelect={() => selectExecution(execution)}
+                      onSelect={() => {
+                        setSelectedCampaignId(execution.campaign.id);
+                        setSelectedItemId(execution.items[0]?.id ?? null);
+                      }}
                     />
                   ))}
                   {!laneExecutions.length ? <div className="rounded-md border border-dashed border-neutral-800 p-4 text-sm text-neutral-600">No campaigns</div> : null}
@@ -287,7 +172,10 @@ export function PipelineWorkspace({
         <OSPanel className="h-fit">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold text-neutral-100">Campaign detail</h2>
-            {selectedExecution?.fallback ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
+            <div className="flex gap-1.5">
+              {selectedExecution?.safetyBlocked ? <OSBadge tone="danger">Safety blocked</OSBadge> : null}
+              {selectedExecution?.fallback ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
+            </div>
           </div>
           {selectedExecution ? (
             <div className="mt-4 space-y-4">
@@ -300,65 +188,8 @@ export function PipelineWorkspace({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Detail label="Current owner" value={selectedExecution.currentOwner} />
                 <Detail label="Next owner" value={selectedExecution.nextOwner} />
-                <Detail label="Stage" value={stageLabel(selectedExecution.lane)} />
-                <Detail label="Pieces" value={`${selectedExecution.items.length || 0}`} />
-              </div>
-
-              <div className="rounded-md border border-cyan-500/20 bg-cyan-500/5 p-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-sm font-medium text-cyan-100">Agent automation</div>
-                      <OSBadge
-                        tone={automationTone(
-                          selectedExecution.campaign.automation_status,
-                          attentionIds[selectedExecution.campaign.id],
-                          pausedIds[selectedExecution.campaign.id],
-                          orchestratingId === selectedExecution.campaign.id
-                        )}
-                      >
-                        {automationLabel(
-                          selectedExecution.campaign.automation_status,
-                          attentionIds[selectedExecution.campaign.id],
-                          pausedIds[selectedExecution.campaign.id],
-                          orchestratingId === selectedExecution.campaign.id
-                        )}
-                      </OSBadge>
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-neutral-400">
-                      Crina runs the internal agent loop. You only step in for final approval or if automation needs attention.
-                    </p>
-                  </div>
-                  {selectedExecution.lane === "waiting" ? (
-                    <OSBadge tone="off">Start from Campaigns</OSBadge>
-                  ) : selectedExecution.lane === "human_approval" || selectedExecution.lane === "publishing" ? (
-                    <OSBadge tone={selectedExecution.lane === "human_approval" ? "warn" : "ok"}>
-                      {selectedExecution.lane === "human_approval" ? "Waiting for you" : "Publishing prep"}
-                    </OSBadge>
-                  ) : pausedIds[selectedExecution.campaign.id] || attentionIds[selectedExecution.campaign.id] ? (
-                    <OSButton
-                      onClick={() => {
-                        setPausedIds((current) => ({ ...current, [selectedExecution.campaign.id]: false }));
-                        setAttentionIds((current) => ({ ...current, [selectedExecution.campaign.id]: false }));
-                        setNoProgressCounts((current) => ({ ...current, [selectedExecution.campaign.id]: 0 }));
-                        void runAutomation(selectedExecution, "manual");
-                      }}
-                      disabled={orchestratingId === selectedExecution.campaign.id}
-                    >
-                      {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                      {attentionIds[selectedExecution.campaign.id] ? "Resume after attention" : "Resume automation"}
-                    </OSButton>
-                  ) : (
-                    <OSButton
-                      variant="secondary"
-                      onClick={() => setPausedIds((current) => ({ ...current, [selectedExecution.campaign.id]: true }))}
-                      disabled={orchestratingId === selectedExecution.campaign.id}
-                    >
-                      {orchestratingId === selectedExecution.campaign.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pause className="h-4 w-4" />}
-                      Pause automation
-                    </OSButton>
-                  )}
-                </div>
+                <Detail label="State" value={stageLabel(selectedExecution.lane)} />
+                <Detail label="Latest Crina score" value={selectedExecution.score ?? "Not scored yet"} />
               </div>
 
               <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
@@ -376,6 +207,8 @@ export function PipelineWorkspace({
                       <div className="flex flex-wrap items-center gap-2">
                         <OSBadge tone="off">{item.platform}</OSBadge>
                         <OSBadge tone="info">{item.status}</OSBadge>
+                        {item.crina_review_notes && /\d+\/100/.test(item.crina_review_notes) ? <OSBadge tone={item.crina_review_notes.includes("pass") ? "ok" : "off"}>{item.crina_review_notes}</OSBadge> : null}
+                        {safetyMarked(item) ? <OSBadge tone="danger">Safety</OSBadge> : null}
                         {fallbackMarked(item) ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
                       </div>
                       <div className="mt-2 line-clamp-2 text-sm font-medium text-neutral-100">{item.title}</div>
@@ -384,7 +217,7 @@ export function PipelineWorkspace({
                   ))}
                   {!selectedExecution.items.length ? (
                     <div className="rounded-md border border-dashed border-neutral-800 p-4 text-sm text-neutral-500">
-                      No Crina plan exists yet. Start it from Campaign Objectives.
+                      No Crina plan yet. Start it from Campaigns.
                     </div>
                   ) : null}
                 </div>
@@ -409,26 +242,8 @@ export function PipelineWorkspace({
               ) : null}
             </div>
           ) : (
-            <p className="mt-3 text-sm text-neutral-500">No active campaign execution yet. Approve a campaign objective first.</p>
+            <p className="mt-3 text-sm text-neutral-500">No active campaign yet. Start one from Campaigns.</p>
           )}
-
-          {lastRun ? (
-            <div className="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-medium text-neutral-200">Last automation batch</div>
-                <OSBadge tone={lastRun.results?.some((result) => result.status === "fallback") ? "warn" : "ok"}>
-                  {lastRun.results?.length ?? 0} steps
-                </OSBadge>
-              </div>
-              <div className="mt-2 space-y-1">
-                {lastRun.results?.slice(0, 4).map((result) => (
-                  <div key={`${result.itemId}-${result.step}`} className="text-xs text-neutral-500">
-                    {result.step}: {result.status} → {result.owner}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </OSPanel>
       </div>
     </div>
@@ -438,16 +253,10 @@ export function PipelineWorkspace({
 function CampaignPipelineCard({
   execution,
   selected,
-  attention,
-  paused,
-  running,
   onSelect
 }: {
   execution: CampaignExecution;
   selected: boolean;
-  attention: boolean;
-  paused: boolean;
-  running: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -462,9 +271,7 @@ function CampaignPipelineCard({
           <h3 className="mt-1 line-clamp-3 text-sm font-semibold leading-5 text-neutral-100">{execution.campaign.title}</h3>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <OSBadge tone={automationTone(execution.campaign.automation_status, attention, paused, running)}>
-            {automationLabel(execution.campaign.automation_status, attention, paused, running)}
-          </OSBadge>
+          {execution.safetyBlocked ? <OSBadge tone="danger">Safety</OSBadge> : null}
           {execution.fallback ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
         </div>
       </div>
@@ -475,24 +282,10 @@ function CampaignPipelineCard({
         </div>
         <div>{execution.items.length} plan piece{execution.items.length === 1 ? "" : "s"}</div>
         <div>Next: {execution.nextOwner}</div>
+        {execution.score ? <div className="text-neutral-400">Score: {execution.score}</div> : null}
       </div>
-      {execution.items.length ? (
-        <div className="mt-3 space-y-1.5 border-t border-neutral-900 pt-3">
-          {execution.items.slice(0, 3).map((item) => (
-            <div key={item.id} className="flex items-center justify-between gap-2 rounded bg-neutral-900/60 px-2 py-1.5">
-              <span className="line-clamp-1 text-xs text-neutral-300">{item.title}</span>
-              <span className="shrink-0 text-[10px] uppercase tracking-wide text-neutral-600">{item.platform}</span>
-            </div>
-          ))}
-          {execution.items.length > 3 ? <div className="text-xs text-neutral-600">+{execution.items.length - 3} more pieces</div> : null}
-        </div>
-      ) : (
-        <div className="mt-3 rounded border border-dashed border-neutral-800 px-2 py-2 text-xs text-neutral-600">
-          No Crina plan yet. Approve/start from Campaigns.
-        </div>
-      )}
       <div className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-neutral-300">
-        Click to inspect campaign work <Eye className="h-3.5 w-3.5" />
+        Click to inspect <Eye className="h-3.5 w-3.5" />
       </div>
     </button>
   );

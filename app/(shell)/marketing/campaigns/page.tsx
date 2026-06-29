@@ -12,7 +12,7 @@ export default async function CampaignsPage() {
       <PageHeading
         eyebrow="Marketing OS"
         title="Campaigns"
-        subtitle="Pick a brand, let Crina propose campaign ideas, then choose which to run. Nothing runs until you select."
+        subtitle="Pick a brand, let Crina propose ideas, then refine and Run one. Crina runs the agent loop and the final package appears in Ready to Post for your approval. Nothing posts live."
       />
       <IdeasBoard brands={data.brands} campaigns={data.campaigns} />
     </>

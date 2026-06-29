@@ -66,7 +66,7 @@ export default async function AgentsPage() {
       <PageHeading
         eyebrow="Marketing OS"
         title="Agents"
-        subtitle="Supabase roster merged with Hermes team registry and recent agent_runs observability. Test runs use the shared Hermes client only."
+        subtitle="Observability for Crina and the specialist agents — model, status, and recent runs. Campaign agents are orchestrated by Crina; manual runs here are diagnostics only and never post."
       />
       <div className="mb-5 grid gap-4 md:grid-cols-4">
         <OSMetric label="Agents" value={cards.length} hint="Supabase roster" />

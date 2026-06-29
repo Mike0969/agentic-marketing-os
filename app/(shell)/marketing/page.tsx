@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3, CalendarDays, CheckCircle2, FileText, ImageIcon, Lightbulb, Megaphone, Route, Sparkles } from "lucide-react";
+import { BarChart3, CheckCircle2, FileText, ImageIcon, Lightbulb, Megaphone, Route, Sparkles } from "lucide-react";
 import { ModuleCard, OSBadge, OSMetric, OSPanel, PageHeading } from "@/components/os/ui";
 import { MarketingResetAction } from "@/components/os/marketing-reset-action";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
@@ -7,13 +7,12 @@ import { getAgentRuns, getDashboardData } from "@/lib/data";
 export const dynamic = "force-dynamic";
 
 const workflow = [
-  { label: "Source", detail: "Objective, notes, content source", icon: FileText },
-  { label: "Angles", detail: "Crina extracts campaign angles", icon: Lightbulb },
-  { label: "Content", detail: "Platform-specific drafts", icon: Megaphone },
-  { label: "Visuals", detail: "Carousel, image, video concepts", icon: ImageIcon },
-  { label: "Calendar", detail: "7-day package and timing", icon: CalendarDays },
-  { label: "Review", detail: "One final human approval", icon: CheckCircle2 },
-  { label: "Improve", detail: "Analytics and feedback memory", icon: BarChart3 }
+  { label: "Objective", detail: "You set the campaign objective", icon: FileText },
+  { label: "Crina ideas", detail: "Crina proposes campaign directions", icon: Lightbulb },
+  { label: "Agent loops", detail: "Content + Visual draft, Crina scores", icon: Megaphone },
+  { label: "Ready to Post", detail: "One final package to review", icon: ImageIcon },
+  { label: "Approval", detail: "You approve or reject with a reason", icon: CheckCircle2 },
+  { label: "Learning", detail: "Feedback improves the next run", icon: BarChart3 }
 ];
 
 export default async function MarketingHome() {
@@ -62,9 +61,9 @@ export default async function MarketingHome() {
               <OSBadge tone="warn">Final approval required</OSBadge>
               <OSBadge tone="off">No live posting</OSBadge>
             </div>
-            <h2 className="mt-3 text-xl font-semibold text-neutral-50">From one source to a weekly campaign engine</h2>
+            <h2 className="mt-3 text-xl font-semibold text-neutral-50">One objective in, one final package out</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
-              The operator approves the direction. Crina handles the internal agent work: source, angles, posts, visuals, calendar, final review, and memory improvement.
+              You set the objective and approve the final package. Crina runs the internal agent loops — ideas, content, visuals, and scoring — and only asks you at the Ready to Post gate. Each rejection teaches the next run.
             </p>
           </div>
           <div className="rounded-md border border-neutral-800 bg-neutral-950/70 p-3 text-sm text-neutral-300">
@@ -73,7 +72,7 @@ export default async function MarketingHome() {
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           {workflow.map((step, index) => {
             const Icon = step.icon;
             return (

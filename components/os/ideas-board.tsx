@@ -257,7 +257,7 @@ export function IdeasBoard({ brands, campaigns }: { brands: Brand[]; campaigns: 
               <div key={c.id} className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-neutral-100">{c.title}</div>
-                  <div className="mt-0.5 text-xs text-neutral-500">Crina and the agents are building this.</div>
+                  <div className="mt-0.5 text-xs text-neutral-500">Crina and the agents are working — the final package will appear in Ready to Post.</div>
                 </div>
                 <OSBadge tone="ok">Working</OSBadge>
               </div>

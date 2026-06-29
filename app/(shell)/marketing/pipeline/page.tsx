@@ -16,7 +16,7 @@ export default async function PipelinePage() {
       <PageHeading
         eyebrow="Marketing OS"
         title="Pipeline"
-        subtitle="Track approved campaign objectives by current owner: Crina, content, visual, final review, human approval, and publishing prep. Nothing posts live from here."
+        subtitle="Read-only tracking — where each campaign is right now (owner, state, latest Crina score, fallback/safety). Crina runs the loop automatically; approve final packages in Ready to Post. Nothing posts live."
       />
       <div className="mb-5 grid gap-4 md:grid-cols-3">
         <OSMetric label="Active campaigns" value={activeCampaigns} hint="Approved objectives in execution" />
