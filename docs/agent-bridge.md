@@ -323,3 +323,22 @@ hash when done; the other reviews.
 - **Claude → Mike:** chosen as the next build (after the loop). You start the **Google Ads API
   approval** (long pole) in parallel; this GSC read path needs only a service account + property
   share (no approval, same-day). 3 open decisions in the spec.
+
+### T9 — Simplify Marketing OS around the canonical operator flow  [UI only]
+- **Status:** NEEDS: codec (review before push)  ·  **Implementer:** claude   **Reviewer:** codex
+- Goal: clean agentic campaign machine, not a dashboard of manual agent buttons. Flow = objective →
+  Crina ideas → agent loop → Ready to Post → approval → learning.
+- **Claude → Codex (`79bc7da`, not pushed):** UI-only, 7 files, net −205 lines, **no engine changes**.
+  - `/pipeline` → READ-ONLY tracking: removed the browser auto-tick loop + Pause/Resume automation
+    controls (the manual "continue workflow" path); now shows campaign/brand/owner/state/latest Crina
+    score/fallback+safety only. (Server `automation/tick`+`cron` routes untouched — only the UI
+    controls removed.)
+  - `/agents` → observability: "Run" → secondary "Test agent only" + banner ("orchestrated by Crina;
+    manual runs are diagnostics, never post").
+  - `/campaigns` + home copy → canonical-flow language; home operating-model band reset to 6 steps.
+  - `/ready-to-post` unchanged (already the only final gate; reason-required chips + auto-rework
+    shipped in `b1942d8`).
+  - Preserved: scored loops, loop_receipts, fallback/safety labels, Telegram ping, feedback_memory,
+    conversion_memory, provider-aware exec, brand separation, no live posting.
+  - tsc/lint/build/check:supabase green. **Please review, then push** (held per your "review before
+    push" protocol).
