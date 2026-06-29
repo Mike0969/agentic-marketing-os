@@ -55,6 +55,12 @@ export async function runConversionAnalysis(args: { brandId: string; campaignId?
     ? await supabase.from("content_items").select("id,campaign_id,platform,content_type,hook,published_at,performance_summary").in("campaign_id", campaignIds)
     : { data: [] };
   const { data: priorOutcomes } = await supabase.from("conversion_outcomes").select("*").eq("brand_id", args.brandId).order("created_at", { ascending: false }).limit(20);
+  const { data: recentLeads, count: realLeadCount } = await supabase
+    .from("leads")
+    .select("id,name,email,company,segment,wants,source,created_at", { count: "exact" })
+    .eq("brand_id", args.brandId)
+    .order("created_at", { ascending: false })
+    .limit(20);
 
   let gscTotals: unknown = null;
   let gscConnected = false;
@@ -72,9 +78,9 @@ export async function runConversionAnalysis(args: { brandId: string; campaignId?
     fallbackRole: "Investor conversion analyst",
     task: "Estimate Investor Capital Funnel",
     instructions:
-      "Estimate the investor-capital funnel (Reach → Lead → Investor → Capital committed $) per campaign from the signals provided (GSC clicks/impressions, post engagement notes in performance_summary, and any operator-logged outcomes). IMPORTANT field mapping: awareness = Reach, signups = Leads, activations = qualified investor conversations / due-diligence steps, paid = Investors committed, revenue_estimate = capital committed in USD. Be conservative and mark confidence. Then RANK what converts leads into investors and dollars raised (hooks/angles/platforms) and give specific, concrete recommendations for Crina to raise next-campaign leads, investor conversion, and capital committed. Estimates only — never post, never call external services.",
+      "Estimate the investor-capital funnel (Reach → Lead → Investor → Capital committed $) per campaign from the signals provided (GSC clicks/impressions, real lead_capture outcomes/recent_leads, post engagement notes in performance_summary, and any operator-logged outcomes). IMPORTANT field mapping: awareness = Reach, signups = Leads, activations = qualified investor conversations / due-diligence steps, paid = Investors committed, revenue_estimate = capital committed in USD. Count only form submissions, investor inquiries, and deck/memo/call requests as real Leads; never count GSC clicks as leads. Be conservative and mark confidence. Then RANK what converts leads into investors and dollars raised (hooks/angles/platforms) and give specific, concrete recommendations for Crina to raise next-campaign leads, investor conversion, and capital committed. Estimates only — never post, never call external services.",
     outputSchema: conversionSchema,
-    input: { brand, campaigns, content_items: items, prior_outcomes: priorOutcomes, gsc_totals: gscTotals, gsc_connected: gscConnected },
+    input: { brand, campaigns, content_items: items, prior_outcomes: priorOutcomes, real_lead_count: realLeadCount ?? 0, recent_leads: recentLeads ?? [], gsc_totals: gscTotals, gsc_connected: gscConnected },
     brainFiles: ["content-formulas.md", "approval-rules.md"],
     temperature: 0.3,
     routeOrigin: "api.sales.analyze"

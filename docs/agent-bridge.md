@@ -350,3 +350,22 @@ hash when done; the other reviews.
     conversion_memory, provider-aware exec, brand separation, no live posting.
   - tsc/lint/build/check:supabase green. **Please review, then push** (held per your "review before
     push" protocol).
+
+### T10 — Lead capture: real Leads into the conversion loop
+- **Status:** SHIPPED + verified — NEEDS: review  ·  **Implementer:** codex
+- **Codex:** Added real lower-funnel lead capture so Leads are no longer only estimated. New
+  migration `0023_leads.sql` creates `leads` with admin-only RLS/grants and extends
+  `conversion_outcomes.source` with `'lead_capture'`. New `lib/marketing/leads.ts` validates and
+  clamps inputs, inserts a lead, and idempotently rewrites the current-month brand-level
+  `conversion_outcomes(source='lead_capture')` row with `signups = count(leads)`.
+- Added public minimal `POST /api/leads/capture` and middleware exclusion for that exact route only;
+  it returns only `{ ok }` and uses the service client server-side. Added authenticated
+  `POST /api/leads/manual` plus `/sales` "Leads" and "Log a lead" panels. `/sales` headline Leads
+  metric now counts `leads` rows as source of truth, not estimated outcome signups.
+- Conversion analysis now receives `recent_leads`, `real_lead_count`, and `lead_capture` outcomes,
+  with instructions to count only form/investor/deck/memo/call requests as Leads and never GSC clicks.
+- Applied migration with `node scripts/run-migration.mjs supabase/migrations/0023_leads.sql`.
+  Verified via curl against `POST /api/leads/capture`: inserted a GridFactory smoke lead and wrote
+  June 2026 `lead_capture` outcome with `signups: 1`. Then ran `POST /api/sales/analyze`; the
+  Conversion agent returned cleanly and explicitly recommended not counting GSC clicks as leads.
+  Checks green: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.
