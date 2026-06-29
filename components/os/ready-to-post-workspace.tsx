@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Download, Loader2, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
+import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
 import type { Brand, Campaign, ContentAsset, ContentItem, ReadyPackage } from "@/lib/types";
 
 type Props = {
@@ -55,6 +56,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
   const [attemptedAssetIds, setAttemptedAssetIds] = useState<Record<string, boolean>>({});
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [tags, setTags] = useState<Record<string, string[]>>({});
   const [message, setMessage] = useState<string | null>(null);
   const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
   const campaignMap = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
@@ -75,10 +77,12 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
   }, [items]);
 
   async function decide(item: ContentItem, decision: "approved" | "rejected" | "changes_requested") {
-    const feedback = reasons[item.id]?.trim() ?? "";
+    const text = reasons[item.id]?.trim() ?? "";
+    const selectedTags = tags[item.id] ?? [];
+    const feedback = [selectedTags.join("; "), text].filter(Boolean).join(" · ");
     if (decision !== "approved" && !feedback) {
       setRejectId(item.id);
-      setMessage("Add a reason so Crina can learn and rework the package.");
+      setMessage("Pick a reason chip (or add a note) so Crina can learn and rework the package.");
       return;
     }
 
@@ -105,13 +109,14 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
           const response = await fetch(`/api/marketing/content-items/${item.id}/rework`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ remark: feedback })
+            body: JSON.stringify({ remark: feedback, tags: selectedTags })
           });
           const payload = (await response.json()) as { contentItem?: ContentItem; routedTo?: string[]; error?: string };
           if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Rework failed.");
           setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.contentItem! : candidate)));
           setReworkedIds((current) => ({ ...current, [item.id]: true }));
           setReasons((current) => ({ ...current, [item.id]: "" }));
+          setTags((current) => ({ ...current, [item.id]: [] }));
           setMessage(`Crina reworked it (routed to ${(payload.routedTo ?? ["Content"]).join(" + ")}). The new version is ready — review it again.`);
         } finally {
           setReworkingIds((current) => ({ ...current, [item.id]: false }));
@@ -196,6 +201,15 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
                   rejecting={rejectId === item.id}
                   reason={reasons[item.id] ?? ""}
                   onReason={(reason) => setReasons((current) => ({ ...current, [item.id]: reason }))}
+                  selectedTags={tags[item.id] ?? []}
+                  onToggleTag={(label) =>
+                    setTags((current) => {
+                      const set = new Set(current[item.id] ?? []);
+                      if (set.has(label)) set.delete(label);
+                      else set.add(label);
+                      return { ...current, [item.id]: [...set] };
+                    })
+                  }
                   onApprove={() => decide(item, "approved")}
                   onReject={() => decide(item, "rejected")}
                   onRequestChanges={() => decide(item, "changes_requested")}
@@ -227,6 +241,8 @@ function ReadyCard({
   rejecting,
   reason,
   onReason,
+  selectedTags,
+  onToggleTag,
   onApprove,
   onReject,
   onRequestChanges,
@@ -243,6 +259,8 @@ function ReadyCard({
   rejecting: boolean;
   reason: string;
   onReason: (reason: string) => void;
+  selectedTags: string[];
+  onToggleTag: (label: string) => void;
   onApprove: () => void;
   onReject: () => void;
   onRequestChanges: () => void;
@@ -313,13 +331,33 @@ function ReadyCard({
 
       {rejecting ? (
         <div className="mt-3">
-          <OSTextarea value={reason} onChange={(event) => onReason(event.target.value)} placeholder="Why should Crina rework this? Be specific: weak hook, wrong tone, bad visual, wrong CTA, too generic..." />
+          <p className="mb-2 text-xs uppercase tracking-wider text-neutral-500">Tap what&apos;s wrong (one tap = structured feedback Crina learns from). Free text optional.</p>
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {REJECT_REASONS.map((r) => {
+              const active = selectedTags.includes(r.label);
+              return (
+                <button
+                  key={r.label}
+                  type="button"
+                  onClick={() => onToggleTag(r.label)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    active
+                      ? "border-rose-500/60 bg-rose-500/15 text-rose-200"
+                      : "border-neutral-700 bg-neutral-900 text-neutral-400 hover:border-neutral-500"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              );
+            })}
+          </div>
+          <OSTextarea value={reason} onChange={(event) => onReason(event.target.value)} placeholder="Optional note: anything the chips don't cover..." />
           <div className="mt-2 flex flex-wrap gap-2">
-            <OSButton variant="danger" onClick={onReject} disabled={busy || !reason.trim()}>
+            <OSButton variant="danger" onClick={onReject} disabled={busy || (!reason.trim() && selectedTags.length === 0)}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
               Reject
             </OSButton>
-            <OSButton variant="secondary" onClick={onRequestChanges} disabled={busy || !reason.trim()}>
+            <OSButton variant="secondary" onClick={onRequestChanges} disabled={busy || (!reason.trim() && selectedTags.length === 0)}>
               Request changes
             </OSButton>
           </div>

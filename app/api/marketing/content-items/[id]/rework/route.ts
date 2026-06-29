@@ -5,6 +5,7 @@ import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
 import { getFeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
+import { routeFromTags } from "@/lib/marketing/reject-reasons";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -40,9 +41,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!access.ok) return access.response;
 
   const { id } = await context.params;
-  const body = (await request.json().catch(() => ({}))) as { remark?: string };
-  const remark = body.remark?.trim();
-  if (!remark) return NextResponse.json({ error: "A remark is required so Crina knows what to fix." }, { status: 400 });
+  const body = (await request.json().catch(() => ({}))) as { remark?: string; tags?: string[] };
+  const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : [];
+  const remark = body.remark?.trim() || tags.join("; ");
+  if (!remark) return NextResponse.json({ error: "A reason chip or remark is required so Crina knows what to fix." }, { status: 400 });
 
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const supabase = createServiceClient() ?? (await createClient());
@@ -56,7 +58,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { data: campaignRow } = item.campaign_id ? await supabase.from("campaigns").select("*").eq("id", item.campaign_id).maybeSingle() : { data: null };
   const campaign = campaignRow as Campaign | null;
 
-  const route = classify(remark);
+  // Routing: preset reason chips are authoritative; otherwise classify the free-text remark.
+  let route = classify(remark);
+  if (tags.length) {
+    const fromTags = routeFromTags(tags);
+    if (fromTags.visual || fromTags.content) route = fromTags;
+  }
   const memory = await getFeedbackMemoryContext({ brandId: item.brand_id, platform: item.platform });
   const routedTo: string[] = [];
   const patch: Record<string, unknown> = {};
@@ -105,6 +112,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   patch.approval_status = "pending";
   patch.workflow_stage = "human_final_approval";
   patch.notified_at = null;
+  patch.human_feedback_tags = tags.length ? tags : null;
   patch.performance_summary = `Reworked by ${routedTo.join(" + ") || "Content"} after your remark: "${remark}".`;
 
   const { error: updErr } = await supabase.from("content_items").update(patch).eq("id", id);
@@ -115,7 +123,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     agent_id: route.visual && !route.content ? "agent-visual-video" : "agent-content-creator",
     content_type: item.content_type,
     content_summary: item.title,
-    content_full: { brand_id: item.brand_id, platform: item.platform, content_type: item.content_type },
+    content_full: { brand_id: item.brand_id, platform: item.platform, content_type: item.content_type, tags },
     decision: "rejected",
     reason: remark,
     decided_by: "human",
