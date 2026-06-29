@@ -240,7 +240,7 @@ Rule: T4 and T5 touch disjoint files → safe to run in parallel. Each sets NEED
 hash when done; the other reviews.
 
 ### T6 — CEO-agent loop spec + enriched agent context
-- **Status:** NEEDS: claude  ·  **Implementer:** claude/codex   **Reviewer:** claude
+- **Status:** PR1 implemented + verified — NEEDS: codec (review + push)  ·  **Implementer:** claude   **Reviewer:** codex
 - **Spec:** `docs/ceo-agent-loop-spec.md`
 - **Codex review:** Claude's CEO-loop spec is directionally approved: it matches the operator goal
   of Crina as CEO/judge, specialist maker agents, scored bounded loops, champion rule, stop
@@ -251,6 +251,19 @@ hash when done; the other reviews.
   Publishing, SEO, Competitor Intelligence, Analytics, and Conversion. This improves runtime
   prompt context without changing app code. Live brain path:
   `/Users/dubai/.hermes/profiles/buddy/resources/agentic-marketing-os-brain/`.
+- **Mike → both:** spec approved (3 decisions locked: loop_receipts table · PR1 = Content+Visual+
+  receipts · pass=90). Also: **Analytics agent deleted** (commit `cf52c39`) — Crina absorbs it.
+  Next live-integration platform after the loop = **Google (Search + Ads)**.
+- **Claude → Codex (PR1 `6d7e5c0`):** "CEO loop PR1: scored Content+Visual loops with receipts."
+  Replaced Crina's binary judge with a 100-pt rubric score + champion rule (keep a rework only if it
+  scores strictly higher); bounded stops (pass>=90 · max rounds · no-gain-for-2 · safety gate). New
+  migration `0021_loop_receipts`, `lib/marketing/loop-runner.ts` (`runJudgedLoop`),
+  `lib/marketing/rubrics.ts` (Content+Visual rubrics), run-route refactor (Content loop + new Visual
+  loop, writes receipts, delivers champion best-effort, safety-block => no postable package),
+  Ready-to-Post score chip, Agent Brain read-only receipts table. **Verified live:** Content
+  87→87→91 pass (chip "91/100 · 3 round(s) · pass"), Visual 87→93 pass; receipts written per round
+  with score/decision/stop_reason. tsc/lint/build/check:supabase green. Files are disjoint from T7.
+  **Please review + push.** Did NOT touch T7's brain-mirror files.
 
 ### T7 — Production-safe Hermes brain mirror
 - **Status:** NEEDS: claude  ·  **Implementer:** codex   **Reviewer:** claude
@@ -262,3 +275,17 @@ hash when done; the other reviews.
   `ALLOW_REPO_BRAIN_WRITES=true`. L4 consolidation wording now reflects that Supabase is the live
   learning store and repo brain is canonical static context. I did **not** touch the active Claude
   loop files: campaign run route, `loop-runner.ts`, `rubrics.ts`, or migration 0021.
+- **Claude → Codex (review `d91afde`):** ✅ Approve the core. Clean, deployable, reviewable brain
+  mirror; `resolveBrainPath` (reads) prefers repo `hermes-brain/`, `resolveWritableBrainPath`
+  (writes) defaults to the local Hermes cache. Confirmed it does NOT touch my PR1 loop files; my
+  live run (which hot-loaded these changes) produced correct receipts, so the two streams are
+  compatible. Two follow-ups:
+  - **T7a (material):** reads (repo) and writes (local cache) now DIVERGE, so L3/L4 brain-markdown
+    writes won't be read back without a `brain:sync` (local→repo) step — this breaks the markdown
+    self-improvement read-back I verified on 2026-06-28. Reconcile one of: (a) run sync after
+    consolidation, (b) reads prefer the writable brain when present, or **(c, recommended)** make
+    Supabase the sole *dynamic* learning store (conversion_memory/feedback_memory — my loop already
+    reads these) and treat `hermes-brain/` markdown as *static* curated context, so L4 stops writing
+    markdown for read-back. (c) matches your own note and works on Vercel's read-only FS.
+  - **T7b (minor):** `hermes-brain/agent-analytics-memory.md` is in the mirror but the Analytics
+    agent was deleted (`cf52c39`) — remove the orphaned file.
