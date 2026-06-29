@@ -20,6 +20,9 @@ export type LeadInput = {
   wants?: unknown;
   source?: unknown;
   notes?: unknown;
+  company_url?: unknown;
+  lead_form_token?: unknown;
+  form_token?: unknown;
 };
 
 export type LeadRow = {
@@ -42,6 +45,17 @@ export type LeadRow = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PUBLIC_IP_LIMIT = 5;
+const PUBLIC_IP_WINDOW_MS = 60 * 1000;
+const PUBLIC_DEDUPE_MS = 10 * 60 * 1000;
+type CaptureResult =
+  | { ok: true; lead?: LeadRow; signups?: number; dropped?: boolean }
+  | { ok: false; error: string; status: 400 | 401 | 500 | 503 };
+
+const rateBuckets = globalThis as typeof globalThis & {
+  __leadCaptureRateBuckets?: Map<string, number[]>;
+};
 
 function text(v: unknown, max = 240) {
   if (typeof v !== "string") return null;
@@ -71,14 +85,71 @@ async function getSupabase() {
   return createServiceClient() ?? (await createClient());
 }
 
-export async function captureLead(input: LeadInput) {
+function isRateLimited(ip: string | null) {
+  if (!ip) return false;
+  const now = Date.now();
+  const buckets = rateBuckets.__leadCaptureRateBuckets ?? new Map<string, number[]>();
+  rateBuckets.__leadCaptureRateBuckets = buckets;
+  const recent = (buckets.get(ip) ?? []).filter((t) => now - t < PUBLIC_IP_WINDOW_MS);
+  if (recent.length >= PUBLIC_IP_LIMIT) {
+    buckets.set(ip, recent);
+    return true;
+  }
+  recent.push(now);
+  buckets.set(ip, recent);
+  return false;
+}
+
+function tokenMatches(input: LeadInput) {
+  const expected = process.env.LEAD_FORM_TOKEN?.trim();
+  if (!expected) return true;
+  const provided = text(input.lead_form_token, 500) ?? text(input.form_token, 500);
+  return provided === expected;
+}
+
+async function hasRecentDuplicate(args: { brandId: string; email: string }) {
+  const supabase = await getSupabase();
+  if (!supabase) return { ok: false as const, status: 503 as const, error: "Supabase is not available." };
+  const since = new Date(Date.now() - PUBLIC_DEDUPE_MS).toISOString();
+  const { data, error } = await supabase
+    .from("leads")
+    .select("id")
+    .eq("brand_id", args.brandId)
+    .eq("email", args.email)
+    .gte("created_at", since)
+    .limit(1);
+  if (error) return { ok: false as const, status: 500 as const, error: error.message };
+  return { ok: true as const, duplicate: Boolean(data?.length) };
+}
+
+export async function capturePublicLead(input: LeadInput, meta: { ip?: string | null } = {}): Promise<CaptureResult> {
+  const brandId = text(input.brand_id, 80);
+  const leadEmail = email(input.email);
+  const honeypot = text(input.company_url, 500);
+
+  if (!tokenMatches(input)) return { ok: false, status: 401, error: "Unauthorized." };
+  if (honeypot || isRateLimited(meta.ip ?? null)) return { ok: true, dropped: true };
+  if (!brandId || !UUID_RE.test(brandId) || !leadEmail) {
+    return { ok: false, status: 400, error: "brand_id and valid email are required." };
+  }
+
+  const dup = await hasRecentDuplicate({ brandId, email: leadEmail });
+  if (!dup.ok) return dup;
+  if (dup.duplicate) return { ok: true, dropped: true };
+
+  return captureLead({ ...input, source: "form" });
+}
+
+export async function captureLead(input: LeadInput): Promise<CaptureResult> {
   try {
     const brandId = text(input.brand_id, 80);
     const leadEmail = email(input.email);
-    if (!brandId || !leadEmail) return { ok: false as const, error: "brand_id and valid email are required." };
+    if (!brandId || !UUID_RE.test(brandId) || !leadEmail) {
+      return { ok: false, status: 400, error: "brand_id and valid email are required." };
+    }
 
     const supabase = await getSupabase();
-    if (!supabase) return { ok: false as const, error: "Supabase is not available." };
+    if (!supabase) return { ok: false, status: 503, error: "Supabase is not available." };
 
     const rawSegment = text(input.segment, 40);
     const rawSource = text(input.source, 20);
@@ -106,7 +177,7 @@ export async function captureLead(input: LeadInput) {
       .select("*")
       .single();
 
-    if (error) return { ok: false as const, error: error.message };
+    if (error) return { ok: false, status: 500, error: error.message };
 
     const period = monthWindow();
     const { count } = await supabase
@@ -117,15 +188,7 @@ export async function captureLead(input: LeadInput) {
       .lt("created_at", period.nextIso);
 
     const signups = count ?? 0;
-    await supabase
-      .from("conversion_outcomes")
-      .delete()
-      .eq("brand_id", brandId)
-      .eq("source", "lead_capture")
-      .eq("period_start", period.startDate)
-      .eq("period_end", period.endDate);
-
-    await supabase.from("conversion_outcomes").insert({
+    const { error: outcomeError } = await supabase.from("conversion_outcomes").upsert({
       brand_id: brandId,
       campaign_id: null,
       source: "lead_capture",
@@ -141,11 +204,14 @@ export async function captureLead(input: LeadInput) {
       recorded_by: "lead-capture",
       estimate_confidence: "high",
       notes: `${signups} real lead${signups === 1 ? "" : "s"} captured this month.`
+    }, {
+      onConflict: "brand_id,source,period_start,period_end"
     });
+    if (outcomeError) return { ok: false, status: 500, error: outcomeError.message };
 
-    return { ok: true as const, lead: lead as LeadRow, signups };
+    return { ok: true, lead: lead as LeadRow, signups };
   } catch (e) {
-    return { ok: false as const, error: e instanceof Error ? e.message : "Lead capture failed." };
+    return { ok: false, status: 500, error: e instanceof Error ? e.message : "Lead capture failed." };
   }
 }
 

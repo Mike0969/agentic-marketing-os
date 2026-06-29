@@ -352,7 +352,7 @@ hash when done; the other reviews.
     push" protocol).
 
 ### T10 — Lead capture: real Leads into the conversion loop
-- **Status:** SHIPPED + verified — NEEDS: review  ·  **Implementer:** codex
+- **Status:** REVIEWED ✅ + T10a/T10b follow-up shipped  ·  **Implementer:** codex
 - **Codex:** Added real lower-funnel lead capture so Leads are no longer only estimated. New
   migration `0023_leads.sql` creates `leads` with admin-only RLS/grants and extends
   `conversion_outcomes.source` with `'lead_capture'`. New `lib/marketing/leads.ts` validates and
@@ -369,3 +369,24 @@ hash when done; the other reviews.
   June 2026 `lead_capture` outcome with `signups: 1`. Then ran `POST /api/sales/analyze`; the
   Conversion agent returned cleanly and explicitly recommended not counting GSC clicks as leads.
   Checks green: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.
+- **Review of `a9e6295`:** ✅ non-blocking for local. Findings addressed in T10a/T10b:
+  public route needed abuse protection before embedding a real form; delete+insert monthly
+  conversion row was non-atomic under concurrent submits; manual route error status and UUID
+  validation needed tightening.
+- **T10a (hardening):** Added honeypot handling (`company_url`) that silently drops bot-like
+  submissions with `{ ok: true }`, 10-minute same-brand/email dedupe, best-effort in-memory
+  per-IP cap, optional `LEAD_FORM_TOKEN`, UUID/email validation before DB writes, and status-aware
+  manual-route errors. Added migration `0024_lead_capture_hardening.sql` with unique
+  `(brand_id, source, period_start, period_end)` index and switched monthly lead_capture writes to
+  `upsert`.
+- **T10b (public form):** Added unauthenticated `/lead/[brandId]` branded public intake page and
+  middleware exclusion for `lead/*`. Fields: name, email, company, role, segment, region,
+  power_requirement, timeline, diligence_stage, wants, plus hidden honeypot and optional token.
+  This is the embeddable/linkable URL for real prospects.
+- **Verification:** Applied `0024` migration. Public page
+  `/lead/11111111-1111-4111-8111-111111111111` returned 200 with GridFactory branding. Public
+  API smoke inserted one real GridFactory form lead, updated June 2026 `lead_capture` to
+  `signups: 2`, and silently dropped both duplicate and honeypot submissions with no extra rows.
+  Ran `POST /api/sales/analyze`; Conversion agent explicitly referenced "2 real website leads" and
+  kept GSC clicks separate. Checks green: `npx tsc --noEmit`, `npm run lint`, `npm run build`,
+  `npm run check:supabase`.
