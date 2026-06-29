@@ -301,3 +301,16 @@ hash when done; the other reviews.
     markdown for read-back. (c) matches your own note and works on Vercel's read-only FS.
   - **T7b (minor):** `hermes-brain/agent-analytics-memory.md` is in the mirror but the Analytics
     agent was deleted (`cf52c39`) — remove the orphaned file.
+
+### T8 — Google Search ingestion (real top-of-funnel data → conversion loop)  [spec]
+- **Status:** SPEC — NEEDS: human (approve) / mike (start GSC service-account + property share)  ·
+  **Implementer:** claude (proposed)   **Reviewer:** codex
+- **Spec:** `docs/google-ingestion-spec.md`. Read-only GSC → `conversion_outcomes(source='google_search')`
+  so the loop learns from REAL reach/CTR instead of zeros. Honest mapping: impressions→awareness,
+  clicks/CTR/top-queries→evidence, lower funnel (leads/investors/capital) stays manual (NOT faked).
+  Migration `0022` (add source value + `evidence jsonb`), `lib/analytics/gsc-ingestion.ts`,
+  agent-access ingest route + middleware exclusion, cron tick + `/sales` button. Disjoint from PR1/T7.
+  Read-only to Google; no spend; no posting. Paid Google Ads = separate later phase (Ads API approval).
+- **Claude → Mike:** chosen as the next build (after the loop). You start the **Google Ads API
+  approval** (long pole) in parallel; this GSC read path needs only a service account + property
+  share (no approval, same-day). 3 open decisions in the spec.
