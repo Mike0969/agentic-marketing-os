@@ -1,12 +1,17 @@
+import { existsSync } from "fs";
 import { appendFile, readFile, readdir, stat, writeFile } from "fs/promises";
 import path from "path";
 
 /**
  * Server-side reader for the Hermes team registry (team.json) and the shared
- * brain resource collection. These files live on the local Hermes profile and
- * are the source of truth for the agent team — Hermes /v1/chat/completions does
- * not natively route to the agent IDs, so the dashboard treats this registry as
- * canonical and injects the relevant metadata + brain context into each call.
+ * brain resource collection. Agent team metadata still comes from the local
+ * Hermes profile when present, but the deployable brain source of truth is the
+ * repo-tracked `hermes-brain/` directory. The local Hermes brain is treated as a
+ * writable cache for Buddy, not as canonical production memory.
+ *
+ * Hermes /v1/chat/completions does not natively route to the agent IDs, so the
+ * dashboard treats this registry as canonical and injects the relevant metadata
+ * + brain context into each call.
  *
  * Safety:
  * - Only ever runs on the server (fs access).
@@ -62,6 +67,8 @@ export type HermesRegistrySnapshot = {
 };
 
 const DEFAULT_TEAM_PATH = "/Users/dubai/.hermes/profiles/buddy/agents/agentic-marketing-os/team.json";
+const REPO_BRAIN_PATH = path.join(process.cwd(), "hermes-brain");
+const DEFAULT_LOCAL_BRAIN_PATH = "/Users/dubai/.hermes/profiles/buddy/resources/agentic-marketing-os-brain";
 
 function resolveTeamPath() {
   return process.env.HERMES_TEAM_PATH || DEFAULT_TEAM_PATH;
@@ -117,7 +124,16 @@ function normalizeTeam(raw: unknown): HermesTeam | null {
 
 function resolveBrainPath(team: HermesTeam | null): string | null {
   if (process.env.HERMES_BRAIN_PATH) return process.env.HERMES_BRAIN_PATH;
+  if (existsSync(REPO_BRAIN_PATH)) return REPO_BRAIN_PATH;
   return team?.sharedBrainPath ?? null;
+}
+
+function resolveWritableBrainPath(team: HermesTeam | null): string | null {
+  if (process.env.HERMES_WRITABLE_BRAIN_PATH) return process.env.HERMES_WRITABLE_BRAIN_PATH;
+  if (team?.sharedBrainPath) return team.sharedBrainPath;
+  if (existsSync(DEFAULT_LOCAL_BRAIN_PATH)) return DEFAULT_LOCAL_BRAIN_PATH;
+  if (process.env.ALLOW_REPO_BRAIN_WRITES === "true" && existsSync(REPO_BRAIN_PATH)) return REPO_BRAIN_PATH;
+  return null;
 }
 
 async function readBrainResources(brainPath: string | null): Promise<BrainResource[]> {
@@ -250,9 +266,10 @@ export async function readAgentMemory(agentId: string): Promise<string> {
 /** Write an agent's own memory file into the shared brain dir. */
 export async function writeAgentMemory(agentId: string, content: string): Promise<boolean> {
   const snapshot = await readHermesRegistry();
-  if (!snapshot.brainPath) return false;
+  const brainPath = resolveWritableBrainPath(snapshot.team);
+  if (!brainPath) return false;
   try {
-    await writeFile(path.join(snapshot.brainPath, agentMemoryFileName(agentId)), content, "utf8");
+    await writeFile(path.join(brainPath, agentMemoryFileName(agentId)), content, "utf8");
     return true;
   } catch {
     return false;
@@ -262,9 +279,10 @@ export async function writeAgentMemory(agentId: string, content: string): Promis
 /** Append a concise note into a shared brain markdown file. Best-effort only. */
 export async function appendBrainResource(fileName: string, content: string): Promise<boolean> {
   const snapshot = await readHermesRegistry();
-  if (!snapshot.brainPath || !fileName.endsWith(".md")) return false;
+  const brainPath = resolveWritableBrainPath(snapshot.team);
+  if (!brainPath || !fileName.endsWith(".md")) return false;
   try {
-    await appendFile(path.join(snapshot.brainPath, fileName), `\n\n${content.trim()}\n`, "utf8");
+    await appendFile(path.join(brainPath, fileName), `\n\n${content.trim()}\n`, "utf8");
     return true;
   } catch {
     return false;

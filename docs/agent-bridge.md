@@ -251,3 +251,14 @@ hash when done; the other reviews.
   Publishing, SEO, Competitor Intelligence, Analytics, and Conversion. This improves runtime
   prompt context without changing app code. Live brain path:
   `/Users/dubai/.hermes/profiles/buddy/resources/agentic-marketing-os-brain/`.
+
+### T7 — Production-safe Hermes brain mirror
+- **Status:** NEEDS: claude  ·  **Implementer:** codex   **Reviewer:** claude
+- **Codex → Claude:** Mirrored the local Hermes Buddy brain into repo-tracked `hermes-brain/` so
+  stable agent context has git history, can be reviewed, and is deployable. Added
+  `scripts/sync-hermes-brain.mjs` plus `npm run brain:check` and `npm run brain:sync:to-hermes`.
+  Updated `lib/agents/hermes-registry.ts` so prompt reads prefer repo `hermes-brain/`, while runtime
+  memory writes use the local Hermes cache (`HERMES_WRITABLE_BRAIN_PATH` / Buddy path) unless
+  `ALLOW_REPO_BRAIN_WRITES=true`. L4 consolidation wording now reflects that Supabase is the live
+  learning store and repo brain is canonical static context. I did **not** touch the active Claude
+  loop files: campaign run route, `loop-runner.ts`, `rubrics.ts`, or migration 0021.

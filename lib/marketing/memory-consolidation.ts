@@ -6,9 +6,10 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 // L4 — the Editor pass. Raw appended memory bloats and makes agents WORSE; this re-distils the
-// accumulated conversion insights + outcome metrics into a TIGHT ranked playbook per brand, drops
-// rules the numbers don't support, and REWRITES the Hermes brain (replacing bloat) so every agent
-// reads a sharp set on the next run. Objective: weighted by paid_conversion_rate / paid / revenue.
+// accumulated conversion insights + outcome metrics into a TIGHT ranked playbook per brand and
+// drops rules the numbers don't support. Dynamic learning is persisted in Supabase; Hermes brain
+// writes are best-effort local-cache refreshes only. The canonical deployable brain lives in
+// `hermes-brain/`. Objective: weighted by paid_conversion_rate / paid / revenue.
 
 const consolidateSchema = {
   rules: [{ rule: "tight, concrete, high-signal rule", evidence: "the metric/outcome that backs it" }],
@@ -86,7 +87,8 @@ export async function runMemoryConsolidation(args: { brandId?: string } = {}) {
     }
   }
 
-  // REWRITE the Hermes conversion brain sharp (replace bloat). Per-brand blocks, all brands at once.
+  // Refresh the local Hermes conversion brain cache sharp (replace bloat). Per-brand blocks, all
+  // brands at once. Canonical brain edits belong in `hermes-brain/`, not runtime writes.
   if (blocks.length) {
     const doc = `# Consolidated conversion playbook (${new Date().toISOString().slice(0, 10)})\nThe sharp, current set of what converts. Older append-notes are superseded by this.\n\n${blocks.join("\n\n")}\n`;
     try {

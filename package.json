@@ -9,6 +9,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "brain:check": "node scripts/sync-hermes-brain.mjs --check",
+    "brain:sync:to-hermes": "node scripts/sync-hermes-brain.mjs",
     "check:supabase": "node scripts/check-supabase.mjs",
     "check:workflow-schema": "node scripts/check-workflow-schema.mjs",
     "migrate": "node scripts/run-migration.mjs",
