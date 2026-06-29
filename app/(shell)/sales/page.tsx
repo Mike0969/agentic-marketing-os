@@ -1,5 +1,6 @@
 import { ConversionAnalyzeAction } from "@/components/os/conversion-analyze-action";
 import { ConversionLogForm } from "@/components/os/conversion-log-form";
+import { GscPullAction } from "@/components/os/gsc-pull-action";
 import { OSBadge, OSMetric, OSPanel, PageHeading } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
 import { getConversionMemoryContext, getLatestConversionOutcomes, type ConversionInsight } from "@/lib/marketing/conversion-memory";
@@ -64,7 +65,12 @@ export default async function SalesPage() {
         eyebrow="Capital OS"
         title="Investor Conversion Command Center"
         subtitle="Funnel: Reach → Lead → Investor → Capital($). What raises investor interest and committed capital feeds back into Crina's next campaign. Manual + agent-estimated; no live posting."
-        action={<ConversionAnalyzeAction brands={data.brands} />}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <GscPullAction />
+            <ConversionAnalyzeAction brands={data.brands} />
+          </div>
+        }
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">

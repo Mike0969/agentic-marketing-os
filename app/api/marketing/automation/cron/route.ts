@@ -1,10 +1,31 @@
 import { NextResponse } from "next/server";
 import { POST as tickCampaign } from "@/app/api/marketing/campaigns/[id]/automation/tick/route";
+import { runGscIngestion } from "@/lib/analytics/gsc-ingestion";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Campaign, ContentItem } from "@/lib/types";
+
+const GSC_REFRESH_MS = 12 * 60 * 60 * 1000; // refresh Google Search data at most ~twice a day
+
+// Best-effort, idempotent GSC refresh on the cron. GSC data lags 2-3 days, so a tight cadence adds
+// nothing; this also keeps us well under Search Console API quota. Never throws.
+async function refreshGscIfStale(supabase: NonNullable<ReturnType<typeof createServiceClient>>) {
+  try {
+    const { data: recent } = await supabase
+      .from("conversion_outcomes")
+      .select("created_at")
+      .eq("source", "google_search")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const last = recent?.[0]?.created_at ? new Date(recent[0].created_at as string).getTime() : 0;
+    if (Date.now() - last < GSC_REFRESH_MS) return { skipped: "recent" as const };
+    return await runGscIngestion();
+  } catch {
+    return { skipped: "error" as const };
+  }
+}
 
 async function jsonFrom(response: Response) {
   return (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -46,6 +67,8 @@ async function runCron(request: Request) {
   const supabase = createServiceClient();
   if (!supabase) return NextResponse.json({ error: "Supabase service client is not configured." }, { status: 503 });
 
+  const gscIngestion = await refreshGscIfStale(supabase);
+
   const { data: campaigns, error } = await supabase
     .from("campaigns")
     .select("*")
@@ -61,7 +84,7 @@ async function runCron(request: Request) {
 
   if (!activeCampaignIds.length) {
     const notifications = await sendCrinaReadyToPostPings({ baseUrl: baseUrlFrom(request) });
-    return NextResponse.json({ processed: 0, results: [], notifications, message: "No campaigns are eligible for automation." });
+    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, message: "No campaigns are eligible for automation." });
   }
 
   const { data: contentItems, error: contentError } = await supabase
@@ -103,7 +126,8 @@ async function runCron(request: Request) {
     processed: results.length,
     skipped_no_internal_step: activeCampaigns.length - candidates.length,
     results,
-    notifications
+    notifications,
+    gsc_ingestion: gscIngestion
   });
 }
 
