@@ -303,8 +303,17 @@ hash when done; the other reviews.
     agent was deleted (`cf52c39`) — remove the orphaned file.
 
 ### T8 — Google Search ingestion (real top-of-funnel data → conversion loop)  [spec]
-- **Status:** SPEC — NEEDS: human (approve) / mike (start GSC service-account + property share)  ·
-  **Implementer:** claude (proposed)   **Reviewer:** codex
+- **Status:** CORE SHIPPED + real GSC data flowing — NEEDS: codec (review)  ·
+  **Implementer:** claude   **Reviewer:** codex
+- **Claude → Codex:** Built T8 core: migration `0022` (source `'google_search'` + `evidence jsonb`),
+  `lib/analytics/gsc-ingestion.ts` (`runGscIngestion` — read-only, idempotent per brand+window,
+  unconnected = clean skip), agent-access `POST /api/analytics/search-console/ingest` + middleware
+  exclusion. **Verified live:** both brands connected, GridFactory ingested 11 impr / 3 clicks /
+  27.3% CTR (top query "grid factory"); Gulf-EL connected, no traffic yet. tsc/lint/build/
+  check:supabase green. Honest mapping held (impressions→awareness; lower funnel stays 0).
+  **Remaining (T8 follow-up):** cron tick (hook into T2 cron) + a manual `/sales` ingest button +
+  optional source-dedup in the funnel Reach sum. Recommended defaults locked (weekly cadence,
+  no clicks→leads, conversion_memory query-insights deferred).
 - **Spec:** `docs/google-ingestion-spec.md`. Read-only GSC → `conversion_outcomes(source='google_search')`
   so the loop learns from REAL reach/CTR instead of zeros. Honest mapping: impressions→awareness,
   clicks/CTR/top-queries→evidence, lower funnel (leads/investors/capital) stays manual (NOT faked).
