@@ -26,6 +26,7 @@ export type JudgeResult = {
   safetyPass: boolean;
   judgeNotes: string;
   improvements: string[];
+  fallbackUsed: boolean; // the judge model itself fell back
   tokensTotal: number | null;
   latencyMs: number;
 };
@@ -153,6 +154,7 @@ export async function runJudgedLoop<T>(args: RunJudgedLoopArgs<T>): Promise<Loop
 
     const judged = await args.judge(made.candidate, round);
     lastJudgeNotes = judged.judgeNotes;
+    if (judged.fallbackUsed) anyFallback = true;
 
     if (!judged.safetyPass) {
       stopReason = "safety";

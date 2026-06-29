@@ -130,6 +130,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         safetyPass: !(j.safety_pass === false),
         judgeNotes: typeof j.judge_notes === "string" ? j.judge_notes : "",
         improvements: Array.isArray(j.improvements) ? j.improvements.map(String) : [],
+        fallbackUsed: !review.ok,
         tokensTotal: review.usage.tokensTotal,
         latencyMs: review.durationMs
       };
@@ -170,13 +171,25 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       judge: async (candidate) => judgeWith(CONTENT_RUBRIC, "post", candidate)
     });
 
-    // Safety-blocked content => no postable package for this platform.
-    if (!contentLoop.champion && contentLoop.stopReason === "safety") {
-      created.push({ platform, title: `${platform} (safety-blocked)`, loops: contentLoop.rounds, score: 0, stop: "safety", blocked: true, fallback: true });
+    // Spec: ANY content safety stop => NO postable package, even if an earlier round was a champion.
+    if (contentLoop.stopReason === "safety") {
+      await recordAgentRun({
+        agentName: "Campaign Run",
+        agentId: "agent-crina",
+        workflowName: "Run Campaign (per-platform)",
+        provider: contentLoop.provider,
+        status: "error",
+        input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" },
+        output: { platform, content_stop: "safety", content_rounds: contentLoop.rounds, blocked: true },
+        error: "Content safety-blocked: no postable package created.",
+        model: contentLoop.model,
+        durationMs: 0
+      });
+      created.push({ platform, title: `${platform} (safety-blocked)`, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "safety", blocked: true, fallback: true });
       continue;
     }
 
-    let fallback = contentLoop.fallbackUsed || !contentLoop.champion;
+    const contentFallback = contentLoop.fallbackUsed || !contentLoop.champion;
     const draft: PostDraft = contentLoop.champion ?? {
       title: `${platform}: ${campaign.title}`,
       hook: String(idea.hook ?? ""),
@@ -187,8 +200,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const contentType = platform.toLowerCase().includes("blog") ? "Blog article" : platform.toLowerCase().includes("instagram") ? "Image post" : "Social post";
     const reviewChip = `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
-    const readyPackage = { platform, content_type: contentType, title: draft.title, text: draft.body, caption: draft.body, hashtags: draft.hashtags, alt_text: `Visual for ${draft.title}`, scheduled_at: scheduledAt, crina_score: contentLoop.championScore, crina_loops: contentLoop.rounds, fallback_used: fallback };
 
+    // Insert at a NON-postable visual stage; only promoted to the human gate after the Visual loop
+    // clears safety, so a visual safety-block never reaches Ready to Post.
     const { data: item, error: insErr } = await supabase
       .from("content_items")
       .insert({
@@ -200,17 +214,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         hook: draft.hook,
         body: draft.body,
         CTA: draft.cta,
-        status: "approval",
-        approval_status: "pending",
-        workflow_stage: "human_final_approval",
-        current_owner: "Human",
-        next_owner: "Publishing Agent",
+        status: "visual",
+        approval_status: "not_requested",
+        workflow_stage: "visual_creation",
+        current_owner: "Visual & Video Agent",
+        next_owner: "Crina",
         assigned_agent: "Content Creator Agent",
         scheduled_at: scheduledAt,
         loop_iteration: contentLoop.rounds,
-        crina_review_notes: reviewChip,
-        ready_package: readyPackage,
-        performance_summary: `${fallback ? "FALLBACK " : ""}Crina ${reviewChip}. Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
+        crina_review_notes: reviewChip
       })
       .select("id")
       .single();
@@ -259,40 +271,92 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       judge: async (candidate) => judgeWith(VISUAL_RUBRIC, "visual", candidate)
     });
 
-    // Generate one image from the champion prompt (safety-blocked or empty -> safe generic prompt).
-    const imagePrompt =
-      visualLoop.champion && visualLoop.stopReason !== "safety"
-        ? visualLoop.champion.prompt
-        : `Professional ${platform} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
+    // Backfill receipts for this item (written with null content_item_id during the loops).
+    await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", [contentLoop.loopId, visualLoop.loopId]);
+
+    // Spec: a visual safety stop => NO postable package. Pull the item from the gate to rework
+    // (do not silently swap in a generic image and mark it ready).
+    if (visualLoop.stopReason === "safety") {
+      await supabase
+        .from("content_items")
+        .update({
+          status: "draft",
+          approval_status: "changes_requested",
+          workflow_stage: "rework",
+          current_owner: "Crina",
+          next_owner: "Visual & Video Agent",
+          visual_asset_status: "error",
+          crina_review_notes: `${reviewChip} · VISUAL SAFETY-BLOCKED`,
+          performance_summary: `BLOCKED: visual safety violation. ${visualLoop.lastJudgeNotes.slice(0, 160)} Content ${reviewChip}.`
+        })
+        .eq("id", item.id);
+      await recordAgentRun({
+        agentName: "Campaign Run",
+        agentId: "agent-crina",
+        workflowName: "Run Campaign (per-platform)",
+        provider: contentLoop.provider,
+        status: "error",
+        input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" },
+        output: { platform, content_score: contentLoop.championScore, visual_stop: "safety", blocked: true },
+        error: "Visual safety-blocked: package withheld from human gate.",
+        model: contentLoop.model,
+        durationMs: 0
+      });
+      created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "visual_safety", blocked: true, fallback: true });
+      continue;
+    }
+
+    // Generate one image. A missing visual champion (non-safety) falls back to a safe generic prompt.
+    const usingGenericVisual = !visualLoop.champion;
+    const imagePrompt = visualLoop.champion
+      ? visualLoop.champion.prompt
+      : `Professional ${platform} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
     const image = await generateMarketingImage(imagePrompt, { contentItemId: item.id as string, position: 1, kind: "image" });
+    const imageFallback = image.status === "placeholder" || image.status === "error";
+
+    // Comprehensive fallback signal across content maker/judge, visual maker/judge, and image.
+    const fallbackParts = [
+      contentFallback ? "content" : null,
+      visualLoop.fallbackUsed ? "visual" : null,
+      usingGenericVisual ? "visual-generic" : null,
+      imageFallback ? `image(${image.status})` : null
+    ].filter(Boolean) as string[];
+    const anyFallback = fallbackParts.length > 0;
+    const fbNote = anyFallback ? `FALLBACK[${fallbackParts.join(",")}] ` : "";
+
+    const readyPackage = { platform, content_type: contentType, title: draft.title, text: draft.body, caption: draft.body, hashtags: draft.hashtags, alt_text: `Visual for ${draft.title}`, scheduled_at: scheduledAt, crina_score: contentLoop.championScore, crina_loops: contentLoop.rounds, visual_score: visualLoop.championScore, image_provider: image.provider, fallback_used: anyFallback };
+
+    // Promote to the human gate now that content + visual cleared safety.
     await supabase
       .from("content_items")
       .update({
+        status: "approval",
+        approval_status: "pending",
+        workflow_stage: "human_final_approval",
+        current_owner: "Human",
+        next_owner: "Publishing Agent",
         visual_asset_url: image.url,
         visual_asset_prompt: imagePrompt,
         visual_asset_status: image.status,
-        ready_package: { ...readyPackage, image_provider: image.provider, visual_score: visualLoop.championScore },
-        performance_summary: `${fallback ? "FALLBACK " : ""}Crina ${reviewChip}. Visual ${visualLoop.championScore}/100 (${visualLoop.stopReason}). Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
+        ready_package: readyPackage,
+        performance_summary: `${fbNote}Crina ${reviewChip}. Visual ${visualLoop.championScore}/100 (${visualLoop.stopReason}). Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
       })
       .eq("id", item.id);
-
-    // Link this item's receipts (written with null content_item_id during the loops).
-    await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", [contentLoop.loopId, visualLoop.loopId]);
 
     await recordAgentRun({
       agentName: "Campaign Run",
       agentId: "agent-crina",
       workflowName: "Run Campaign (per-platform)",
       provider: contentLoop.provider,
-      status: fallback ? "fallback" : "success",
+      status: anyFallback ? "fallback" : "success",
       input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" },
-      output: { platform, content_score: contentLoop.championScore, content_stop: contentLoop.stopReason, content_rounds: contentLoop.rounds, visual_score: visualLoop.championScore, visual_stop: visualLoop.stopReason, image_provider: image.provider, image_status: image.status },
-      error: fallback ? "Fallback used." : null,
+      output: { platform, content_score: contentLoop.championScore, content_stop: contentLoop.stopReason, content_rounds: contentLoop.rounds, visual_score: visualLoop.championScore, visual_stop: visualLoop.stopReason, image_provider: image.provider, image_status: image.status, fallback_parts: fallbackParts },
+      error: anyFallback ? `Fallback used: ${fallbackParts.join(", ")}.` : null,
       model: contentLoop.model,
       durationMs: 0
     });
 
-    created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: contentLoop.stopReason, fallback });
+    created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: contentLoop.stopReason, fallback: anyFallback });
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
