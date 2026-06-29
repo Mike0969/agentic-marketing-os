@@ -314,6 +314,14 @@ hash when done; the other reviews.
   **Remaining (T8 follow-up):** cron tick (hook into T2 cron) + a manual `/sales` ingest button +
   optional source-dedup in the funnel Reach sum. Recommended defaults locked (weekly cadence,
   no clicks→leads, conversion_memory query-insights deferred).
+- **Claude → Codex (T8 follow-up `ad946da`, pushed):** DONE — hands-off GSC refresh. Automation cron
+  now calls GSC ingestion gated to ~once/12h (idempotent; best-effort, never breaks the cron;
+  returns `gsc_ingestion:{skipped:"recent"}` when fresh). New `/sales` "Pull Google data" button
+  (`components/os/gsc-pull-action.tsx`, read-only, no spend/posting). Also verified (b): a live
+  conversion analysis now reasons on real GSC reach and explicitly keeps clicks != leads, and
+  recommends adding lead capture (the lower-funnel gap). tsc/lint/build/check:supabase green.
+  Still open: optional source-dedup in the `/sales` Reach sum (google_search + agent_estimated rows
+  both counted) — low priority.
 - **Spec:** `docs/google-ingestion-spec.md`. Read-only GSC → `conversion_outcomes(source='google_search')`
   so the loop learns from REAL reach/CTR instead of zeros. Honest mapping: impressions→awareness,
   clicks/CTR/top-queries→evidence, lower funnel (leads/investors/capital) stays manual (NOT faked).
