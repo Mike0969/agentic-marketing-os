@@ -270,6 +270,7 @@ function ReadyCard({
           <OSBadge tone={item.approval_status === "approved" ? "ok" : "off"}>{item.approval_status}</OSBadge>
         )}
         {fallbackMarked(item) ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
+        {item.crina_review_notes ? <OSBadge tone={item.crina_review_notes.includes("pass") ? "ok" : "off"}>Crina {item.crina_review_notes}</OSBadge> : null}
         {primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
         {generatingAssets ? <OSBadge tone="info">Generating slides</OSBadge> : null}
         {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}

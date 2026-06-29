@@ -1,13 +1,39 @@
 import { AgentKanbanBoard, type AgentKanbanCard, type AgentKanbanRun } from "@/components/os/agent-kanban-board";
-import { OSMetric, PageHeading } from "@/components/os/ui";
+import { OSBadge, OSMetric, OSPanel, PageHeading } from "@/components/os/ui";
 import { listAgentConfigs, resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { readHermesRegistry } from "@/lib/agents/hermes-registry";
 import { registeredAgents } from "@/lib/agents/registry";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { getProvider, isConfigured, PROVIDERS } from "@/lib/providers";
+import { createServiceClient } from "@/lib/supabase/service";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Agent, AgentRun, AgentRunStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+type LoopReceiptRow = {
+  id: string;
+  loop_type: string;
+  agent_id: string;
+  round_number: number;
+  score_after: number | null;
+  decision: string | null;
+  stop_reason: string | null;
+  output_summary: string | null;
+  created_at: string;
+};
+
+async function getRecentLoopReceipts(): Promise<LoopReceiptRow[]> {
+  if (!isSupabaseConfigured()) return [];
+  const supabase = createServiceClient() ?? (await createClient());
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from("loop_receipts")
+    .select("id,loop_type,agent_id,round_number,score_after,decision,stop_reason,output_summary,created_at")
+    .order("created_at", { ascending: false })
+    .limit(24);
+  return (data ?? []) as LoopReceiptRow[];
+}
 
 const domainByAgent: Record<string, AgentKanbanCard["domain"]> = {
   "agent-crina": "Marketing",
@@ -77,12 +103,13 @@ async function getModelOptions() {
 }
 
 export default async function AgentsKanbanPage() {
-  const [data, registry, runs, configs, modelOptions] = await Promise.all([
+  const [data, registry, runs, configs, modelOptions, receipts] = await Promise.all([
     getDashboardData(),
     readHermesRegistry(),
     getAgentRuns(undefined, 200),
     listAgentConfigs(),
-    getModelOptions()
+    getModelOptions(),
+    getRecentLoopReceipts()
   ]);
 
   const profiles = registry.team?.agents ?? [];
@@ -146,6 +173,43 @@ export default async function AgentsKanbanPage() {
         <OSMetric label="Model options" value={modelOptions.length} hint="Configured providers only" />
       </div>
       <AgentKanbanBoard initialCards={cards} providers={PROVIDERS} modelOptions={modelOptions} />
+
+      <OSPanel className="mt-6">
+        <h2 className="text-lg font-semibold text-neutral-50">Recent loop receipts</h2>
+        <p className="mb-3 mt-1 text-sm text-neutral-500">Read-only evidence trail — each judged loop round: the maker, Crina&apos;s rubric score, the decision, and why the loop stopped.</p>
+        {receipts.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-neutral-800 text-left text-xs uppercase tracking-wider text-neutral-500">
+                  <th className="py-2 pr-3">Loop</th>
+                  <th className="px-3">Maker</th>
+                  <th className="px-3 text-right">Round</th>
+                  <th className="px-3 text-right">Score</th>
+                  <th className="px-3">Decision</th>
+                  <th className="px-3">Stop</th>
+                  <th className="pl-3">Output</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-800">
+                {receipts.map((r) => (
+                  <tr key={r.id} className="text-neutral-300">
+                    <td className="py-2 pr-3 capitalize">{r.loop_type}</td>
+                    <td className="px-3 text-neutral-400">{r.agent_id}</td>
+                    <td className="px-3 text-right">{r.round_number + 1}</td>
+                    <td className="px-3 text-right">{r.score_after ?? "—"}</td>
+                    <td className="px-3"><OSBadge tone={r.decision === "pass" ? "ok" : r.decision === "fail" ? "warn" : "off"}>{r.decision ?? "—"}</OSBadge></td>
+                    <td className="px-3 text-neutral-400">{r.stop_reason ?? "—"}</td>
+                    <td className="max-w-xs truncate pl-3 text-neutral-400">{r.output_summary ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500">No loop receipts yet. Run a campaign to populate the loop evidence trail.</p>
+        )}
+      </OSPanel>
     </>
   );
 }
