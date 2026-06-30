@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Copy, Download, Loader2, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
+import { validatePackage } from "@/lib/marketing/package-validator";
 import type { Brand, Campaign, ContentAsset, ContentItem, ReadyPackage } from "@/lib/types";
 
 type Props = {
@@ -273,6 +274,9 @@ function ReadyCard({
   const isVideo = `${item.platform} ${item.content_type}`.toLowerCase().includes("video");
   const imageAssets = assets.filter((asset) => asset.url);
   const primaryImage = imageAssets[0]?.url ?? item.visual_asset_url;
+  const validation = validatePackage(item);
+  const blockers = validation.issues.filter((i) => i.severity === "blocker");
+  const warnings = validation.issues.filter((i) => i.severity === "warning");
 
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-4">
@@ -292,7 +296,15 @@ function ReadyCard({
         {primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
         {generatingAssets ? <OSBadge tone="info">Generating slides</OSBadge> : null}
         {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}
+        <OSBadge tone={validation.ok ? "ok" : "danger"}>{validation.ok ? "Platform-ready" : "Not platform-ready"}</OSBadge>
       </div>
+
+      {blockers.length || warnings.length ? (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {blockers.map((issue, idx) => <OSBadge key={`b${idx}`} tone="danger">{issue.message}</OSBadge>)}
+          {warnings.map((issue, idx) => <OSBadge key={`w${idx}`} tone="warn">{issue.message}</OSBadge>)}
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900">
         {primaryImage ? (
@@ -364,10 +376,13 @@ function ReadyCard({
         </div>
       ) : null}
 
+      {pending && blockers.length ? (
+        <p className="mt-3 text-xs text-rose-300">Not platform-ready — fix the blocker(s) above (send back to Crina) before approving.</p>
+      ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
         {pending ? (
           <>
-            <OSButton onClick={onApprove} disabled={busy}>
+            <OSButton onClick={onApprove} disabled={busy || blockers.length > 0}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Approve
             </OSButton>
