@@ -390,3 +390,28 @@ hash when done; the other reviews.
   Ran `POST /api/sales/analyze`; Conversion agent explicitly referenced "2 real website leads" and
   kept GSC clicks separate. Checks green: `npx tsc --noEmit`, `npm run lint`, `npm run build`,
   `npm run check:supabase`.
+
+### T12 — X / Meta / TikTok social connectors
+- **Status:** SHIPPED + pushed  ·  **Implementer:** codex
+- **Codex review of LinkedIn (`baa0b70`, `8024b2d`):** ✅ pushed first. Verified tokens stay
+  server-side in `social_connections`, OAuth start is admin-gated, callback uses state-cookie CSRF,
+  connection is brand-scoped, and `publishApprovedPackage` is gated by `SOCIAL_POSTING_ENABLED`
+  plus a connected account. No loop/cron auto-post caller found; approval moves packages to
+  schedule/publishing prep rather than immediate posting.
+- Added connector modules for `x`, `facebook`, `instagram`, and `tiktok`: OAuth authorize URL,
+  code exchange, account resolution, and platform publish functions. X uses OAuth2 PKCE and text
+  tweets only in v1. Facebook publishes Page feed/photo posts. Instagram uses Graph media container
+  + publish and requires a public image URL. TikTok connects via Login Kit, but publish returns an
+  explicit unsupported error because TikTok Content Posting API is video-only.
+- Added OAuth start/callback routes for all four platforms using a shared helper:
+  admin-gated start, state-cookie CSRF callback, server-side token exchange, and brand/platform
+  upsert into `social_connections`. Added middleware exclusions and `.env*` OAuth vars. Generalized
+  Settings social connections UI to show LinkedIn, X, Facebook Page, Instagram, and TikTok per brand.
+- Migration `0026_tiktok_social_connection.sql` extends the `social_connections.platform` check to
+  include `tiktok`; applied with `node scripts/run-migration.mjs`.
+- Extended `lib/social/posting.ts` platform routing while preserving the master posting gate and
+  the existing LinkedIn connector. Did not edit Claude's schedule/calendar files or LinkedIn route
+  files. Checks: `npx tsc --noEmit` green, `npm run lint` exits 0, `npm run build` passes,
+  `npm run check:supabase` passes. Note: the worktree currently contains untracked Claude schedule
+  files, so lint/build report one unrelated `<img>` warning from `components/os/schedule-calendar.tsx`;
+  this T12 commit does not include that file.
