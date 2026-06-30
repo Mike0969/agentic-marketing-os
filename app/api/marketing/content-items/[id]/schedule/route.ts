@@ -16,13 +16,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const supabase = await createClient();
   if (!supabase) return NextResponse.json({ error: "Supabase not available." }, { status: 503 });
 
+  // Published posts are read-only — never let a calendar action rewrite publish history.
+  const { data: current } = await supabase.from("content_items").select("status").eq("id", id).maybeSingle();
+  if (!current) return NextResponse.json({ error: "Post not found." }, { status: 404 });
+  if (current.status === "published") return NextResponse.json({ error: "Published posts are read-only." }, { status: 409 });
+
   let patch: Record<string, unknown>;
   if (body.action === "remove") {
-    patch = { scheduled_at: null, status: "draft", workflow_stage: "rework", current_owner: "Crina", next_owner: "Crina" };
+    // Archive (recoverable) — off the schedule, out of active screens, not destroyed.
+    patch = { archived_at: new Date().toISOString(), scheduled_at: null };
   } else {
     const when = body.scheduled_at ? new Date(body.scheduled_at) : null;
     if (!when || Number.isNaN(when.getTime())) return NextResponse.json({ error: "A valid date/time is required." }, { status: 400 });
-    patch = { scheduled_at: when.toISOString(), status: "scheduled", workflow_stage: "scheduled" };
+    patch = { scheduled_at: when.toISOString(), status: "scheduled", workflow_stage: "scheduled", archived_at: null };
   }
 
   const { data, error } = await supabase.from("content_items").update(patch).eq("id", id).select("*").single();

@@ -9,10 +9,11 @@ export default async function ReadyToPostPage() {
   const data = await getDashboardData();
   const readyItems = data.contentItems.filter(
     (item) =>
-      item.workflow_stage === "human_final_approval" ||
-      item.approval_status === "pending" ||
-      item.workflow_stage === "publishing_prep" ||
-      item.status === "scheduled"
+      !item.archived_at &&
+      (item.workflow_stage === "human_final_approval" ||
+        item.approval_status === "pending" ||
+        item.workflow_stage === "publishing_prep" ||
+        item.status === "scheduled")
   );
   const assets = await getContentAssets(readyItems.map((item) => item.id));
   const pending = readyItems.filter((item) => item.approval_status === "pending").length;

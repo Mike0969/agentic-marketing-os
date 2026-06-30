@@ -3,6 +3,7 @@ import { POST as tickCampaign } from "@/app/api/marketing/campaigns/[id]/automat
 import { runGscIngestion } from "@/lib/analytics/gsc-ingestion";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
+import { runDuePosts } from "@/lib/marketing/schedule-runner";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Campaign, ContentItem } from "@/lib/types";
@@ -69,6 +70,9 @@ async function runCron(request: Request) {
 
   const gscIngestion = await refreshGscIfStale(supabase);
 
+  // Fire any human-approved posts whose scheduled time has arrived (gated by SOCIAL_POSTING_ENABLED).
+  const duePosts = await runDuePosts().catch(() => ({ posted: 0, attempted: 0, skipped: "error" as const }));
+
   const { data: campaigns, error } = await supabase
     .from("campaigns")
     .select("*")
@@ -84,7 +88,7 @@ async function runCron(request: Request) {
 
   if (!activeCampaignIds.length) {
     const notifications = await sendCrinaReadyToPostPings({ baseUrl: baseUrlFrom(request) });
-    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, message: "No campaigns are eligible for automation." });
+    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, message: "No campaigns are eligible for automation." });
   }
 
   const { data: contentItems, error: contentError } = await supabase
@@ -127,7 +131,8 @@ async function runCron(request: Request) {
     skipped_no_internal_step: activeCampaigns.length - candidates.length,
     results,
     notifications,
-    gsc_ingestion: gscIngestion
+    gsc_ingestion: gscIngestion,
+    due_posts: duePosts
   });
 }
 

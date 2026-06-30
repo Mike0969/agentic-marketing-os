@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SchedulePage() {
   const data = await getDashboardData();
-  const items = data.contentItems.filter((item) => item.status === "scheduled" || item.status === "published" || Boolean(item.scheduled_at));
+  const items = data.contentItems.filter((item) => !item.archived_at && (item.status === "scheduled" || item.status === "published" || Boolean(item.scheduled_at)));
 
   const scheduled = items.filter((item) => item.scheduled_at && item.status !== "published").length;
   const needsTime = items.filter((item) => !item.scheduled_at).length;

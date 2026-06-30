@@ -10,7 +10,8 @@ import type { ContentItem } from "@/lib/types";
 
 // Controlled live publishing. The ONLY path that posts to a real platform. Three guards must all
 // hold: SOCIAL_POSTING_ENABLED=true, an operator-approved package, and a connected account for the
-// brand. Never called from a loop/cron — only from the operator's explicit Approve & Post action.
+// brand. Called by the schedule runner when an operator-approved, operator-scheduled post is due —
+// the human decided both the content and the time; this only executes it.
 
 export function socialPostingEnabled() {
   return process.env.SOCIAL_POSTING_ENABLED === "true";

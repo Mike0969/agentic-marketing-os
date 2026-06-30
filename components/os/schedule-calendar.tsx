@@ -50,8 +50,8 @@ export function ScheduleCalendar({ items, brands }: { items: ContentItem[]; bran
   const [message, setMessage] = useState<string | null>(null);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i)), [weekStart]);
-  const scheduled = useMemo(() => list.filter((i) => i.scheduled_at), [list]);
-  const unscheduled = useMemo(() => list.filter((i) => !i.scheduled_at), [list]);
+  const scheduled = useMemo(() => list.filter((i) => i.scheduled_at && !i.archived_at), [list]);
+  const unscheduled = useMemo(() => list.filter((i) => !i.scheduled_at && !i.archived_at), [list]);
 
   function openItem(item: ContentItem) {
     setSelected(item);
@@ -145,19 +145,30 @@ export function ScheduleCalendar({ items, brands }: { items: ContentItem[]; bran
               <button type="button" onClick={() => setSelected(null)} className="text-neutral-500 hover:text-neutral-200"><X className="h-5 w-5" /></button>
             </div>
             <h3 className="text-base font-semibold text-neutral-50">{selected.title}</h3>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             {selected.visual_asset_url ? <img src={selected.visual_asset_url} alt={selected.title} className="mt-3 w-full rounded-md border border-neutral-800 object-cover" /> : null}
             <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{selected.body}</p>
             {selected.CTA ? <p className="mt-2 text-sm text-cyan-300">CTA: {selected.CTA}</p> : null}
 
-            <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-900/60 p-3">
-              <label className="text-xs font-medium uppercase tracking-wider text-neutral-500">When to post</label>
-              <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100" />
-            </div>
+            {selected.status === "published" ? (
+              <div className="mt-4 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 text-sm text-emerald-200">
+                Posted{selected.published_at ? ` · ${new Date(selected.published_at).toLocaleString()}` : ""}. This post is read-only.
+              </div>
+            ) : (
+              <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-900/60 p-3">
+                <label className="text-xs font-medium uppercase tracking-wider text-neutral-500">When to post</label>
+                <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100" />
+              </div>
+            )}
 
             {message ? <p className="mt-2 text-sm text-rose-300">{message}</p> : null}
             <div className="mt-4 flex flex-wrap gap-2">
-              <OSButton onClick={() => save("set")} disabled={busy || !when}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}{selected.scheduled_at ? "Reschedule" : "Schedule"}</OSButton>
-              <OSButton variant="danger" onClick={() => save("remove")} disabled={busy}><Trash2 className="h-4 w-4" />Remove from schedule</OSButton>
+              {selected.status !== "published" ? (
+                <>
+                  <OSButton onClick={() => save("set")} disabled={busy || !when}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}{selected.scheduled_at ? "Reschedule" : "Schedule"}</OSButton>
+                  <OSButton variant="danger" onClick={() => save("remove")} disabled={busy}><Trash2 className="h-4 w-4" />Archive</OSButton>
+                </>
+              ) : null}
               <OSButton variant="secondary" onClick={() => setSelected(null)}>Close</OSButton>
             </div>
           </div>

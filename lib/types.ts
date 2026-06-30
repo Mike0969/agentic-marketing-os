@@ -113,6 +113,7 @@ export type ContentItem = {
   agent_handoff_summary?: string | null;
   loop_iteration?: number | null;
   ready_package?: ReadyPackage | null;
+  archived_at?: string | null;
 };
 
 export type ReadyPackageAsset = {
