@@ -30,6 +30,7 @@ export default async function MarketingHome() {
     { href: "/marketing/campaigns", title: "Campaigns", description: "Create objectives, approve direction, and track campaign packages.", badge: "Start here" },
     { href: "/marketing/pipeline", title: "Pipeline", description: "See where each campaign is: Crina, SEO, content, visuals, review, or publishing prep.", badge: "Execution" },
     { href: "/marketing/ready-to-post", title: "Ready to Post", description: "Preview final packages with images, approve or send back, then copy/export manually.", badge: "Preview" },
+    { href: "/marketing/schedule", title: "Schedule", description: "Your week of posts by day, time, and platform. Reschedule or remove; posting runs from here.", badge: "Calendar" },
     { href: "/marketing/approvals", title: "Approvals", description: "Direction approvals and legacy decision queue. Final packages live in Ready to Post.", badge: "Human gate" },
     { href: "/marketing/brands", title: "Brands", description: "Brand voice, pillars, SEO targets, CTAs, and approval rules for each project.", badge: "Context" },
     { href: "/marketing/agents", title: "Agents", description: "Crina and specialist agents with model, memory, run, and fallback status.", badge: "Brains" },
