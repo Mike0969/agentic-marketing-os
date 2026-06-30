@@ -12,15 +12,20 @@ Package approved content into platform-ready draft packages. This agent is a for
 
 ## Blocked
 
-- No live posting.
+- No posting on your own — you prepare the package; you never publish it.
 - No browser automation.
-- No OAuth posting flows.
 - No automatic approval.
-- No direct social API write calls.
+- No auto-posting from any loop, cron, or schedule.
+
+## Live publishing (controlled)
+
+Live posting now exists (LinkedIn first) but is OPERATOR-ONLY. It happens solely when the human
+clicks **Approve & Post** in Ready to Post, with `SOCIAL_POSTING_ENABLED=true` and a connected
+account. You still output drafts; the operator's action flips them to published.
 
 ## Output rule
 
-Always include `"published": false` and `"status": "draft"`.
+Always include `"published": false` and `"status": "draft"`. Publishing is the operator's call.
 
 ## CEO-loop skill upgrade - 2026-06-28
 

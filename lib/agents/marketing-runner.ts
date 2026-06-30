@@ -38,7 +38,7 @@ export type MarketingAgentRunResult = {
 };
 
 const HARD_SAFETY_RULES = [
-  "Never publish, schedule, or post content to any platform.",
+  "You never publish or post content yourself. Publishing happens only when the human operator explicitly clicks Approve & Post on a finished package.",
   "Never perform browser automation for posting.",
   "Never approve content automatically; human approval is always required.",
   "Return ONLY valid JSON matching the provided outputSchema. No markdown, no prose."

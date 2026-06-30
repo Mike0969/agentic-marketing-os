@@ -11,6 +11,8 @@ type Props = {
   campaigns: Campaign[];
   contentItems: ContentItem[];
   assets: ContentAsset[];
+  postingEnabled?: boolean;
+  connectedBrandIds?: string[];
 };
 
 function fallbackMarked(item: ContentItem) {
@@ -46,7 +48,7 @@ function desiredAssetCount(item: ContentItem) {
   return 1;
 }
 
-export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }: Props) {
+export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, postingEnabled = false, connectedBrandIds = [] }: Props) {
   const [items, setItems] = useState(contentItems);
   const [assetItems, setAssetItems] = useState(assets);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -76,7 +78,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
     return [...map.entries()];
   }, [items]);
 
-  async function decide(item: ContentItem, decision: "approved" | "rejected" | "changes_requested") {
+  async function decide(item: ContentItem, decision: "approved" | "rejected" | "changes_requested", post = false) {
     const text = reasons[item.id]?.trim() ?? "";
     const selectedTags = tags[item.id] ?? [];
     const feedback = [selectedTags.join("; "), text].filter(Boolean).join(" · ");
@@ -93,13 +95,21 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
         const response = await fetch(`/api/marketing/approvals/${item.id}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina" })
+          body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina", post })
         });
-        const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
+        const payload = (await response.json()) as { contentItem?: ContentItem; error?: string; posting?: { ok: boolean; url?: string | null; error?: string } };
         if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Decision failed.");
         setItems((current) => current.filter((candidate) => candidate.id !== item.id));
         setRejectId(null);
-        setMessage("Approved — ready to post manually; nothing posted live.");
+        if (post) {
+          setMessage(
+            payload.posting?.ok
+              ? `Approved & posted to LinkedIn${payload.posting.url ? `: ${payload.posting.url}` : "."}`
+              : `Approved — but posting was skipped: ${payload.posting?.error ?? "not posted."}`
+          );
+        } else {
+          setMessage("Approved — ready to post manually; nothing posted live.");
+        }
       } else {
         // Reject / request changes → Crina reroutes to Visual or Content and regenerates a better version.
         setReworkingIds((current) => ({ ...current, [item.id]: true }));
@@ -211,6 +221,8 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
                     })
                   }
                   onApprove={() => decide(item, "approved")}
+                  onApprovePost={() => decide(item, "approved", true)}
+                  canPost={postingEnabled && connectedBrandIds.includes(item.brand_id) && /linkedin/i.test(item.platform)}
                   onReject={() => decide(item, "rejected")}
                   onRequestChanges={() => decide(item, "changes_requested")}
                   onOpenReject={() => setRejectId(item.id)}
@@ -244,6 +256,8 @@ function ReadyCard({
   selectedTags,
   onToggleTag,
   onApprove,
+  onApprovePost,
+  canPost,
   onReject,
   onRequestChanges,
   onOpenReject,
@@ -262,6 +276,8 @@ function ReadyCard({
   selectedTags: string[];
   onToggleTag: (label: string) => void;
   onApprove: () => void;
+  onApprovePost: () => void;
+  canPost: boolean;
   onReject: () => void;
   onRequestChanges: () => void;
   onOpenReject: () => void;
@@ -367,9 +383,15 @@ function ReadyCard({
       <div className="mt-4 flex flex-wrap gap-2">
         {pending ? (
           <>
-            <OSButton onClick={onApprove} disabled={busy}>
+            {canPost ? (
+              <OSButton onClick={onApprovePost} disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Approve &amp; Post to LinkedIn
+              </OSButton>
+            ) : null}
+            <OSButton variant={canPost ? "secondary" : undefined} onClick={onApprove} disabled={busy}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Approve
+              {canPost ? "Approve (manual)" : "Approve"}
             </OSButton>
             <OSButton variant="secondary" onClick={onOpenReject} disabled={busy}>
               Request changes / Reject
