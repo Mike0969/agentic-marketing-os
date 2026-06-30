@@ -44,8 +44,10 @@ export async function publishApprovedPackage(contentItemId: string) {
   const message = [title, bodyText, hashtags.join(" ")].filter(Boolean).join("\n\n").slice(0, 2900);
   if (!message.trim()) return { ok: false as const, error: "Nothing to post." };
 
+  const imageUrl = item.visual_asset_url || (typeof pkg.image === "string" ? pkg.image : null);
+
   try {
-    const res = await publishMemberPost(conn.access_token, conn.author_urn, message);
+    const res = await publishMemberPost(conn.access_token, conn.author_urn, message, imageUrl);
     await supabase
       .from("content_items")
       .update({ status: "published", published_at: new Date().toISOString(), ready_package: { ...pkg, posted_url: res.url, posted_platform: "linkedin" } })

@@ -49,8 +49,46 @@ export async function getMemberUrn(accessToken: string): Promise<{ urn: string; 
   return { urn: `urn:li:person:${j.sub}`, name: j.name ?? null };
 }
 
-/** Publish a text post as the authenticated member. Returns the post id + feed URL. */
-export async function publishMemberPost(accessToken: string, authorUrn: string, text: string): Promise<{ id: string | null; url: string | null }> {
+// Upload an image to LinkedIn (3-step: initialize → PUT bytes → return image URN).
+async function uploadImage(accessToken: string, ownerUrn: string, imageUrl: string): Promise<string> {
+  const init = await fetch("https://api.linkedin.com/rest/images?action=initializeUpload", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "LinkedIn-Version": LINKEDIN_VERSION,
+      "X-Restli-Protocol-Version": "2.0.0"
+    },
+    body: JSON.stringify({ initializeUploadRequest: { owner: ownerUrn } })
+  });
+  if (!init.ok) throw new Error(`LinkedIn image init failed (${init.status}): ${(await init.text()).slice(0, 200)}`);
+  const value = ((await init.json()) as { value?: { uploadUrl?: string; image?: string } }).value ?? {};
+  if (!value.uploadUrl || !value.image) throw new Error("LinkedIn image init returned no upload URL.");
+
+  const img = await fetch(imageUrl);
+  if (!img.ok) throw new Error(`Could not fetch image to upload (${img.status}).`);
+  const bytes = Buffer.from(await img.arrayBuffer());
+
+  const up = await fetch(value.uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}` }, body: bytes });
+  if (!up.ok) throw new Error(`LinkedIn image upload failed (${up.status}).`);
+  return value.image;
+}
+
+/** Publish a post as the authenticated member, with an optional image. Returns the post id + URL. */
+export async function publishMemberPost(accessToken: string, authorUrn: string, text: string, imageUrl?: string | null): Promise<{ id: string | null; url: string | null }> {
+  const body: Record<string, unknown> = {
+    author: authorUrn,
+    commentary: text,
+    visibility: "PUBLIC",
+    distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+    lifecycleState: "PUBLISHED",
+    isReshareDisabledByAuthor: false
+  };
+  if (imageUrl) {
+    const imageUrn = await uploadImage(accessToken, authorUrn, imageUrl);
+    body.content = { media: { id: imageUrn } };
+  }
+
   const res = await fetch(POSTS_URL, {
     method: "POST",
     headers: {
@@ -59,14 +97,7 @@ export async function publishMemberPost(accessToken: string, authorUrn: string, 
       "LinkedIn-Version": LINKEDIN_VERSION,
       "X-Restli-Protocol-Version": "2.0.0"
     },
-    body: JSON.stringify({
-      author: authorUrn,
-      commentary: text,
-      visibility: "PUBLIC",
-      distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
-      lifecycleState: "PUBLISHED",
-      isReshareDisabledByAuthor: false
-    })
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error(`LinkedIn post failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const id = res.headers.get("x-restli-id") || res.headers.get("x-linkedin-id");

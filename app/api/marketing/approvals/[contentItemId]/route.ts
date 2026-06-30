@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { publishApprovedPackage } from "@/lib/social/posting";
 import { makeActivity } from "@/lib/activity";
 import { decideLocalApproval } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -153,16 +152,9 @@ export async function POST(request: Request, context: { params: Promise<{ conten
 
   await supabase.from("activity").insert(makeActivity("Approval decision recorded", `${contentItem.title} was marked ${decision.replaceAll("_", " ")}.`));
 
-  // Controlled live publish — ONLY on explicit Approve & Post at the final gate. Gated again inside
-  // publishApprovedPackage (flag + connected account). Never auto-fires.
-  let posting: { ok: boolean; url?: string | null; error?: string } | undefined;
-  if (decision === "approved" && gate === "gate_2" && body.post === true) {
-    posting = await publishApprovedPackage(contentItemId);
-  }
-
   revalidatePath("/marketing/approvals");
   revalidatePath("/marketing/ready-to-post");
   revalidatePath("/marketing/pipeline");
   revalidatePath("/marketing");
-  return NextResponse.json({ contentItem: contentItem as ContentItem, approval: approvalResult.data as Approval, posting, mode: "supabase" });
+  return NextResponse.json({ contentItem: contentItem as ContentItem, approval: approvalResult.data as Approval, mode: "supabase" });
 }
