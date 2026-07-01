@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, XCirc
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
 import { validatePackage } from "@/lib/marketing/package-validator";
+import { resolvePlatform } from "@/lib/marketing/platform-specs";
 import type { Brand, Campaign, ContentAsset, ContentItem, ReadyPackage } from "@/lib/types";
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
   campaigns: Campaign[];
   contentItems: ContentItem[];
   assets: ContentAsset[];
+  connectedByBrand: Record<string, string[]>;
 };
 
 function fallbackMarked(item: ContentItem) {
@@ -47,7 +49,7 @@ function desiredAssetCount(item: ContentItem) {
   return 1;
 }
 
-export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }: Props) {
+export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, connectedByBrand }: Props) {
   const [items, setItems] = useState(contentItems);
   const [assetItems, setAssetItems] = useState(assets);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -194,6 +196,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
                 <ReadyCard
                   key={item.id}
                   item={item}
+                  connected={(connectedByBrand[item.brand_id] ?? []).includes(resolvePlatform(item.platform) ?? "__none__")}
                   assets={assetsByItem.get(item.id) ?? []}
                   generatingAssets={generatingAssetIds[item.id] ?? false}
                   busy={busyId === item.id}
@@ -234,6 +237,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets }
 
 function ReadyCard({
   item,
+  connected,
   assets,
   generatingAssets,
   busy,
@@ -252,6 +256,7 @@ function ReadyCard({
   onDownload
 }: {
   item: ContentItem;
+  connected: boolean;
   assets: ContentAsset[];
   generatingAssets: boolean;
   busy: boolean;
@@ -300,6 +305,7 @@ function ReadyCard({
         {generatingAssets ? <OSBadge tone="info">Generating slides</OSBadge> : null}
         {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}
         <OSBadge tone={validation.ok ? "ok" : "danger"}>{validation.ok ? "Platform-ready" : "Not platform-ready"}</OSBadge>
+        {connected ? <OSBadge tone="ok">Connected</OSBadge> : <OSBadge tone="warn">{item.platform} not connected — connect in Settings to post</OSBadge>}
       </div>
 
       {blockers.length || warnings.length ? (
@@ -310,7 +316,7 @@ function ReadyCard({
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900">
-        {imageAssets.length ? (
+        {primaryImage ? (
           <div className="relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imageAssets[activeSlide]?.url ?? primaryImage ?? ""} alt={pkg.alt_text ?? item.title} className={`w-full object-cover ${isCarousel ? "aspect-square" : "aspect-video"}`} />

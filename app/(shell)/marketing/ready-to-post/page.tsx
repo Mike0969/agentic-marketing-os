@@ -2,11 +2,18 @@ import { ReadyToPostWorkspace } from "@/components/os/ready-to-post-workspace";
 import { OSMetric, PageHeading } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
 import { getContentAssets } from "@/lib/marketing/ready-package";
+import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReadyToPostPage() {
   const data = await getDashboardData();
+  const svc = createServiceClient();
+  const { data: conns } = svc
+    ? await svc.from("social_connections").select("brand_id,platform").eq("status", "connected")
+    : { data: [] as { brand_id: string; platform: string }[] };
+  const connectedByBrand: Record<string, string[]> = {};
+  for (const c of conns ?? []) (connectedByBrand[c.brand_id] ??= []).push(c.platform);
   const readyItems = data.contentItems.filter(
     (item) =>
       !item.archived_at &&
@@ -32,7 +39,7 @@ export default async function ReadyToPostPage() {
         <OSMetric label="Ready manually" value={approved} hint="Approved draft packages" />
         <OSMetric label="Draft assets" value={draftAssets} hint="Fallback or placeholder media" />
       </div>
-      <ReadyToPostWorkspace brands={data.brands} campaigns={data.campaigns} contentItems={readyItems} assets={assets} />
+      <ReadyToPostWorkspace brands={data.brands} campaigns={data.campaigns} contentItems={readyItems} assets={assets} connectedByBrand={connectedByBrand} />
     </>
   );
 }
