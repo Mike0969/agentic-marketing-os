@@ -45,6 +45,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!access.ok) return access.response;
 
   const { id } = await context.params;
+  // Optional { platform }: add-ONE-platform mode (generate a single native variant without
+  // regenerating the others). No body = full-campaign run.
+  let requestedPlatform: string | null = null;
+  try {
+    const body = (await request.json()) as { platform?: unknown };
+    if (typeof body?.platform === "string" && body.platform.trim()) requestedPlatform = body.platform.trim();
+  } catch {
+    // no JSON body -> full run
+  }
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
   const supabase = createServiceClient() ?? (await createClient());
   if (!supabase) return NextResponse.json({ error: "Supabase is not available." }, { status: 503 });
@@ -56,7 +65,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const brand = brandRow as Brand | null;
 
   const idea = (campaign.idea_brief ?? {}) as Record<string, unknown>;
-  const platforms = (Array.isArray(idea.platforms) ? (idea.platforms as string[]) : ["LinkedIn"]).slice(0, MAX_PLATFORMS);
+  const allPlatforms = Array.isArray(idea.platforms) ? (idea.platforms as string[]) : ["LinkedIn"];
+  const platforms = requestedPlatform ? [requestedPlatform] : allPlatforms.slice(0, MAX_PLATFORMS);
+  if (requestedPlatform) {
+    const rp = requestedPlatform;
+    if (!allPlatforms.some((p) => p.toLowerCase() === rp.toLowerCase())) {
+      await supabase.from("campaigns").update({ idea_brief: { ...idea, platforms: [...allPlatforms, rp] } }).eq("id", id);
+    }
+  }
   const schedule = (idea.schedule ?? {}) as { start?: string; from_hour?: string };
   const scheduledAt = schedule.start ? `${schedule.start}T${schedule.from_hour || "09:00"}:00` : null;
 

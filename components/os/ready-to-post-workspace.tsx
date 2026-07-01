@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, Plus, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
 import { validatePackage } from "@/lib/marketing/package-validator";
@@ -15,6 +15,15 @@ type Props = {
   assets: ContentAsset[];
   connectedByBrand: Record<string, string[]>;
 };
+
+// Platforms an operator can add as a native variant (one campaign idea -> one native package each).
+const ADDABLE_PLATFORMS: { key: string; label: string }[] = [
+  { key: "linkedin", label: "LinkedIn" },
+  { key: "x", label: "X" },
+  { key: "instagram", label: "Instagram" },
+  { key: "tiktok", label: "TikTok" },
+  { key: "facebook", label: "Facebook" }
+];
 
 function fallbackMarked(item: ContentItem) {
   return item.performance_summary?.toUpperCase().includes("FALLBACK") || item.ready_package?.fallback_used;
@@ -60,6 +69,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [tags, setTags] = useState<Record<string, string[]>>({});
+  const [addingFor, setAddingFor] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
   const campaignMap = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
@@ -132,6 +142,47 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
     }
   }
 
+  // Add a native variant for one more platform (generates the platform-native package, not a cross-post).
+  async function addPlatform(campaignId: string, platform: string) {
+    setAddingFor(`${campaignId}:${platform}`);
+    setMessage(`Generating a native ${platform} package (~20-40s)…`);
+    try {
+      const response = await fetch(`/api/marketing/campaigns/${campaignId}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Could not add platform.");
+      setMessage(`${platform} package created — refreshing…`);
+      window.location.reload();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not add platform.");
+      setAddingFor(null);
+    }
+  }
+
+  // Remove a platform variant = archive it (recoverable), so this campaign no longer targets it.
+  async function removePlatform(item: ContentItem) {
+    setBusyId(item.id);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/marketing/content-items/${item.id}/schedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove" })
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Could not remove.");
+      setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+      setMessage(`${item.platform} variant archived (recoverable).`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function copyPackage(item: ContentItem) {
     const pkg = packageFor(item);
     await navigator.clipboard.writeText([pkg.title, pkg.text, pkg.caption, pkg.body, pkg.hashtags?.join(" ")].filter(Boolean).join("\n\n"));
@@ -191,6 +242,27 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
               </div>
               <OSBadge tone="warn">{campaignItems.filter((item) => item.approval_status === "pending").length} need decision</OSBadge>
             </div>
+            {(() => {
+              const present = new Set(campaignItems.map((i) => resolvePlatform(i.platform)));
+              const missing = ADDABLE_PLATFORMS.filter((p) => !present.has(p.key as ReturnType<typeof resolvePlatform>));
+              if (!missing.length) return null;
+              return (
+                <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 p-2">
+                  <span className="text-xs uppercase tracking-wider text-neutral-500">Add platform</span>
+                  {missing.map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      disabled={Boolean(addingFor)}
+                      onClick={() => addPlatform(campaignId, p.label)}
+                      className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-cyan-500 hover:text-cyan-200 disabled:opacity-50"
+                    >
+                      {addingFor === `${campaignId}:${p.label}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} {p.label}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="grid gap-4 xl:grid-cols-2">
               {campaignItems.map((item) => (
                 <ReadyCard
@@ -220,6 +292,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
                   onOpenReject={() => setRejectId(item.id)}
                   onCopy={() => copyPackage(item)}
                   onDownload={() => downloadPackage(item)}
+                  onRemove={() => removePlatform(item)}
                 />
               ))}
             </div>
@@ -253,7 +326,8 @@ function ReadyCard({
   onRequestChanges,
   onOpenReject,
   onCopy,
-  onDownload
+  onDownload,
+  onRemove
 }: {
   item: ContentItem;
   connected: boolean;
@@ -273,6 +347,7 @@ function ReadyCard({
   onOpenReject: () => void;
   onCopy: () => void;
   onDownload: () => void;
+  onRemove: () => void;
 }) {
   const pkg = packageFor(item);
   const pending = item.approval_status === "pending" || item.workflow_stage === "human_final_approval";
@@ -306,6 +381,15 @@ function ReadyCard({
         {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}
         <OSBadge tone={validation.ok ? "ok" : "danger"}>{validation.ok ? "Platform-ready" : "Not platform-ready"}</OSBadge>
         {connected ? <OSBadge tone="ok">Connected</OSBadge> : <OSBadge tone="warn">{item.platform} not connected — connect in Settings to post</OSBadge>}
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={busy}
+          title="Archive this platform variant (recoverable)"
+          className="ml-auto inline-flex items-center gap-1 rounded border border-neutral-800 px-1.5 py-0.5 text-xs text-neutral-500 transition hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-50"
+        >
+          <XCircle className="h-3 w-3" /> Remove
+        </button>
       </div>
 
       {blockers.length || warnings.length ? (
