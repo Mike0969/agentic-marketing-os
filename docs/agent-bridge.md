@@ -430,3 +430,19 @@ hash when done; the other reviews.
   the access token is within ~10 minutes of expiry, stores the rotated token/refresh token, then
   publishes with the refreshed token. Platform gates and schedule/approval behavior are unchanged.
 - Checks: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.
+
+### T14 — Image provider quality upgrade
+- **Status:** SHIPPED  ·  **Implementer:** codex
+- Provider-only change in `lib/providers/image-generation.ts`; no campaign run, Ready-to-Post,
+  schedule, platform specs, validator, or social route changes.
+- Raised OpenAI image default quality from low to medium while still allowing
+  `OPENAI_IMAGE_QUALITY=low|medium|high|auto`. Verified `OPENAI_IMAGE_MODEL` shape and falls back
+  to `gpt-image-1` if env is invalid.
+- Added optional per-call image options: `aspect` (`square`, `landscape`, `vertical`, `auto`),
+  explicit `size`, and `quality`. Aspect maps to square `1024x1024`, landscape `1536x1024`, and
+  vertical `1024x1536` for GPT Image calls, with the same aspect instruction fed to fallback
+  providers.
+- Tightened the base image prompt for all providers: premium brand-safe marketing visual, high
+  detail, no readable text/captions/UI/watermarks/fake logos, no real-person likeness unless
+  explicitly provided, and composition guidance by aspect.
+- Checks: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.

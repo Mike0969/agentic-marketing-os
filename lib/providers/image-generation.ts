@@ -16,17 +16,63 @@ export type ImageGenerationResult = {
   durationMs: number;
 };
 
-const GPT_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
-const GPT_IMAGE_QUALITY = process.env.OPENAI_IMAGE_QUALITY || "low";
+export type ImageAspect = "square" | "landscape" | "vertical" | "auto";
+export type ImageSize = "1024x1024" | "1536x1024" | "1024x1536" | "auto";
+export type ImageQuality = "low" | "medium" | "high" | "auto";
+
+type ImageGenerationOptions = {
+  aspect?: ImageAspect;
+  size?: ImageSize;
+  quality?: ImageQuality;
+};
+
+function imageModel() {
+  const configured = process.env.OPENAI_IMAGE_MODEL?.trim();
+  return configured && /^gpt-image-\d+$/i.test(configured) ? configured : "gpt-image-1";
+}
+
+function imageQuality(): ImageQuality {
+  const configured = process.env.OPENAI_IMAGE_QUALITY?.trim().toLowerCase();
+  return configured === "low" || configured === "medium" || configured === "high" || configured === "auto" ? configured : "medium";
+}
+
+const GPT_IMAGE_MODEL = imageModel();
+const GPT_IMAGE_QUALITY = imageQuality();
 const FLUX_MODEL = process.env.FLUX_IMAGE_MODEL || "black-forest-labs/FLUX.1-schnell";
 const STABILITY_MODEL = process.env.STABILITY_IMAGE_MODEL || "stabilityai/stable-diffusion-xl-base-1.0";
+
+function sizeForAspect(options: ImageGenerationOptions = {}): ImageSize {
+  if (options.size) return options.size;
+  if (options.aspect === "landscape") return "1536x1024";
+  if (options.aspect === "vertical") return "1024x1536";
+  return "1024x1024";
+}
+
+function aspectInstruction(options: ImageGenerationOptions = {}) {
+  const aspect = options.aspect ?? "square";
+  if (aspect === "landscape") return "Landscape 3:2 composition for LinkedIn/X feeds.";
+  if (aspect === "vertical") return "Vertical 2:3 composition for short-video/story cover use.";
+  if (aspect === "auto") return "Use the most natural aspect ratio for the platform brief.";
+  return "Square 1:1 composition for carousel/feed use.";
+}
+
+function strengthenPrompt(prompt: string, options: ImageGenerationOptions = {}) {
+  return [
+    "Create a premium brand-safe marketing visual.",
+    "High detail, polished commercial art direction, crisp subject, realistic lighting, strong composition, no generic stock-photo feel.",
+    "No readable text, no captions, no UI screenshots, no watermarks, no fake logos, no real-person likeness unless explicitly provided.",
+    aspectInstruction(options),
+    "The image must support the campaign concept without relying on embedded words.",
+    `Brief: ${prompt}`
+  ].join("\n");
+}
 
 function dataUrlToBuffer(dataUrl: string) {
   const [, base64 = ""] = dataUrl.split(",");
   return Buffer.from(base64 || dataUrl, "base64");
 }
 
-async function generateGptImage(prompt: string): Promise<ImageGenerationResult> {
+async function generateGptImage(prompt: string, options: ImageGenerationOptions = {}): Promise<ImageGenerationResult> {
   const started = Date.now();
   if (!process.env.OPENAI_API_KEY) {
     return { ok: false, url: null, bytes: null, provider: "gpt-image", model: GPT_IMAGE_MODEL, fallbackUsed: false, status: "error", error: "OPENAI_API_KEY is not configured.", durationMs: Date.now() - started };
@@ -36,9 +82,9 @@ async function generateGptImage(prompt: string): Promise<ImageGenerationResult> 
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const response = await client.images.generate({
       model: GPT_IMAGE_MODEL,
-      prompt,
-      size: "1024x1024",
-      quality: GPT_IMAGE_QUALITY
+      prompt: strengthenPrompt(prompt, options),
+      size: sizeForAspect(options),
+      quality: options.quality ?? GPT_IMAGE_QUALITY
     } as never);
     const image = response.data?.[0] as { b64_json?: string; url?: string } | undefined;
     const bytes = image?.b64_json ? Buffer.from(image.b64_json, "base64") : image?.url ? await fetchBytes(image.url) : null;
@@ -55,7 +101,7 @@ async function fetchBytes(url: string) {
   return Buffer.from(await response.arrayBuffer());
 }
 
-async function generateHuggingFace(prompt: string, provider: "flux" | "stability", model: string): Promise<ImageGenerationResult> {
+async function generateHuggingFace(prompt: string, provider: "flux" | "stability", model: string, options: ImageGenerationOptions = {}): Promise<ImageGenerationResult> {
   const started = Date.now();
   if (!process.env.HUGGINGFACE_API_KEY) {
     return { ok: false, url: null, bytes: null, provider, model, fallbackUsed: true, status: "error", error: "HUGGINGFACE_API_KEY is not configured.", durationMs: Date.now() - started };
@@ -68,7 +114,7 @@ async function generateHuggingFace(prompt: string, provider: "flux" | "stability
         Authorization: `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ inputs: prompt })
+      body: JSON.stringify({ inputs: strengthenPrompt(prompt, options) })
     });
     if (!response.ok) throw new Error(`Hugging Face ${provider} failed: ${response.status} ${await response.text()}`);
     return { ok: true, url: null, bytes: Buffer.from(await response.arrayBuffer()), provider, model, fallbackUsed: true, status: "generated", error: null, durationMs: Date.now() - started };
@@ -77,7 +123,7 @@ async function generateHuggingFace(prompt: string, provider: "flux" | "stability
   }
 }
 
-async function generateReplicate(prompt: string, provider: "flux" | "stability", model: string): Promise<ImageGenerationResult> {
+async function generateReplicate(prompt: string, provider: "flux" | "stability", model: string, options: ImageGenerationOptions = {}): Promise<ImageGenerationResult> {
   const started = Date.now();
   if (!process.env.REPLICATE_API_TOKEN) {
     return { ok: false, url: null, bytes: null, provider, model, fallbackUsed: true, status: "error", error: "REPLICATE_API_TOKEN is not configured.", durationMs: Date.now() - started };
@@ -91,7 +137,7 @@ async function generateReplicate(prompt: string, provider: "flux" | "stability",
         "Content-Type": "application/json",
         Prefer: "wait"
       },
-      body: JSON.stringify({ version: model, input: { prompt } })
+      body: JSON.stringify({ version: model, input: { prompt: strengthenPrompt(prompt, options) } })
     });
     if (!response.ok) throw new Error(`Replicate ${provider} failed: ${response.status} ${await response.text()}`);
     const payload = (await response.json()) as { output?: string[] | string };
@@ -118,12 +164,13 @@ export async function uploadMarketingAsset(bytes: Buffer, contentItemId: string,
   return data.publicUrl;
 }
 
-export async function generateMarketingImage(prompt: string, context: { contentItemId: string; position?: number; kind?: string }): Promise<ImageGenerationResult> {
+export async function generateMarketingImage(prompt: string, context: { contentItemId: string; position?: number; kind?: string } & ImageGenerationOptions): Promise<ImageGenerationResult> {
   const attempts: ImageGenerationResult[] = [];
-  attempts.push(await generateGptImage(prompt));
-  if (!attempts[0].ok) attempts.push(await generateHuggingFace(prompt, "flux", FLUX_MODEL));
-  if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateReplicate(prompt, "flux", process.env.REPLICATE_FLUX_VERSION || FLUX_MODEL));
-  if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateHuggingFace(prompt, "stability", STABILITY_MODEL));
+  const options: ImageGenerationOptions = { aspect: context.aspect, size: context.size, quality: context.quality };
+  attempts.push(await generateGptImage(prompt, options));
+  if (!attempts[0].ok) attempts.push(await generateHuggingFace(prompt, "flux", FLUX_MODEL, options));
+  if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateReplicate(prompt, "flux", process.env.REPLICATE_FLUX_VERSION || FLUX_MODEL, options));
+  if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateHuggingFace(prompt, "stability", STABILITY_MODEL, options));
 
   const result = attempts.find((attempt) => attempt.ok) ?? attempts[attempts.length - 1];
   const url = result.bytes ? await uploadMarketingAsset(result.bytes, context.contentItemId, context.position ?? 1) : null;
@@ -135,7 +182,7 @@ export async function generateMarketingImage(prompt: string, context: { contentI
     workflowName: "Generate Marketing Image Asset",
     provider: finalResult.provider,
     status: finalResult.status === "generated" ? (finalResult.fallbackUsed ? "fallback" : "success") : "fallback",
-    input: { prompt, contentItemId: context.contentItemId, position: context.position ?? 1, kind: context.kind ?? "image", capabilities: ["image_generation"], routeOrigin: "lib.providers.image-generation" },
+    input: { prompt: strengthenPrompt(prompt, options), contentItemId: context.contentItemId, position: context.position ?? 1, kind: context.kind ?? "image", aspect: context.aspect ?? "square", size: sizeForAspect(options), quality: options.quality ?? GPT_IMAGE_QUALITY, capabilities: ["image_generation"], routeOrigin: "lib.providers.image-generation" },
     output: { url: finalResult.url, model: finalResult.model, fallback_used: finalResult.fallbackUsed, status: finalResult.status },
     error: finalResult.error,
     model: finalResult.model,
