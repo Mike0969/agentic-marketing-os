@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, Download, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
 import { validatePackage } from "@/lib/marketing/package-validator";
@@ -277,6 +277,9 @@ function ReadyCard({
   const validation = validatePackage(item);
   const blockers = validation.issues.filter((i) => i.severity === "blocker");
   const warnings = validation.issues.filter((i) => i.severity === "warning");
+  const [slide, setSlide] = useState(0);
+  const isCarousel = imageAssets.length > 1;
+  const activeSlide = isCarousel ? Math.min(slide, imageAssets.length - 1) : 0;
 
   return (
     <div className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-4">
@@ -307,17 +310,31 @@ function ReadyCard({
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900">
-        {primaryImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={primaryImage} alt={pkg.alt_text ?? item.title} className="aspect-video w-full object-cover" />
+        {imageAssets.length ? (
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageAssets[activeSlide]?.url ?? primaryImage ?? ""} alt={pkg.alt_text ?? item.title} className={`w-full object-cover ${isCarousel ? "aspect-square" : "aspect-video"}`} />
+            {isCarousel ? (
+              <>
+                <button type="button" aria-label="Previous slide" onClick={() => setSlide((s) => (Math.min(s, imageAssets.length - 1) - 1 + imageAssets.length) % imageAssets.length)} className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-1.5 text-white transition hover:bg-black/70"><ChevronLeft className="h-4 w-4" /></button>
+                <button type="button" aria-label="Next slide" onClick={() => setSlide((s) => (Math.min(s, imageAssets.length - 1) + 1) % imageAssets.length)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-1.5 text-white transition hover:bg-black/70"><ChevronRight className="h-4 w-4" /></button>
+                <div className="absolute right-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs font-medium text-white">{activeSlide + 1} / {imageAssets.length}</div>
+                <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+                  {imageAssets.map((a, i) => <span key={a.id} className={`h-1.5 rounded-full transition-all ${i === activeSlide ? "w-4 bg-white" : "w-1.5 bg-white/50"}`} />)}
+                </div>
+              </>
+            ) : null}
+          </div>
         ) : (
           <div className="flex aspect-video items-center justify-center bg-neutral-950 text-sm text-neutral-600">Draft asset placeholder</div>
         )}
-        {imageAssets.length > 1 ? (
+        {isCarousel ? (
           <div className="flex gap-2 overflow-x-auto border-t border-neutral-800 p-2">
-            {imageAssets.map((asset) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img key={asset.id} src={asset.url!} alt={`Slide ${asset.position}`} className="h-20 w-20 shrink-0 rounded object-cover" />
+            {imageAssets.map((asset, i) => (
+              <button key={asset.id} type="button" onClick={() => setSlide(i)} className={`shrink-0 overflow-hidden rounded border-2 transition ${i === activeSlide ? "border-cyan-400" : "border-transparent opacity-70 hover:opacity-100"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={asset.url!} alt={`Slide ${i + 1}`} className="h-16 w-16 object-cover" />
+              </button>
             ))}
           </div>
         ) : null}
