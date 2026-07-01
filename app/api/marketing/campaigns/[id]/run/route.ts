@@ -8,19 +8,18 @@ import { runConversionAnalysis } from "@/lib/marketing/conversion-agent";
 import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
 import { getFeedbackMemoryContext, type FeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
 import { runJudgedLoop, type JudgeResult, type LoopReceipt } from "@/lib/marketing/loop-runner";
+import { getPlatformPlan, type NativeDraft } from "@/lib/marketing/platform-generation";
 import { CONTENT_RUBRIC, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import type { Brand, Campaign } from "@/lib/types";
+import type { Brand, Campaign, ReadyPackageAsset } from "@/lib/types";
 
 const VISUAL_MAX_ROUNDS = 2; // visual concept converges fast; keep the per-platform call budget bounded
 const MAX_PLATFORMS = 4; // bound per request to stay under serverless timeouts
 
-type PostDraft = { title: string; hook: string; body: string; cta: string; hashtags: string[] };
 type VisualConcept = { concept: string; prompt: string };
 
-const contentSchema = { title: "string", hook: "string", body: "platform-tailored post text", cta: "string", hashtags: ["#tag"] };
 const visualSchema = { concept: "one-line visual concept that matches the post", prompt: "image-generation prompt; brand-safe; no text in the image" };
 const judgeSchema = {
   score: 0,
@@ -39,20 +38,6 @@ function memoryText(m: FeedbackMemoryContext) {
 function clampScore(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 0;
-}
-
-function normalizePost(json: unknown, platform: string): PostDraft | null {
-  if (!json || typeof json !== "object") return null;
-  const d = json as Record<string, unknown>;
-  const body = typeof d.body === "string" ? d.body.trim() : "";
-  if (!body) return null;
-  return {
-    title: String(d.title ?? `${platform} post`).trim(),
-    hook: String(d.hook ?? "").trim(),
-    body,
-    cta: String(d.cta ?? d.CTA ?? "Learn more").trim(),
-    hashtags: Array.isArray(d.hashtags) ? d.hashtags.map(String).filter(Boolean).slice(0, 8) : []
-  };
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -109,6 +94,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   for (const platform of platforms) {
     const memory = await getFeedbackMemoryContext({ brandId: campaign.brand_id, platform });
     const conversion = await getConversionMemoryContext({ brandId: campaign.brand_id, platform });
+    const plan = getPlatformPlan(platform);
 
     // Crina judges a candidate against a rubric -> a numeric, bounded acceptance check.
     const judgeWith = async (rubric: string, artifactLabel: string, artifact: unknown): Promise<JudgeResult> => {
@@ -136,26 +122,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       };
     };
 
-    // 1) Content loop — Content Creator makes, Crina scores, keep champion.
-    const contentLoop = await runJudgedLoop<PostDraft>({
+    // 1) Content loop — Content Creator makes a PLATFORM-NATIVE package, Crina scores, keep champion.
+    const contentLoop = await runJudgedLoop<NativeDraft>({
       loopType: "content",
       agentId: "agent-content-creator",
-      inputSummary: `${platform} post for "${campaign.title}"`,
+      inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
       recordReceipt,
       make: async (_round, improvements, champion) => {
         const content = await runMarketingAgentModel({
           agentId: "agent-content-creator",
           fallbackAgentName: "Content Creator Agent",
           fallbackRole: "Copy and Editorial",
-          task: `Create ${platform} post`,
-          instructions: `Write ONE post tailored specifically to ${platform} (its format, length, tone). Use the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
-          outputSchema: contentSchema,
+          task: `Create ${plan.label} package`,
+          instructions: `${plan.contentInstructions}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
+          outputSchema: plan.contentSchema,
           input: { brand, campaign_idea: idea, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
           temperature: 0.5,
           routeOrigin: "api.marketing.campaigns.run"
         });
-        const draft = normalizePost(content.json, platform);
+        const draft = plan.normalize(content.json);
         return {
           candidate: draft,
           outputSummary: draft ? `${draft.title} — ${draft.hook}`.slice(0, 180) : "no draft produced",
@@ -190,15 +176,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const contentFallback = contentLoop.fallbackUsed || !contentLoop.champion;
-    const draft: PostDraft = contentLoop.champion ?? {
-      title: `${platform}: ${campaign.title}`,
+    const draft: NativeDraft = contentLoop.champion ?? {
+      title: `${plan.label}: ${campaign.title}`,
       hook: String(idea.hook ?? ""),
       body: String(idea.summary ?? campaign.title),
       cta: String(idea.primary_cta ?? "Learn more"),
       hashtags: []
     };
 
-    const contentType = platform.toLowerCase().includes("blog") ? "Blog article" : platform.toLowerCase().includes("instagram") ? "Image post" : "Social post";
+    const contentType = plan.contentType;
     const reviewChip = `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
 
     // Insert at a NON-postable visual stage; only promoted to the human gate after the Visual loop
@@ -232,101 +218,108 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       continue;
     }
 
-    // 2) Visual loop — Visual Agent proposes concept+prompt, Crina scores fit, keep champion.
-    const visualLoop = await runJudgedLoop<VisualConcept>({
-      loopType: "visual",
-      agentId: "agent-visual-video",
-      inputSummary: `Visual for "${draft.title}" (${platform})`,
-      maxRounds: VISUAL_MAX_ROUNDS,
-      recordReceipt,
-      make: async (_round, improvements, champion) => {
-        const v = await runMarketingAgentModel({
-          agentId: "agent-visual-video",
-          fallbackAgentName: "Visual & Video Agent",
-          fallbackRole: "Visual Concepts",
-          task: `Concept a ${platform} visual`,
-          instructions: `Propose ONE visual concept + an image-generation prompt for this approved ${platform} post. Match the brand and the post's message. Brand-safe; no text in the image; no real-person likeness; no unapproved logos.${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
-          outputSchema: visualSchema,
-          input: { brand, platform, post: draft, previous: champion },
-          brainFiles: ["content-formulas.md", "approval-rules.md"],
-          temperature: 0.5,
-          routeOrigin: "api.marketing.campaigns.run"
-        });
-        const vj = (v.json ?? {}) as Record<string, unknown>;
-        const concept = typeof vj.concept === "string" ? vj.concept.trim() : "";
-        const prompt = typeof vj.prompt === "string" ? vj.prompt.trim() : typeof vj.image_prompt === "string" ? (vj.image_prompt as string).trim() : "";
-        const candidate = prompt ? { concept, prompt } : null;
-        return {
-          candidate,
-          outputSummary: (concept || prompt).slice(0, 180) || "no concept produced",
-          provider: v.provider,
-          model: v.modelUsed,
-          fallbackUsed: !candidate,
-          tokensPrompt: v.usage.tokensPrompt,
-          tokensCompletion: v.usage.tokensCompletion,
-          tokensTotal: v.usage.tokensTotal,
-          latencyMs: v.durationMs
-        };
-      },
-      judge: async (candidate) => judgeWith(VISUAL_RUBRIC, "visual", candidate)
-    });
+    // 2) Assets — per platform. image: Crina-judged single image. carousel: N slides. video:
+    // script + storyboard placeholder (validation blocks until the video pipeline exists).
+    const loopIds = [contentLoop.loopId];
+    let visualUrl: string | null = null;
+    let visualStatus: "not_requested" | "generated" | "placeholder" | "error" = "not_requested";
+    let visualScore = 0;
+    const assets: ReadyPackageAsset[] = [];
+    let assetFallback = false;
+    let imageProvider: string | null = null;
 
-    // Backfill receipts for this item (written with null content_item_id during the loops).
-    await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", [contentLoop.loopId, visualLoop.loopId]);
-
-    // Spec: a visual safety stop => NO postable package. Pull the item from the gate to rework
-    // (do not silently swap in a generic image and mark it ready).
-    if (visualLoop.stopReason === "safety") {
-      await supabase
-        .from("content_items")
-        .update({
-          status: "draft",
-          approval_status: "changes_requested",
-          workflow_stage: "rework",
-          current_owner: "Crina",
-          next_owner: "Visual & Video Agent",
-          visual_asset_status: "error",
-          crina_review_notes: `${reviewChip} · VISUAL SAFETY-BLOCKED`,
-          performance_summary: `BLOCKED: visual safety violation. ${visualLoop.lastJudgeNotes.slice(0, 160)} Content ${reviewChip}.`
-        })
-        .eq("id", item.id);
-      await recordAgentRun({
-        agentName: "Campaign Run",
-        agentId: "agent-crina",
-        workflowName: "Run Campaign (per-platform)",
-        provider: contentLoop.provider,
-        status: "error",
-        input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" },
-        output: { platform, content_score: contentLoop.championScore, visual_stop: "safety", blocked: true },
-        error: "Visual safety-blocked: package withheld from human gate.",
-        model: contentLoop.model,
-        durationMs: 0
+    if (plan.assetKind === "image") {
+      const visualLoop = await runJudgedLoop<VisualConcept>({
+        loopType: "visual",
+        agentId: "agent-visual-video",
+        inputSummary: `Visual for "${draft.title}" (${plan.label})`,
+        maxRounds: VISUAL_MAX_ROUNDS,
+        recordReceipt,
+        make: async (_round, improvements, champion) => {
+          const v = await runMarketingAgentModel({
+            agentId: "agent-visual-video",
+            fallbackAgentName: "Visual & Video Agent",
+            fallbackRole: "Visual Concepts",
+            task: `Concept a ${plan.label} visual`,
+            instructions: `Propose ONE visual concept + an image-generation prompt for this approved ${plan.label} post. Match the brand and the post's message. Brand-safe; no text in the image; no real-person likeness; no unapproved logos.${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
+            outputSchema: visualSchema,
+            input: { brand, platform, post: draft, previous: champion },
+            brainFiles: ["content-formulas.md", "approval-rules.md"],
+            temperature: 0.5,
+            routeOrigin: "api.marketing.campaigns.run"
+          });
+          const vj = (v.json ?? {}) as Record<string, unknown>;
+          const concept = typeof vj.concept === "string" ? vj.concept.trim() : "";
+          const prompt = typeof vj.prompt === "string" ? vj.prompt.trim() : typeof vj.image_prompt === "string" ? (vj.image_prompt as string).trim() : "";
+          const candidate = prompt ? { concept, prompt } : null;
+          return { candidate, outputSummary: (concept || prompt).slice(0, 180) || "no concept produced", provider: v.provider, model: v.modelUsed, fallbackUsed: !candidate, tokensPrompt: v.usage.tokensPrompt, tokensCompletion: v.usage.tokensCompletion, tokensTotal: v.usage.tokensTotal, latencyMs: v.durationMs };
+        },
+        judge: async (candidate) => judgeWith(VISUAL_RUBRIC, "visual", candidate)
       });
-      created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "visual_safety", blocked: true, fallback: true });
-      continue;
+      loopIds.push(visualLoop.loopId);
+      visualScore = visualLoop.championScore;
+
+      if (visualLoop.stopReason === "safety") {
+        await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", loopIds);
+        await supabase.from("content_items").update({ status: "draft", approval_status: "changes_requested", workflow_stage: "rework", current_owner: "Crina", next_owner: "Visual & Video Agent", visual_asset_status: "error", crina_review_notes: `${reviewChip} · VISUAL SAFETY-BLOCKED`, performance_summary: `BLOCKED: visual safety violation. ${visualLoop.lastJudgeNotes.slice(0, 160)}` }).eq("id", item.id);
+        await recordAgentRun({ agentName: "Campaign Run", agentId: "agent-crina", workflowName: "Run Campaign (per-platform)", provider: contentLoop.provider, status: "error", input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" }, output: { platform, content_score: contentLoop.championScore, visual_stop: "safety", blocked: true }, error: "Visual safety-blocked.", model: contentLoop.model, durationMs: 0 });
+        created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "visual_safety", blocked: true, fallback: true });
+        continue;
+      }
+
+      const usingGeneric = !visualLoop.champion;
+      const prompt = visualLoop.champion ? visualLoop.champion.prompt : `Professional ${plan.label} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
+      const image = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: 1, kind: "image" });
+      visualUrl = image.url;
+      visualStatus = image.status;
+      imageProvider = image.provider;
+      assets.push({ kind: "image", url: image.url, prompt, position: 1, status: image.status, provider: image.provider });
+      assetFallback = image.status !== "generated" || usingGeneric || visualLoop.fallbackUsed;
+    } else if (plan.assetKind === "carousel") {
+      const slides = draft.slides ?? [];
+      const count = Math.min(Math.max(slides.length, 3), Math.max(plan.carouselCount, 3));
+      for (let i = 0; i < count; i += 1) {
+        const slide = slides[i];
+        const prompt = `Instagram carousel slide ${i + 1} of ${count} for ${brand?.name ?? "the brand"}. ${slide?.headline || draft.hook || draft.title}. Clean, on-brand, high detail, no text in the image.`;
+        const img = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: i + 1, kind: "carousel_slide" });
+        if (img.status !== "generated") assetFallback = true;
+        imageProvider = img.provider;
+        assets.push({ kind: "carousel_slide", url: img.url, prompt, position: i + 1, status: img.status, provider: img.provider });
+      }
+      visualUrl = assets[0]?.url ?? null;
+      visualStatus = (assets[0]?.status as typeof visualStatus) ?? "not_requested";
+    } else {
+      // video: no image generated — the video pipeline is pending, so this stays validation-blocked.
+      assets.push({ kind: "video_placeholder", url: null, prompt: draft.script ?? null, position: 1, status: "placeholder" });
+      assetFallback = true;
     }
 
-    // Generate one image. A missing visual champion (non-safety) falls back to a safe generic prompt.
-    const usingGenericVisual = !visualLoop.champion;
-    const imagePrompt = visualLoop.champion
-      ? visualLoop.champion.prompt
-      : `Professional ${platform} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
-    const image = await generateMarketingImage(imagePrompt, { contentItemId: item.id as string, position: 1, kind: "image" });
-    const imageFallback = image.status === "placeholder" || image.status === "error";
+    await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", loopIds);
 
-    // Comprehensive fallback signal across content maker/judge, visual maker/judge, and image.
-    const fallbackParts = [
-      contentFallback ? "content" : null,
-      visualLoop.fallbackUsed ? "visual" : null,
-      usingGenericVisual ? "visual-generic" : null,
-      imageFallback ? `image(${image.status})` : null
-    ].filter(Boolean) as string[];
+    const fallbackParts = [contentFallback ? "content" : null, assetFallback ? (plan.assetKind === "video" ? "video-pending" : "asset") : null].filter(Boolean) as string[];
     const anyFallback = fallbackParts.length > 0;
     const fbNote = anyFallback ? `FALLBACK[${fallbackParts.join(",")}] ` : "";
 
-    const readyPackage = { platform, content_type: contentType, title: draft.title, text: draft.body, caption: draft.body, hashtags: draft.hashtags, alt_text: `Visual for ${draft.title}`, scheduled_at: scheduledAt, crina_score: contentLoop.championScore, crina_loops: contentLoop.rounds, visual_score: visualLoop.championScore, image_provider: image.provider, fallback_used: anyFallback };
+    const readyPackage = {
+      platform,
+      content_type: plan.contentType,
+      title: draft.title,
+      text: draft.body,
+      caption: draft.body,
+      hashtags: draft.hashtags,
+      alt_text: `Visual for ${draft.title}`,
+      scheduled_at: scheduledAt,
+      crina_score: contentLoop.championScore,
+      crina_loops: contentLoop.rounds,
+      visual_score: visualScore,
+      image_provider: imageProvider,
+      fallback_used: anyFallback,
+      assets,
+      script: draft.script,
+      storyboard: draft.storyboard,
+      video_status: plan.assetKind === "video" ? ("coming_soon" as const) : undefined
+    };
 
-    // Promote to the human gate now that content + visual cleared safety.
     await supabase
       .from("content_items")
       .update({
@@ -335,11 +328,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         workflow_stage: "human_final_approval",
         current_owner: "Human",
         next_owner: "Publishing Agent",
-        visual_asset_url: image.url,
-        visual_asset_prompt: imagePrompt,
-        visual_asset_status: image.status,
+        visual_asset_url: visualUrl,
+        visual_asset_status: visualStatus,
         ready_package: readyPackage,
-        performance_summary: `${fbNote}Crina ${reviewChip}. Visual ${visualLoop.championScore}/100 (${visualLoop.stopReason}). Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
+        performance_summary: `${fbNote}Crina ${reviewChip}. ${plan.contentType}. Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
       })
       .eq("id", item.id);
 
@@ -350,8 +342,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       provider: contentLoop.provider,
       status: anyFallback ? "fallback" : "success",
       input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" },
-      output: { platform, content_score: contentLoop.championScore, content_stop: contentLoop.stopReason, content_rounds: contentLoop.rounds, visual_score: visualLoop.championScore, visual_stop: visualLoop.stopReason, image_provider: image.provider, image_status: image.status, fallback_parts: fallbackParts },
-      error: anyFallback ? `Fallback used: ${fallbackParts.join(", ")}.` : null,
+      output: { platform, content_type: plan.contentType, asset_kind: plan.assetKind, content_score: contentLoop.championScore, visual_score: visualScore, assets: assets.length, fallback_parts: fallbackParts },
+      error: anyFallback ? `Fallback: ${fallbackParts.join(", ")}.` : null,
       model: contentLoop.model,
       durationMs: 0
     });
