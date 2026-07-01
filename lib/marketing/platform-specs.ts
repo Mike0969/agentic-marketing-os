@@ -1,8 +1,8 @@
 // Platform requirements — the source of truth for "platform-native". A campaign idea fans out into
 // one package PER platform, and each package must satisfy its platform's spec before it can be
-// approved/posted. Asset rules per operator: LinkedIn + X need an image; Instagram needs a carousel
-// (3-7 slides) and ideally a reel/video; TikTok needs a video; Facebook needs an image (+ video
-// ideal). Adjust freely here — the validator reads these.
+// approved/posted. Finalized asset rules (operator): LinkedIn + X = text + image (video on demand);
+// Instagram = carousel 3-7 slides (video + music on demand); TikTok + Facebook = short video +
+// music + text. Adjust freely here — the validator reads these.
 
 export type PlatformKey = "linkedin" | "x" | "instagram" | "tiktok" | "facebook" | "blog";
 
@@ -51,11 +51,10 @@ export const PLATFORM_SPECS: Record<PlatformKey, PlatformSpec> = {
   },
   facebook: {
     label: "Facebook",
-    contentTypes: ["image/text/link post", "video"],
+    contentTypes: ["short video", "image/text/link post"],
     requiredText: ["body", "cta"],
-    requiresImage: true,
-    recommendsVideo: true,
-    rejects: "Empty caption; no media."
+    requiresVideo: true,
+    rejects: "Empty caption; no short video."
   },
   blog: {
     label: "Blog",
