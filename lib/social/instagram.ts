@@ -36,17 +36,18 @@ export async function exchangeCode(code: string): Promise<InstagramToken> {
   return (await res.json()) as InstagramToken;
 }
 
-export async function resolveAccount(accessToken: string): Promise<{ accountId: string; handle: string | null }> {
+export async function resolveAccount(accessToken: string): Promise<{ accountId: string; handle: string | null; accessToken: string }> {
   const params = new URLSearchParams({
     access_token: accessToken,
-    fields: "id,name,instagram_business_account{id,username}"
+    fields: "id,name,access_token,instagram_business_account{id,username}"
   });
   const res = await fetch(`${GRAPH_URL}/me/accounts?${params.toString()}`);
   if (!res.ok) throw new Error(`Instagram account lookup failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  const json = (await res.json()) as { data?: Array<{ instagram_business_account?: { id?: string; username?: string } }> };
-  const ig = json.data?.map((p) => p.instagram_business_account).find((a) => a?.id);
-  if (!ig?.id) throw new Error("No Instagram Business/Creator account connected to a manageable Facebook Page.");
-  return { accountId: ig.id, handle: ig.username ?? null };
+  const json = (await res.json()) as { data?: Array<{ access_token?: string; instagram_business_account?: { id?: string; username?: string } }> };
+  const page = json.data?.find((p) => p.access_token && p.instagram_business_account?.id);
+  const ig = page?.instagram_business_account;
+  if (!page?.access_token || !ig?.id) throw new Error("No Instagram Business/Creator account connected to a manageable Facebook Page.");
+  return { accountId: ig.id, handle: ig.username ?? null, accessToken: page.access_token };
 }
 
 export async function publishPost(accessToken: string, igUserId: string, text: string, imageUrl?: string | null): Promise<{ id: string | null; url: string | null }> {

@@ -42,6 +42,18 @@ export async function exchangeCode(code: string): Promise<LinkedInToken> {
   return (await res.json()) as LinkedInToken;
 }
 
+export async function refreshToken(refreshToken: string): Promise<LinkedInToken> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: process.env.LINKEDIN_CLIENT_ID ?? "",
+    client_secret: process.env.LINKEDIN_CLIENT_SECRET ?? ""
+  });
+  const res = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  if (!res.ok) throw new Error(`LinkedIn token refresh failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as LinkedInToken;
+}
+
 export async function getMemberUrn(accessToken: string): Promise<{ urn: string; name: string | null }> {
   const res = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`LinkedIn userinfo failed (${res.status}).`);

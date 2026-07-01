@@ -94,12 +94,13 @@ export async function handleSocialOAuthCallback<Token extends { access_token: st
     if (isSupabaseConfigured()) {
       const supabase = createServiceClient() ?? (await createClient());
       if (supabase) {
-        const expiresAt = token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
+        const accountAccessToken = account.accessToken ?? token.access_token;
+        const expiresAt = account.accessToken ? null : token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
         await supabase.from("social_connections").upsert(
           {
             brand_id: brandId,
             platform: options.platform,
-            access_token: account.accessToken ?? token.access_token,
+            access_token: accountAccessToken,
             refresh_token: token.refresh_token ?? null,
             expires_at: expiresAt,
             author_urn: account.accountId,

@@ -415,3 +415,18 @@ hash when done; the other reviews.
   `npm run check:supabase` passes. Note: the worktree currently contains untracked Claude schedule
   files, so lint/build report one unrelated `<img>` warning from `components/os/schedule-calendar.tsx`;
   this T12 commit does not include that file.
+
+### T13 — Connector publish completion: X image, Meta Page tokens, refresh
+- **Status:** SHIPPED  ·  **Implementer:** codex
+- Connector-only change set in `lib/social/*` + `lib/social/oauth-routes.ts`. Did not touch campaign
+  run, platform specs, package validator, Ready-to-Post, or schedule files.
+- X: `publishPost` now uploads an image to the v1.1 `media/upload` endpoint, then attaches
+  `media.media_ids` to `POST /2/tweets`; text-only posts still work. X refresh-token flow added for
+  OAuth2 `offline.access`.
+- Meta: Instagram account resolution now fetches `/me/accounts` with Page `access_token` and stores
+  the Page token, matching Facebook's Page-token behavior. OAuth callback treats account-level
+  tokens as non-expiring in `social_connections` so the page token is used for publishing.
+- Publishing: `publishApprovedPackage` selects `refresh_token/expires_at`, refreshes X/LinkedIn when
+  the access token is within ~10 minutes of expiry, stores the rotated token/refresh token, then
+  publishes with the refreshed token. Platform gates and schedule/approval behavior are unchanged.
+- Checks: `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run check:supabase`.
