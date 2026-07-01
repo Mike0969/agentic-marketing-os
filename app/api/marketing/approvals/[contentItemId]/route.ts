@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
+import { defaultRegion, pickScheduledAt } from "@/lib/marketing/auto-schedule";
 import { decideLocalApproval } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Approval, ApprovalDecision, ContentItem, ContentStatus, ContentWorkflowStage } from "@/lib/types";
@@ -94,6 +95,22 @@ export async function POST(request: Request, context: { params: Promise<{ conten
 
   if (decision !== "approved") {
     updatePayload.crina_review_notes = `Human ${decision.replaceAll("_", " ")}: ${feedback}. Crina and assigned agents must address this before returning to final approval.`;
+  }
+
+  // Autonomous scheduling (P1): on final approval, Crina assigns a region-aware time if the operator
+  // hasn't set one — so the operator just views the schedule instead of picking slots.
+  if (decision === "approved" && gate !== "gate_1") {
+    const { data: current } = await supabase.from("content_items").select("brand_id,scheduled_at").eq("id", contentItemId).maybeSingle();
+    if (current && !current.scheduled_at) {
+      const { count } = await supabase
+        .from("content_items")
+        .select("id", { count: "exact", head: true })
+        .eq("brand_id", current.brand_id)
+        .eq("status", "scheduled")
+        .not("scheduled_at", "is", null)
+        .gte("scheduled_at", new Date().toISOString());
+      updatePayload.scheduled_at = pickScheduledAt(defaultRegion(), count ?? 0);
+    }
   }
 
   const { data: contentItem, error: contentError } = await supabase

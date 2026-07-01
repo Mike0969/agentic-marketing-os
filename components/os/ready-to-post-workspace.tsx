@@ -112,7 +112,8 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
         if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Decision failed.");
         setItems((current) => current.filter((candidate) => candidate.id !== item.id));
         setRejectId(null);
-        setMessage("Approved — added to the schedule.");
+        const when = payload.contentItem.scheduled_at ? new Date(payload.contentItem.scheduled_at).toLocaleString() : null;
+        setMessage(when ? `Approved — Crina scheduled it for ${when}.` : "Approved — added to the schedule.");
       } else {
         // Reject / request changes → Crina reroutes to Visual or Content and regenerates a better version.
         setReworkingIds((current) => ({ ...current, [item.id]: true }));

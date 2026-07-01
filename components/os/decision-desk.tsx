@@ -121,7 +121,14 @@ export function DecisionDesk({
 
       setFinalItems((current) => current.filter((candidate) => candidate.id !== item.id));
       setReasonForId(null);
-      setMessage(decision === "approved" ? `${item.title} moved to publishing prep.` : `${item.title} was sent back to Crina for rework.`);
+      const when = payload.contentItem?.scheduled_at ? new Date(payload.contentItem.scheduled_at).toLocaleString() : null;
+      setMessage(
+        decision === "approved"
+          ? when
+            ? `${item.title} approved — Crina scheduled it for ${when}.`
+            : `${item.title} moved to publishing prep.`
+          : `${item.title} was sent back to Crina for rework.`
+      );
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not record approval decision.");
     } finally {
