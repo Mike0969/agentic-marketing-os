@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, Plus, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, Paperclip, Plus, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
+import { AssetAttachPicker } from "@/components/os/asset-attach-picker";
 import { validatePackage } from "@/lib/marketing/package-validator";
 import { resolvePlatform } from "@/lib/marketing/platform-specs";
 import type { Brand, Campaign, ContentAsset, ContentItem, ReadyPackage } from "@/lib/types";
@@ -27,6 +28,19 @@ const ADDABLE_PLATFORMS: { key: string; label: string; platform: string }[] = [
   { key: "blog", label: "Blog", platform: "Blog" }
 ];
 type PlatformOption = (typeof ADDABLE_PLATFORMS)[number];
+
+const VIDEO_URL_RE = /\.(mp4|mov|webm|m4v)(\?|$)/i;
+function isVideoUrl(url: string | null | undefined): boolean {
+  return typeof url === "string" && VIDEO_URL_RE.test(url);
+}
+
+// Client-side project slug from brand name (mirrors resolveProjectSlug on the server).
+function slugForBrandName(name: string | null | undefined): string | null {
+  const n = (name ?? "").toLowerCase();
+  if (n.includes("gridfactory")) return "gridfactory";
+  if (n.includes("gulf") || n.includes("nexride")) return "gulf_el_nexride";
+  return null;
+}
 
 function fallbackMarked(item: ContentItem) {
   return item.performance_summary?.toUpperCase().includes("FALLBACK") || item.ready_package?.fallback_used;
@@ -273,6 +287,36 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
     }
   }
 
+  // Attach a Project Asset Library item to this post's ready package (video-aware; unblocks TikTok/FB).
+  async function attachAsset(item: ContentItem, assetId: string) {
+    setMessage(`Attaching media to ${item.platform}…`);
+    const res = await fetch(`/api/marketing/content-items/${item.id}/attach-asset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ asset_id: assetId })
+    });
+    const payload = (await res.json().catch(() => ({}))) as { contentItem?: ContentItem; error?: string };
+    if (!res.ok || !payload.contentItem) {
+      setMessage(payload.error ?? "Attach failed.");
+      throw new Error(payload.error ?? "Attach failed.");
+    }
+    setItems((current) => current.map((c) => (c.id === item.id ? payload.contentItem! : c)));
+    const refreshed = (payload.contentItem.ready_package?.assets ?? []).map((asset, index) => ({
+      id: `${item.id}:attached:${asset.position ?? index + 1}`,
+      content_item_id: item.id,
+      kind: asset.kind,
+      url: asset.url ?? null,
+      prompt: asset.prompt ?? null,
+      position: asset.position ?? index + 1,
+      model: asset.model ?? null,
+      provider: asset.provider ?? null,
+      status: asset.status ?? "generated",
+      error: asset.error ?? null
+    })) as ContentAsset[];
+    setAssetItems((current) => [...current.filter((a) => a.content_item_id !== item.id), ...refreshed]);
+    setMessage("Media attached — package updated.");
+  }
+
   async function copyPackage(item: ContentItem) {
     const pkg = packageFor(item);
     await navigator.clipboard.writeText(formatPackageText(pkg));
@@ -395,6 +439,8 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
                   onCopy={() => copyPackage(item)}
                   onDownload={() => downloadPackage(item)}
                   onRemove={() => removePlatform(item)}
+                  projectSlug={item.ready_package?.project_slug ?? slugForBrandName(brandMap.get(item.brand_id)?.name)}
+                  onAttach={(assetId) => attachAsset(item, assetId)}
                   platformControls={
                     <PlatformSelector
                       campaignId={campaignId}
@@ -503,10 +549,14 @@ function ReadyCard({
   onCopy,
   onDownload,
   onRemove,
+  projectSlug,
+  onAttach,
   platformControls
 }: {
   item: ContentItem;
   connected: boolean;
+  projectSlug: string | null;
+  onAttach: (assetId: string) => Promise<void>;
   assets: ContentAsset[];
   generatingAssets: boolean;
   scheduleValue: string;
@@ -549,12 +599,18 @@ function ReadyCard({
     status: asset.status ?? "placeholder",
     error: asset.error ?? null
   })) satisfies ContentAsset[];
-  const imageAssets = (assets.length ? assets : packageAssets).filter((asset) => asset.url);
-  const primaryImage = imageAssets[0]?.url ?? item.visual_asset_url;
+  const mediaAssets = (assets.length ? assets : packageAssets).filter((asset) => asset.url);
+  const videoAsset = mediaAssets.find((asset) => asset.kind === "video_placeholder" || isVideoUrl(asset.url));
+  const videoUrl = videoAsset?.url ?? (isVideoUrl(item.visual_asset_url) || pkg.video_status === "draft_asset" ? item.visual_asset_url : null);
+  const hasVideo = Boolean(videoUrl);
+  const imageAssets = mediaAssets.filter((asset) => asset.kind !== "video_placeholder" && !isVideoUrl(asset.url));
+  const primaryImage = imageAssets[0]?.url ?? (hasVideo ? null : item.visual_asset_url);
   const validation = validatePackage(item);
   const blockers = validation.issues.filter((i) => i.severity === "blocker");
   const warnings = validation.issues.filter((i) => i.severity === "warning");
+  const needsVideo = isVideo && !hasVideo;
   const [slide, setSlide] = useState(0);
+  const [showPicker, setShowPicker] = useState(false);
   const isCarousel = imageAssets.length > 1 || Boolean(pkg.slides?.length);
   const activeSlide = isCarousel ? Math.min(slide, imageAssets.length - 1) : 0;
 
@@ -575,9 +631,9 @@ function ReadyCard({
         )}
         {fallbackMarked(item) ? <OSBadge tone="warn">FALLBACK</OSBadge> : null}
         {item.crina_review_notes ? <OSBadge tone={item.crina_review_notes.includes("pass") ? "ok" : "off"}>Crina {item.crina_review_notes}</OSBadge> : null}
-        {primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
+        {hasVideo ? <OSBadge tone="ok">Video attached</OSBadge> : primaryImage ? <OSBadge tone="ok">Image ready</OSBadge> : <OSBadge tone="demo">DRAFT ASSET</OSBadge>}
         {generatingAssets ? <OSBadge tone="info">Generating slides</OSBadge> : null}
-        {isVideo ? <OSBadge tone="demo">VIDEO COMING SOON</OSBadge> : null}
+        {needsVideo ? <OSBadge tone="danger">Needs video</OSBadge> : null}
         <OSBadge tone={validation.ok ? "ok" : "danger"}>{validation.ok ? "Platform-ready" : "Not platform-ready"}</OSBadge>
         {connected ? <OSBadge tone="ok">Connected</OSBadge> : <OSBadge tone="warn">{item.platform} not connected — connect in Settings to post</OSBadge>}
         <button
@@ -620,7 +676,10 @@ function ReadyCard({
       </div>
 
       <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900">
-        {primaryImage ? (
+        {hasVideo ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption
+          <video src={videoUrl ?? ""} controls playsInline className="aspect-video w-full bg-black" />
+        ) : primaryImage ? (
           <div className="relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imageAssets[activeSlide]?.url ?? primaryImage ?? ""} alt={pkg.alt_text ?? item.title} className={`w-full object-cover ${isCarousel ? "aspect-square" : "aspect-video"}`} />
@@ -649,6 +708,22 @@ function ReadyCard({
           </div>
         ) : null}
       </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setShowPicker((s) => !s)} className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-cyan-500 hover:text-cyan-200">
+          <Paperclip className="h-3 w-3" /> {hasVideo || primaryImage ? "Replace media from library" : "Attach media from library"}
+        </button>
+        {needsVideo ? <span className="text-xs text-rose-300">Needs a video — attach one from the library to unblock.</span> : null}
+      </div>
+      {showPicker ? (
+        <AssetAttachPicker
+          projectSlug={projectSlug}
+          platform={item.platform}
+          preferVideo={isVideo}
+          onAttach={async (assetId) => { await onAttach(assetId); setShowPicker(false); }}
+          onClose={() => setShowPicker(false)}
+        />
+      ) : null}
 
       {pkg.asset_source ? (
         <div className="mt-3 rounded-md border border-neutral-800 bg-neutral-950/60 p-2.5">
