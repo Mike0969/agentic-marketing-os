@@ -9,7 +9,7 @@
 
 ## Gulf-EL.com / NexRide
 
-- Domain: electric mobility, zero-commission ride-hailing, AI ride-hailing, tokenized loyalty, GCC mobility.
-- Audience: GCC mobility stakeholders, drivers, riders, investors, strategic partners.
-- Tone: futuristic, bold, credible, commercial, region-aware.
-- Content emphasis: zero-commission model, electric mobility transition, AI-enabled operations, loyalty/token mechanics when appropriate, GCC market relevance.
+- Domain: EV/hybrid passenger transportation, zero-commission subscription ride-hailing, GFEL tokenised mobility, staking/MLM community, AI dispatch, fleet optimisation, crypto payments, tokenised asset ownership.
+- Audience now: small investors, crypto users, MLM/community members, early mobility believers; next: drivers, taxi companies, EV charger partners, riders, fleet partners, regional strategic partners.
+- Tone: bold, founder-led, investor-hungry, futuristic, GCC-aware, driver-first, community-wealth focused.
+- Content emphasis: investment/community opportunity first, zero-commission model, drivers keep more money, GFEL tokenisation/staking/loyalty, 20% profit-sharing narrative, monthly/quarterly/annual ROI incentive, EV mobility wave, Uber/Lyft/Grab inception comparison, GameStop-style community power.

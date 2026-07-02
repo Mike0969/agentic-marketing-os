@@ -46,3 +46,17 @@ Rank conversion progress like this:
 5. larger investor/operator/family office starts a serious conversation after first proof.
 
 Do not over-prioritize dry "power readiness" content if it loses the ownership/monthly-income hook. The emotional trigger is early infrastructure ownership with monthly income potential.
+
+## Gulf-EL / NexRide conversion reset — investment/community first
+
+For Gulf-EL / NexRide, conversion at this stage means moving people into the investor/community funnel, not only getting app downloads.
+
+Rank conversion progress like this:
+1. user asks for GFEL/token/staking explanation;
+2. user joins the MLM/community/investor funnel;
+3. investor asks about 20% profit share, monthly/quarterly/annual ROI incentive, or asset ownership;
+4. user asks for investor deck or platform proof;
+5. driver/taxi/fleet/charger partner asks how to participate;
+6. rider interest and app reservation interest after the investment/community story is established.
+
+Do not measure success only by mobility engagement. The strongest current conversion is early investor/community belief in the model: zero commission, tokenised fleet assets, GFEL staking, EV mobility, and community power against institutional ride-hailing.

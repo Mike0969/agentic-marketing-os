@@ -15,11 +15,16 @@
 
 ## Gulf-EL.com / NexRide
 
-- `Join the NexRide early access list.`
-- `Talk to us about zero-commission mobility partnerships.`
-- `Explore the Gulf-EL mobility model.`
-- `Register interest as a driver or fleet partner.`
-- `Follow Gulf-EL for GCC electric mobility updates.`
+- `Enter the GFEL ecosystem early.`
+- `Join the Gulf-EL mobility community.`
+- `Ask for the Gulf-EL investor deck.`
+- `Join the zero-commission ride-hailing movement.`
+- `Become part of the community fleet.`
+- `Reserve early NexRide access.`
+- `Build your position before the mobility network scales.`
+- `See how GFEL connects staking, loyalty, and fleet growth.`
+- `Register interest as a driver, fleet partner, or EV charger partner.`
+- `Join the community before institutions own the upside.`
 
 ## CTA rules
 

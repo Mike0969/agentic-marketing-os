@@ -37,21 +37,36 @@ Avoid:
 
 Voice:
 - futuristic
+- founder-led
+- investor-hungry
 - mobility-focused
-- bold but credible
+- bold and community-powered
 - GCC-aware
+- driver-first
 - commercially clear
 
 Use:
 - zero-commission ride-hailing
+- subscription-based mobility
 - driver economics
 - EV mobility
 - AI dispatch
+- fleet optimisation
 - rider trust
-- tokenized loyalty only when clearly explained
+- GFEL tokenisation
+- staking / MLM community
+- tokenised asset ownership
+- monthly, quarterly, annual ROI incentive
+- 20% profit-sharing narrative when operator-approved
+- crypto payments
+- Uber/Lyft/Grab comparison
+- community-owned mobility
 
 Avoid:
 - meme-token energy
-- unsupported launch claims
+- cheap taxi app tone
+- fake Uber clone positioning
+- generic crypto exchange language
+- unsupported city/launch claims
 - vague "future of mobility" filler
 - confusing Gulf-EL, NexRide, EVs, ride-hailing, and loyalty into one story

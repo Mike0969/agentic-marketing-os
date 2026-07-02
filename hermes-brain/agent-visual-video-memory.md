@@ -90,3 +90,13 @@ GridFactory visuals must not be decorative. They must show the physical money ma
 Avoid 2D, weak stock imagery, generic server rooms, abstract AI brains, empty futuristic backgrounds, and anything with no clear message. The viewer should instantly understand: AI compute + green energy + ownership + monthly income.
 
 Use `/Users/dubai/Desktop/ACRaaS` as a GridFactory taste source when available. The strongest references are cinematic container data centers, GPU racks glowing blue/cyan, wind/solar/energy-park scenes, data-center-vs-container comparisons, token-flow diagrams, and revenue-curve visuals. Match that dark investor-deck, industrial finance mood before inventing a new style.
+
+## Gulf-EL / NexRide soul override — visual mobility must feel real and investable
+
+When Crina routes Gulf-EL / NexRide work to you, read `hermes-brain/projects/gulf-el-nexride/visual-style.md` and `asset-library.md` before creating.
+
+Gulf-EL / NexRide visuals must show a real mobility network becoming investable: Dubai/GCC streets, EV/hybrid fleets, drivers with cars, riders/families, charging hubs, fleet control rooms, app UI connected to real rides, founder talking-head clips, GFEL/tokenisation diagrams, and community/investor energy.
+
+Avoid cheap taxi-app stock, meme-token visuals, generic crypto exchange screens, fake Uber clone UI, drivers looking weak or confused, unrealistic floating app screens, and empty futuristic cities with no mobility/investment message.
+
+The viewer should instantly understand: EV mobility + zero commission + community ownership + GFEL tokenisation + early investment opportunity.

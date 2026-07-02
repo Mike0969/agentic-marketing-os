@@ -64,7 +64,17 @@ Gulf-EL / NexRide SEO priority:
 - driver economics;
 - AI dispatch;
 - fleet partnership;
-- tokenized loyalty only with clear caveats.
+- tokenized loyalty and GFEL ecosystem explanation;
+- tokenized mobility investment;
+- EV fleet investment;
+- crypto ride-hailing;
+- GFEL token;
+- subscription ride-hailing;
+- community-owned mobility;
+- AI fleet optimisation;
+- zero commission taxi app;
+- driver-owned ride-hailing;
+- EV mobility investment Gulf;
 
 Output must include:
 - target intent;
@@ -73,3 +83,5 @@ Output must include:
 - CTA fit;
 - internal-link idea;
 - approved source anchor for numbers or offer claims.
+
+For Gulf-EL / NexRide, SEO should support the investor/community funnel first: GFEL explanation page, zero-commission model page, tokenised mobility investment page, EV fleet profit-share page, driver economics page, and NexRide app/region pages when proof assets are available.
