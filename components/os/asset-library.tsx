@@ -176,11 +176,13 @@ export function AssetLibrary({ brands, initialAssets }: { brands: Brand[]; initi
 
 function AssetPreview({ asset }: { asset: ProjectAsset }) {
   const url = asset.file_url ?? "";
+  const fileHint = url.toLowerCase().split("?")[0];
+  const opensAsFile = asset.asset_type === "pdf" || asset.asset_type === "deck" || fileHint.endsWith(".pdf") || /\.(ppt|pptx|key)$/.test(fileHint);
   if (asset.asset_type === "video" && url) {
     // eslint-disable-next-line jsx-a11y/media-has-caption
     return <video src={url} controls className="aspect-video w-full rounded-md bg-black object-cover" />;
   }
-  if ((asset.asset_type === "image" || asset.asset_type === "carousel" || asset.asset_type === "logo" || asset.asset_type === "reference") && url) {
+  if (!opensAsFile && (asset.asset_type === "image" || asset.asset_type === "carousel" || asset.asset_type === "logo" || asset.asset_type === "reference") && url) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={url} alt={asset.title} className="aspect-video w-full rounded-md object-cover" />;
   }

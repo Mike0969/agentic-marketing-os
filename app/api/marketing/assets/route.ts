@@ -13,6 +13,16 @@ const SLUGS: ProjectSlug[] = ["gridfactory", "gulf_el_nexride"];
 const TYPES: ProjectAssetType[] = ["image", "video", "carousel", "deck", "pdf", "script", "note", "logo", "reference", "other"];
 const TOOLS: AssetSourceTool[] = ["manual_upload", "google_flow", "veo", "higgsfield", "sora", "runway", "canva", "other"];
 
+function inferAssetType(input: { requested: string | null; fileName?: string | null; mime?: string | null; fileUrl?: string | null }): ProjectAssetType {
+  if (input.requested && input.requested !== "image" && TYPES.includes(input.requested as ProjectAssetType)) return input.requested as ProjectAssetType;
+  const hint = `${input.mime ?? ""} ${input.fileName ?? ""} ${input.fileUrl ?? ""}`.toLowerCase();
+  if (hint.includes("application/pdf") || hint.endsWith(".pdf") || hint.includes(".pdf?")) return "pdf";
+  if (hint.includes("video/") || /\.(mp4|mov|webm|m4v)(\?|$)/.test(hint)) return "video";
+  if (hint.includes("presentation") || /\.(ppt|pptx|key)(\?|$)/.test(hint)) return "deck";
+  if (hint.includes("image/") || /\.(png|jpe?g|webp|gif|avif|svg)(\?|$)/.test(hint)) return "image";
+  return TYPES.includes(input.requested as ProjectAssetType) ? (input.requested as ProjectAssetType) : "other";
+}
+
 export async function GET(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
@@ -49,7 +59,11 @@ export async function POST(request: Request) {
 
   let fileUrl = str("file_url");
   const file = form.get("file");
+  let uploadedFileName: string | null = null;
+  let uploadedMime: string | null = null;
   if (file && file instanceof File && file.size > 0) {
+    uploadedFileName = file.name;
+    uploadedMime = file.type || null;
     const supabase = createServiceClient();
     if (!supabase) return NextResponse.json({ error: "Storage not available." }, { status: 503 });
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-60) || "asset";
@@ -65,13 +79,14 @@ export async function POST(request: Request) {
   const assetType = str("asset_type");
   const sourceTool = str("source_tool");
   const qs = Number(str("quality_score") ?? "0");
+  const inferredAssetType = inferAssetType({ requested: assetType, fileName: uploadedFileName, mime: uploadedMime, fileUrl });
 
   const asset = await createProjectAsset({
     project_slug: slug as ProjectSlug,
     brand_id: str("brand_id"),
     file_url: fileUrl,
-    asset_type: (TYPES.includes(assetType as ProjectAssetType) ? assetType : "image") as ProjectAssetType,
-    title: str("title") ?? "Untitled asset",
+    asset_type: inferredAssetType,
+    title: str("title") ?? uploadedFileName ?? "Untitled asset",
     description: str("description"),
     tags: list("tags"),
     platform_fit: list("platform_fit"),
