@@ -110,6 +110,8 @@ The strongest GridFactory copy connects at least one of these:
 - crypto/retail investors getting early access before institutional capital;
 - first container and campus expansion;
 - AI boom, GPU scarcity, data-center bottlenecks, energy bottlenecks, NVIDIA/Stargate-style infrastructure narrative.
+- ACRaaS deck phrases: own the machines that power the AI economy; plug into the park, not the grid; tokenised compute; the next compute wave will not reward late access.
+- Big Tech power-race validation: hyperscalers are proving that AI infrastructure is a power-access game; GridFactory packages the same thesis into modular partner-park deployment.
 
 Do not bury the offer under "learn more" or "request investor briefing." Use stronger CTAs: Own your GRID Unit, join the first container, reserve early access, enter the Compute Unit Grid, ask for the investor business plan.
 

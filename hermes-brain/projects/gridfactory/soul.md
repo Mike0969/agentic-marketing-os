@@ -12,6 +12,10 @@ The emotional promise is simple and aggressive:
 
 **Own the infrastructure behind AI. Earn from the compute economy. Be early before the big capital arrives.**
 
+The sharper ACRaaS deck version says it even more directly:
+
+**Own the machines that power the AI economy. Plug into the park, not the grid.**
+
 ## Founder Truth
 
 The founder sees a gap most people miss: AI demand is exploding, but the bottleneck is not only GPUs. It is power, grid connection, permitting, and capital.
@@ -60,6 +64,8 @@ Every GridFactory post should leave one or more of these feelings:
 
 AI compute demand is exploding, but power and grid connection are the choke point. Traditional data centers take years to permit and connect. GridFactory goes where power already exists: green-energy parks.
 
+ACRaaS source language agents should remember: AI infrastructure is fundamentally a power-access game. The scarce input is high-speed GPU compute connected to power that can actually be delivered at scale.
+
 ### 2. Modular Beats Monolithic
 
 A containerized GPU data center can be deployed in stages. Each stage can add capacity and revenue without waiting for a giant one-shot campus build.
@@ -91,6 +97,24 @@ The first mission is to mobilize crypto people, small investors, retail users, a
 - Long-term ambition: multi-park deployment and path toward $100M+ ARR.
 - Core arbitrage: renewable park energy at approximately $0.10-$0.15/kWh versus far higher commercial grid-connected power assumptions in the plan.
 - Strategic edge: weeks-to-months modular deployment versus multi-year traditional data-center grid/permitting friction.
+
+## ACRaaS Deck Anchors Agents Can Use
+
+Source: `/Users/dubai/Desktop/ACRaaS/context.md` and `GRID_Factory_Pitch_Deck 14Mayf .PDF.pdf`.
+
+Use these as narrative and visual fuel:
+
+- "Own the machines that power the AI economy."
+- "Plug into the park. Not the grid."
+- "Tokenised compute. Lease-to-own infrastructure."
+- "The next compute wave will not reward late access."
+- Hyperscalers validate the thesis by racing for dedicated power; GridFactory uses already-built partner energy parks and modular deployment.
+- Deck technical model: 20 ft containers, 50 rigs, 100 GPUs, approximately 180,000 TFLOPS FP16 per container, 400G RoCE v2 fabric, K8s + Ray.io orchestration, CaaS revenue layer.
+- Investor flow: investor buys GRID units with fiat or crypto -> GRID units link to TFLOPS capacity -> container sells AI compute -> monthly net CaaS income flows back to unit holders -> GRID units may also be used as compute credits.
+- Demand buckets: sovereign AI, AI labs and fine-tuners, agentic AI, robotics, enterprise leases, spot GPU demand, always-on inference.
+- Roadmap language: first container, first payouts, multi-park expansion, 10+ containers, sovereign contracts, $50M-$100M ARR ambition at scale.
+
+When exact numbers conflict between sources, use the newest business plan or direct operator-approved number. Do not weaken the creative angle because of version differences.
 
 ## Creative Command
 

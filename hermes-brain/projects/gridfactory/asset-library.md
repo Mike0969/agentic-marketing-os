@@ -2,6 +2,10 @@
 
 The actual assets live in the DB table `project_assets` with `project_slug = gridfactory` and are managed in the app at Marketing -> Assets.
 
+Desktop source folder to ingest/promote into the library:
+
+`/Users/dubai/Desktop/ACRaaS`
+
 ## Purpose
 
 The asset library is the visual memory of GridFactory. It teaches Crina and the Visual Agent what the company should feel like:
@@ -34,6 +38,7 @@ Gold-standard GridFactory assets show one of these clearly:
 - investor deck diagram explaining CUG ownership;
 - founder/video material explaining monthly ROI and early infrastructure ownership;
 - wealth creation from physical AI assets.
+- ACRaaS-style dark investor-deck visuals with blue/cyan accents, real containers, GPU racks, wind/solar/energy infrastructure, token-flow diagrams, and revenue-growth visuals.
 
 ## Weak Assets
 
@@ -65,3 +70,27 @@ Mark assets weak or leave them unapproved if they are:
 - ai-infrastructure
 - europe-data-center
 - gulf-data-center
+- power-access-game
+- token-flow
+- caas-revenue
+- sovereign-ai
+- ai-labs
+- agentic-ai
+- robotics
+- 400g-cluster
+- super-gpu
+
+## ACRaaS Folder Assets To Prioritize
+
+When importing from Desktop, prioritize these as approved/reference candidates:
+
+- `Cinematic_photorealistic_container_datacenter,_rows_202605041239.jpeg`
+- `Datacenter_rows_glowing_blue_cyan_202605041301.jpeg`
+- `GPU_datacenter_with_wind_turbines_202605041306.jpeg`
+- `Shipping_container_full_of_GPUs_202605101800.jpeg`
+- `Data_center_vs_GPU_container_202605101752.jpeg`
+- `Simple_dark-theme_flow_diagram_with_202605101755.jpeg`
+- `Revenue_growing_$0_to_$50M_202605101806.jpeg`
+- `GRID_Factory_Pitch_Deck 14Mayf .PDF.pdf`
+
+Mark the deck as reference/deck material. Mark the strongest real-looking visuals as approved and reusable across platforms when the operator approves them in the Asset Library UI.

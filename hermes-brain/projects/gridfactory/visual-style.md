@@ -12,6 +12,7 @@ This is not abstract AI art. This is steel, cables, containers, GPUs, cooling, e
 - Green energy parks: solar, wind, hydro, substations, power corridors.
 - Modular container data centers connected as one unified compute fabric.
 - Investor deck quality: sharp, credible, expensive.
+- Dark investor-deck design with blue/cyan accents and serious finance mood.
 - Founder/talking-head material should feel direct, confident, hungry.
 
 ## Visual Themes
@@ -24,6 +25,8 @@ This is not abstract AI art. This is steel, cables, containers, GPUs, cooling, e
 - Small investor access to a usually institutional asset class.
 - Europe/Gulf energy parks becoming AI compute campuses.
 - "Own the machine behind AI" visual language.
+- Token/value-flow diagrams: investor -> GRID units -> GPU container in green park -> CaaS revenue -> investor distributions.
+- Growth curve visuals: first container -> multi-park network -> $50M-$100M ARR ambition.
 
 ## Do
 
@@ -65,3 +68,18 @@ Every image should carry one of these messages without needing much explanation:
 ## Asset Library Rule
 
 Approved uploaded assets are the taste source. The Visual Agent must study them before creating anything. When Crina finds a strong approved asset, Visual Agent is skipped.
+
+## ACRaaS Desktop Visual Memory
+
+The folder `/Users/dubai/Desktop/ACRaaS` contains strong visual references:
+
+- cinematic photorealistic container data center scenes;
+- GPU datacenter with wind turbines;
+- GPU rows glowing blue/cyan;
+- data center vs GPU container comparison visuals;
+- shipping container full of GPUs;
+- nuclear/power versus data-center comparison;
+- revenue curve and value-flow diagram concepts;
+- dark, cinematic, investor-deck style.
+
+These are not random images. They are GridFactory taste anchors. Future generated visuals should feel connected to them unless Crina gives a new direction.

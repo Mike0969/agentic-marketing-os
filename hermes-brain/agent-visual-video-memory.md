@@ -88,3 +88,5 @@ When Crina routes GridFactory work to you, read `hermes-brain/projects/gridfacto
 GridFactory visuals must not be decorative. They must show the physical money machine behind AI: modular GPU containers, server racks, green-energy parks, power corridors, substations, cooling, fiber, GPUs, investor deck diagrams, founder explanation, wealth from infrastructure ownership.
 
 Avoid 2D, weak stock imagery, generic server rooms, abstract AI brains, empty futuristic backgrounds, and anything with no clear message. The viewer should instantly understand: AI compute + green energy + ownership + monthly income.
+
+Use `/Users/dubai/Desktop/ACRaaS` as a GridFactory taste source when available. The strongest references are cinematic container data centers, GPU racks glowing blue/cyan, wind/solar/energy-park scenes, data-center-vs-container comparisons, token-flow diagrams, and revenue-curve visuals. Match that dark investor-deck, industrial finance mood before inventing a new style.

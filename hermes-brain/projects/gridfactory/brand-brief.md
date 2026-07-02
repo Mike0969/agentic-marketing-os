@@ -10,6 +10,10 @@ Short version:
 
 **Own AI compute infrastructure before it becomes institutional-only.**
 
+Deck-grade version:
+
+**Own the machines that power the AI economy.**
+
 ## Category
 
 - Green-energy GPU compute infrastructure.
@@ -26,6 +30,7 @@ Short version:
 - Monthly revenue share/income narrative from CaaS is central to demand.
 - First target is crypto/retail/small investors, then larger capital after proof.
 - Combines AI boom, data-center scarcity, GPU demand, energy bottlenecks, and passive income into one simple story.
+- Makes Big Tech's power race useful to retail investors: if Meta, Microsoft, Google, and Amazon are racing for dedicated energy, GridFactory packages the same thesis into modular, smaller-ticket infrastructure.
 
 ## Key Messages
 
@@ -36,6 +41,8 @@ Short version:
 5. Monthly ROI incentive is the emotional and commercial trigger.
 6. First container proves the model; campus expansion compounds it.
 7. This is crypto appetite upgraded into physical AI infrastructure ownership.
+8. Plug into the park, not the grid.
+9. The next compute wave will not reward late access.
 
 ## Tone
 
