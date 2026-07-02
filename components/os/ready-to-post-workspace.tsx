@@ -650,6 +650,20 @@ function ReadyCard({
         ) : null}
       </div>
 
+      {pkg.asset_source ? (
+        <div className="mt-3 rounded-md border border-neutral-800 bg-neutral-950/60 p-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <OSBadge tone={pkg.asset_source === "library" ? "ok" : "info"}>
+              {pkg.asset_source === "library" ? "♻ From library" : "✦ Newly generated"}
+            </OSBadge>
+            {pkg.selected_asset_title ? <OSBadge tone="off">{pkg.selected_asset_title}</OSBadge> : null}
+            {pkg.project_slug ? <OSBadge tone="off">{pkg.project_slug === "gulf_el_nexride" ? "Gulf-EL / NexRide" : "GridFactory"}</OSBadge> : null}
+            {pkg.asset_source === "library" ? <OSBadge tone={pkg.reuse_allowed ? "ok" : "warn"}>{pkg.reuse_allowed ? "reuse allowed" : "single-use"}</OSBadge> : null}
+          </div>
+          {pkg.crina_route_notes ? <p className="mt-1.5 text-xs leading-5 text-neutral-500">Crina: {pkg.crina_route_notes}</p> : null}
+        </div>
+      ) : null}
+
       <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-900/70 p-3">
         <div className="text-sm font-semibold text-neutral-50">{pkg.title ?? item.title}</div>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{pkg.text || pkg.caption}</p>

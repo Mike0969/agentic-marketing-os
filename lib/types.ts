@@ -151,6 +151,13 @@ export type ReadyPackage = {
   model?: string | null;
   fallback_used?: boolean;
   assets?: ReadyPackageAsset[];
+  // Crina visual-routing metadata (library reuse vs newly generated).
+  asset_source?: "library" | "generated";
+  selected_asset_id?: string | null;
+  selected_asset_title?: string | null;
+  project_slug?: string | null;
+  reuse_allowed?: boolean | null;
+  crina_route_notes?: string | null;
 };
 
 export type ContentAsset = {
@@ -165,6 +172,37 @@ export type ContentAsset = {
   status: "generated" | "placeholder" | "error";
   error: string | null;
   created_at?: string;
+};
+
+// Project Asset Library — uploaded, reusable creative materials Crina searches before generating.
+export type ProjectSlug = "gridfactory" | "gulf_el_nexride";
+export type ProjectAssetType = "image" | "video" | "carousel" | "deck" | "pdf" | "script" | "note" | "logo" | "reference" | "other";
+export type AssetSourceTool = "manual_upload" | "google_flow" | "veo" | "higgsfield" | "sora" | "runway" | "canva" | "other";
+
+export type ProjectAsset = {
+  id: string;
+  project_slug: ProjectSlug;
+  brand_id: string | null;
+  file_url: string | null;
+  asset_type: ProjectAssetType;
+  title: string;
+  description: string | null;
+  tags: string[];
+  platform_fit: string[];
+  content_theme: string | null;
+  visual_style: string | null;
+  quality_score: number;
+  reuse_allowed: boolean;
+  mandatory: boolean;
+  approved: boolean;
+  source_tool: AssetSourceTool;
+  rights_status: string | null;
+  transcript: string | null;
+  extracted_text: string | null;
+  used_count: number;
+  last_used_at: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type ApprovalDecision = "pending" | "approved" | "rejected" | "changes_requested";

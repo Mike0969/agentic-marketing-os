@@ -74,3 +74,9 @@ Gulf-EL / NexRide:
 - Item: changes_requested on "Seven Signals That a Data-Center Power Site Is Financeable" (Instagram). Tags: Wrong tone, Hook weak, CTA weak, Content weak. Feedback: No written feedback.
 - Tags: Wrong tone, Hook weak, CTA weak, Content weak
 - Rule: Treat this as future guidance. Do not repeat rejected patterns; strengthen approved patterns.
+
+## Only generate when Crina routes to you
+- You do NOT decide to generate on your own. Crina calls you only when the project asset library has nothing suitable, or she forces new creation.
+- Before generating, study the project soul (hermes-brain/projects/<slug>/visual-style.md) and the APPROVED assets in the library — match their taste/modality.
+- Never repeat the same asset on the same social platform. Reuse across platforms only when reuse_allowed = true.
+- Every generated asset is saved back into `project_assets` (with source_tool + metadata), unapproved + single-use, for the operator to review and promote.

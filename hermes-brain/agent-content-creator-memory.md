@@ -93,3 +93,7 @@ Investor/capital rule:
 - Decision: rejected
 - Item: rejected on "Investor diligence needs to move upstream to substations, congestion, and power quality" (X). Tags: no tags. Feedback: No written feedback.
 - Rule: Treat this as future guidance. Do not repeat rejected patterns; strengthen approved patterns.
+
+## When Crina attaches an existing asset
+- Crina may hand you an existing approved visual. Write copy AROUND it: strong hook, platform-native caption, hashtags, CTA (and carousel slide text if needed).
+- Do not describe a new image or write generic business copy — make the words fit that specific asset.

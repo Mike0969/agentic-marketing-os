@@ -11,12 +11,13 @@ import { getFeedbackMemoryContext, type FeedbackMemoryContext } from "@/lib/mark
 import { runJudgedLoop, type JudgeResult, type LoopReceipt } from "@/lib/marketing/loop-runner";
 import { composeCarouselSlide } from "@/lib/marketing/carousel-composer";
 import { getPlatformPlan, type NativeDraft } from "@/lib/marketing/platform-generation";
+import { createProjectAsset, findAssetCandidates, recordAssetUsage, resolveProjectSlug } from "@/lib/marketing/project-assets";
 import { saveContentAssets } from "@/lib/marketing/ready-package";
 import { CONTENT_RUBRIC, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import type { Brand, Campaign, ReadyPackageAsset } from "@/lib/types";
+import type { Brand, Campaign, ProjectAsset, ReadyPackageAsset } from "@/lib/types";
 
 const VISUAL_MAX_ROUNDS = 2; // visual concept converges fast; keep the per-platform call budget bounded
 const MAX_PLATFORMS = 4; // bound per request to stay under serverless timeouts
@@ -124,6 +125,28 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const conversion = await getConversionMemoryContext({ brandId: campaign.brand_id, platform });
     const plan = getPlatformPlan(platform);
 
+    // Crina owns visual routing: search the project ASSET LIBRARY first. If a strong, approved,
+    // platform-fit asset exists (and Crina hasn't forced new creation), select it and SKIP the
+    // Visual Agent. Otherwise the Visual Agent generates a new asset (saved back to the library).
+    const projectSlug = resolveProjectSlug(brand ? { id: brand.id, name: brand.name } : null);
+    const forceNewVisual = idea.force_new_visual === true;
+    const kindMatch: Record<string, string[]> = { image: ["image", "logo", "reference"], carousel: ["carousel"], video: ["video"] };
+    let selectedAsset: ProjectAsset | null = null;
+    if (projectSlug && !forceNewVisual) {
+      const candidates = await findAssetCandidates({ projectSlug, platform });
+      selectedAsset = candidates.find((a) => (kindMatch[plan.assetKind] ?? []).includes(a.asset_type) && a.file_url) ?? null;
+    }
+    const assetRouteNotes = selectedAsset
+      ? `Crina selected library asset "${selectedAsset.title}" (${selectedAsset.asset_type}) for ${platform} — matched platform + theme; Visual Agent skipped.`
+      : forceNewVisual
+        ? `Crina forced NEW visual for ${platform}; Visual Agent generating.`
+        : projectSlug
+          ? `No suitable library asset for ${platform}; Visual Agent generating new (saved back to library, unapproved).`
+          : `No project mapped for this brand; Visual Agent generating.`;
+    const assetCopyHint = selectedAsset
+      ? `\n\nIMPORTANT: You are writing copy AROUND an existing approved visual (do NOT describe a new image). Asset: "${selectedAsset.title}"${selectedAsset.description ? ` — ${selectedAsset.description}` : ""}${selectedAsset.content_theme ? ` (theme: ${selectedAsset.content_theme})` : ""}. Make the hook, caption, and CTA fit THIS specific visual.`
+      : "";
+
     // Crina judges a candidate against a rubric -> a numeric, bounded acceptance check.
     const judgeWith = async (rubric: string, artifactLabel: string, artifact: unknown): Promise<JudgeResult> => {
       const review = await runMarketingAgentModel({
@@ -164,7 +187,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           fallbackAgentName: "Content Creator Agent",
           fallbackRole: "Copy and Editorial",
           task: `Create ${plan.label} package`,
-          instructions: `${plan.contentInstructions}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
+          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
           outputSchema: plan.contentSchema,
           input: { brand, campaign_idea: idea, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -258,7 +281,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     let assetFallback = false;
     let imageProvider: string | null = null;
 
-    if (plan.assetKind === "image") {
+    if (selectedAsset) {
+      // Crina selected an existing library asset — Visual Agent skipped entirely.
+      const assetKindLabel: ReadyPackageAsset["kind"] =
+        selectedAsset.asset_type === "video" ? "video_placeholder" : selectedAsset.asset_type === "carousel" ? "carousel_slide" : "image";
+      visualUrl = selectedAsset.file_url;
+      visualStatus = selectedAsset.file_url ? "generated" : "not_requested";
+      visualScore = selectedAsset.quality_score;
+      imageProvider = `library:${selectedAsset.source_tool}`;
+      assets.push({ kind: assetKindLabel, url: selectedAsset.file_url, prompt: selectedAsset.description ?? selectedAsset.title, position: 1, status: selectedAsset.file_url ? "generated" : "placeholder", provider: `library:${selectedAsset.source_tool}` });
+      await recordAssetUsage({ assetId: selectedAsset.id, contentItemId: item.id as string, campaignId: id, platform, reused: selectedAsset.used_count > 0 });
+    } else if (plan.assetKind === "image") {
       const visualLoop = await runJudgedLoop<VisualConcept>({
         loopType: "visual",
         agentId: "agent-visual-video",
@@ -343,6 +376,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", loopIds);
 
+    // Save a freshly generated asset back into the library (unapproved, single-use) so the operator
+    // can review/promote it and the Visual Agent can avoid repeating it on this platform later.
+    if (!selectedAsset && projectSlug && visualUrl && visualStatus === "generated") {
+      const saved = await createProjectAsset({
+        project_slug: projectSlug,
+        brand_id: campaign.brand_id,
+        file_url: visualUrl,
+        asset_type: plan.assetKind === "carousel" ? "carousel" : "image",
+        title: `${plan.label}: ${draft.title}`.slice(0, 120),
+        description: `Auto-generated for ${platform}. ${draft.hook}`.slice(0, 240),
+        platform_fit: [platform.toLowerCase()],
+        content_theme: String(idea.theme ?? idea.summary ?? campaign.title).slice(0, 120),
+        source_tool: "other",
+        quality_score: visualScore,
+        reuse_allowed: false,
+        approved: false
+      });
+      if (saved) await recordAssetUsage({ assetId: saved.id, contentItemId: item.id as string, campaignId: id, platform, reused: false });
+    }
+
     const fallbackParts = [contentFallback ? "content" : null, assetFallback ? (plan.assetKind === "video" ? "video-pending" : "asset") : null].filter(Boolean) as string[];
     const anyFallback = fallbackParts.length > 0;
     const fbNote = anyFallback ? `FALLBACK[${fallbackParts.join(",")}] ` : "";
@@ -365,7 +418,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       slides: draft.slides,
       script: draft.script,
       storyboard: draft.storyboard,
-      video_status: plan.assetKind === "video" ? ("coming_soon" as const) : undefined
+      video_status: plan.assetKind === "video" ? ("coming_soon" as const) : undefined,
+      asset_source: selectedAsset ? ("library" as const) : ("generated" as const),
+      selected_asset_id: selectedAsset?.id ?? null,
+      selected_asset_title: selectedAsset?.title ?? null,
+      project_slug: projectSlug ?? null,
+      reuse_allowed: selectedAsset?.reuse_allowed ?? null,
+      crina_route_notes: assetRouteNotes
     };
 
     await saveContentAssets(item.id as string, assets);

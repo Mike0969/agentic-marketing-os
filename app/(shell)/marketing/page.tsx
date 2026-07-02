@@ -33,6 +33,7 @@ export default async function MarketingHome() {
     { href: "/marketing/schedule", title: "Schedule", description: "Your week of posts by day, time, and platform. Reschedule or remove; posting runs from here.", badge: "Calendar" },
     { href: "/marketing/approvals", title: "Approvals", description: "Direction approvals and legacy decision queue. Final packages live in Ready to Post.", badge: "Human gate" },
     { href: "/marketing/brands", title: "Brands", description: "Brand voice, pillars, SEO targets, CTAs, and approval rules for each project.", badge: "Context" },
+    { href: "/marketing/assets", title: "Assets", description: "Project asset library — upload images, video, carousels, decks. Crina reuses these before generating new visuals.", badge: "Library" },
     { href: "/marketing/agents", title: "Agents", description: "Crina and specialist agents with model, memory, run, and fallback status.", badge: "Brains" },
     { href: "/marketing/analytics", title: "Analytics", description: "Search Console learning plus clearly labelled sample panels until connectors are live.", badge: "Improve" }
   ];

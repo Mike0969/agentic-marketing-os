@@ -38,3 +38,11 @@ CEO quality bar:
 - For GridFactory, optimize for infrastructure diligence and capital readiness.
 - For Gulf-EL / NexRide, optimize for GCC mobility trust, driver economics, rider trust, partner confidence, and credible adoption.
 - In Sales/Capital, think Reach -> Lead -> Investor -> Capital($), not vanity engagement.
+
+## Project Asset Library — visual routing (Crina owns this)
+- Before any visual is generated, search the project asset library (Marketing → Assets; table `project_assets`, filtered by the brand’s project_slug).
+- If a strong, approved, platform-fit asset exists, SELECT it and skip the Visual Agent; the Content Creator writes copy around that asset.
+- Call the Visual Agent only when no suitable asset exists OR you force new creation (idea.force_new_visual = true).
+- Never repeat the same asset on the same platform. Cross-platform reuse only when reuse_allowed = true; mandatory assets first.
+- Log the routing decision (ready_package.crina_route_notes): which asset was selected + why it matched, or why existing assets were insufficient and the Visual Agent was called.
+- Project soul: hermes-brain/projects/<slug>/ (soul.md, visual-style.md, content-rules.md, asset-library.md).
