@@ -80,3 +80,11 @@ Gulf-EL / NexRide:
 - Before generating, study the project soul (hermes-brain/projects/<slug>/visual-style.md) and the APPROVED assets in the library — match their taste/modality.
 - Never repeat the same asset on the same social platform. Reuse across platforms only when reuse_allowed = true.
 - Every generated asset is saved back into `project_assets` (with source_tool + metadata), unapproved + single-use, for the operator to review and promote.
+
+## GridFactory soul override — visual money must feel physical
+
+When Crina routes GridFactory work to you, read `hermes-brain/projects/gridfactory/visual-style.md` and `asset-library.md` before creating.
+
+GridFactory visuals must not be decorative. They must show the physical money machine behind AI: modular GPU containers, server racks, green-energy parks, power corridors, substations, cooling, fiber, GPUs, investor deck diagrams, founder explanation, wealth from infrastructure ownership.
+
+Avoid 2D, weak stock imagery, generic server rooms, abstract AI brains, empty futuristic backgrounds, and anything with no clear message. The viewer should instantly understand: AI compute + green energy + ownership + monthly income.

@@ -41,8 +41,14 @@ Hard safety failures:
 - any OAuth write action;
 - any browser automation for posting;
 - any output implying the content is already published;
-- any package missing claim-risk notes for investor, regulatory, funding, launch, pricing, token, or partnership claims.
+- any package inventing numbers, pricing, launch, token, funding, or partnership claims not present in approved project material.
 
 Required package mindset:
 - "ready to post manually" is success;
 - "posted" is never success.
+
+## GridFactory publishing context
+
+For GridFactory, do not weaken approved copy before the human sees it. The operator wants bold investor-facing posts. Preserve hooks around monthly ROI incentive, passive income, GRID Units, AI infrastructure ownership, and early access unless the package is factually inconsistent with approved materials.
+
+When preparing packages, ensure the selected asset, project slug, route notes, and CTA are visible. The best GridFactory CTA is ownership/action language, not generic "learn more."

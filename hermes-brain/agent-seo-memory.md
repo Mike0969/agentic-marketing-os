@@ -46,6 +46,17 @@ GridFactory SEO priority:
 - bankable power infrastructure;
 - site readiness / power readiness memo;
 - financeability for AI data-center projects.
+- AI infrastructure investment;
+- GPU data center investment;
+- monthly income from AI compute;
+- lease-to-own compute infrastructure;
+- tokenized AI infrastructure;
+- modular data center investment;
+- green-energy GPU compute;
+- own AI data center capacity;
+- passive income AI infrastructure.
+
+GridFactory SEO content should still serve the money story. Search traffic is useful when it moves people toward the investor business plan, GRID Unit explanation, monthly scenario income, or early investor funnel.
 
 Gulf-EL / NexRide SEO priority:
 - GCC EV mobility;
@@ -61,4 +72,4 @@ Output must include:
 - proof needed;
 - CTA fit;
 - internal-link idea;
-- claim risk.
+- approved source anchor for numbers or offer claims.
