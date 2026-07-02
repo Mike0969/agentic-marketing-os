@@ -139,7 +139,11 @@ export type ReadyPackage = {
   mentions?: string[];
   alt_text?: string;
   suggested_post_time?: string;
+  posted_url?: string;
+  posted_platform?: string;
+  posting_error?: string | null;
   asset_checklist?: string[];
+  slides?: { headline: string; text: string }[];
   script?: string;
   storyboard?: string[];
   video_status?: "coming_soon" | "draft_asset";

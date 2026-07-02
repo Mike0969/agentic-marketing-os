@@ -5,10 +5,13 @@ import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
 import { runConversionAnalysis } from "@/lib/marketing/conversion-agent";
+import { defaultRegion, pickScheduledAt } from "@/lib/marketing/auto-schedule";
 import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
 import { getFeedbackMemoryContext, type FeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
 import { runJudgedLoop, type JudgeResult, type LoopReceipt } from "@/lib/marketing/loop-runner";
+import { composeCarouselSlide } from "@/lib/marketing/carousel-composer";
 import { getPlatformPlan, type NativeDraft } from "@/lib/marketing/platform-generation";
+import { saveContentAssets } from "@/lib/marketing/ready-package";
 import { CONTENT_RUBRIC, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -75,6 +78,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
   const schedule = (idea.schedule ?? {}) as { start?: string; from_hour?: string };
   const scheduledAt = schedule.start ? `${schedule.start}T${schedule.from_hour || "09:00"}:00` : null;
+  const { count: futureScheduledCount } = await supabase
+    .from("content_items")
+    .select("id", { count: "exact", head: true })
+    .eq("brand_id", campaign.brand_id)
+    .not("scheduled_at", "is", null)
+    .gte("scheduled_at", new Date().toISOString());
 
   await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running" }).eq("id", id);
 
@@ -108,6 +117,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const created: Array<{ platform: string; title: string; loops: number; score: number; stop: string; blocked?: boolean; fallback: boolean }> = [];
 
   for (const platform of platforms) {
+   try {
+    const platformIndex = created.length;
+    const itemScheduledAt = scheduledAt ?? pickScheduledAt(defaultRegion(), (futureScheduledCount ?? 0) + platformIndex);
     const memory = await getFeedbackMemoryContext({ brandId: campaign.brand_id, platform });
     const conversion = await getConversionMemoryContext({ brandId: campaign.brand_id, platform });
     const plan = getPlatformPlan(platform);
@@ -143,6 +155,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       loopType: "content",
       agentId: "agent-content-creator",
       inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
+      // Add-one-platform is interactive: keep it to a single round so it returns fast on a slow model.
+      maxRounds: requestedPlatform ? 1 : undefined,
       recordReceipt,
       make: async (_round, improvements, champion) => {
         const content = await runMarketingAgentModel({
@@ -222,7 +236,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         current_owner: "Visual & Video Agent",
         next_owner: "Crina",
         assigned_agent: "Content Creator Agent",
-        scheduled_at: scheduledAt,
+        scheduled_at: itemScheduledAt,
         loop_iteration: contentLoop.rounds,
         crina_review_notes: reviewChip
       })
@@ -293,14 +307,31 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       assetFallback = image.status !== "generated" || usingGeneric || visualLoop.fallbackUsed;
     } else if (plan.assetKind === "carousel") {
       const slides = draft.slides ?? [];
-      const count = Math.min(Math.max(slides.length, 3), Math.max(plan.carouselCount, 3));
+      const count = Math.min(Math.max(slides.length, plan.carouselCount, 3), 7);
       for (let i = 0; i < count; i += 1) {
         const slide = slides[i];
-        const prompt = `Instagram carousel slide ${i + 1} of ${count} for ${brand?.name ?? "the brand"}. ${slide?.headline || draft.hook || draft.title}. Clean, on-brand, high detail, no text in the image.`;
-        const img = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: i + 1, kind: "carousel_slide" });
+        const prompt = [
+          `Instagram carousel slide ${i + 1} of ${count} for ${brand?.name ?? "the brand"}.`,
+          `Slide headline: ${slide?.headline || draft.hook || draft.title}.`,
+          slide?.text ? `Slide message: ${slide.text}.` : null,
+          `Campaign caption context: ${draft.body}.`,
+          "Premium photorealistic infrastructure visual, clean composition, on-brand, high detail, no readable text in the image."
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const img = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: i + 1, kind: "carousel_slide", aspect: "square" });
+        const composedUrl = await composeCarouselSlide({
+          backgroundUrl: img.url,
+          contentItemId: item.id as string,
+          position: i + 1,
+          total: count,
+          brandName: brand?.name,
+          headline: slide?.headline || draft.hook || draft.title,
+          text: slide?.text
+        });
         if (img.status !== "generated") assetFallback = true;
         imageProvider = img.provider;
-        assets.push({ kind: "carousel_slide", url: img.url, prompt, position: i + 1, status: img.status, provider: img.provider });
+        assets.push({ kind: "carousel_slide", url: composedUrl ?? img.url, prompt, position: i + 1, status: img.status, provider: img.provider });
       }
       visualUrl = assets[0]?.url ?? null;
       visualStatus = (assets[0]?.status as typeof visualStatus) ?? "not_requested";
@@ -324,17 +355,20 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       caption: draft.body,
       hashtags: draft.hashtags,
       alt_text: `Visual for ${draft.title}`,
-      scheduled_at: scheduledAt,
+      scheduled_at: itemScheduledAt,
       crina_score: contentLoop.championScore,
       crina_loops: contentLoop.rounds,
       visual_score: visualScore,
       image_provider: imageProvider,
       fallback_used: anyFallback,
       assets,
+      slides: draft.slides,
       script: draft.script,
       storyboard: draft.storyboard,
       video_status: plan.assetKind === "video" ? ("coming_soon" as const) : undefined
     };
+
+    await saveContentAssets(item.id as string, assets);
 
     await supabase
       .from("content_items")
@@ -365,10 +399,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     });
 
     created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: contentLoop.stopReason, fallback: anyFallback });
+   } catch (error) {
+     console.error(`[campaigns/run] platform ${platform} failed:`, error);
+     // Add-platform mode: surface the real reason instead of a silent 500.
+     if (requestedPlatform) return NextResponse.json({ error: error instanceof Error ? error.message : "Generation failed." }, { status: 500 });
+     // Full run: one platform failing must not kill the others.
+     created.push({ platform, title: `${platform} (error)`, loops: 0, score: 0, stop: "error", fallback: true });
+   }
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || new URL(request.url).origin;
-  const notifications = await sendCrinaReadyToPostPings({ campaignIds: [id], baseUrl });
+  let notifications: Awaited<ReturnType<typeof sendCrinaReadyToPostPings>> | null = null;
+  try {
+    notifications = await sendCrinaReadyToPostPings({ campaignIds: [id], baseUrl });
+  } catch (error) {
+    console.error("[campaigns/run] Crina pings failed (non-fatal):", error);
+  }
 
   // Close the loop: refresh conversion estimates + insights for the next run (best-effort).
   try {

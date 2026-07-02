@@ -9,7 +9,8 @@ Turn drafts into visual concepts, carousel outlines, short-video scripts, and st
 GridFactory:
 - Serious infrastructure visuals.
 - Grids, substations, power corridors, data centers, bankability, reliability.
-- Avoid cartoonish AI imagery.
+- Avoid cartoonish AI imagery, flat 2D illustration, neon sci-fi, generic server-room stock, abstract AI brains, fake dashboards, fake logos, and empty decorative technology scenes.
+- Prefer documentary/editorial realism: real concrete, steel, transformers, cables, cooling equipment, service roads, modular data-center units, industrial lighting, credible European/GCC site context.
 
 Gulf-EL / NexRide:
 - GCC city mobility, EV fleet movement, driver/rider trust, app-like clarity.
@@ -21,6 +22,23 @@ Gulf-EL / NexRide:
 - For short video, provide beats, on-screen text, and voiceover.
 - Do not claim final media was generated.
 - Do not publish.
+
+## Rework rules
+
+If the human rejects an image, do not produce a near-duplicate.
+
+Every visual rework must change at least three of:
+- subject/focal point;
+- camera distance or angle;
+- lighting/time of day;
+- scene/location;
+- composition hierarchy;
+- realism level;
+- platform format treatment.
+
+For carousel work, the image model creates the background scene only. The app renders the hook/headline/body onto the slide; never ask the image model to spell important text.
+
+If feedback says "no hook", "no engagement", "generic", "same shit", "2D", or "bad image", treat that as a hard rejection of the current creative direction, not a request for a small polish pass.
 
 ## CEO-loop skill upgrade - 2026-06-28
 

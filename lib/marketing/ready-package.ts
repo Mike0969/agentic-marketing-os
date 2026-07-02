@@ -13,6 +13,7 @@ export type ReadyPackageOutput = {
   alt_text?: string;
   suggested_post_time?: string;
   asset_checklist?: string[];
+  slides?: { headline: string; text: string }[];
   script?: string;
   storyboard?: string[];
 };
@@ -70,6 +71,15 @@ export function normalizeReadyPackage(value: unknown, item: ContentItem, fallbac
     alt_text: typeof raw.alt_text === "string" ? raw.alt_text : `Visual support for ${item.title}`,
     suggested_post_time: typeof raw.suggested_post_time === "string" ? raw.suggested_post_time : "Manual review required before posting.",
     asset_checklist: Array.isArray(raw.asset_checklist) ? raw.asset_checklist.map(String).slice(0, 8) : ["Verify claims", "Check image crop", "Confirm CTA"],
+    slides: Array.isArray(raw.slides)
+      ? raw.slides
+          .map((slide) => {
+            const s = (slide ?? {}) as Record<string, unknown>;
+            return { headline: typeof s.headline === "string" ? s.headline : "", text: typeof s.text === "string" ? s.text : "" };
+          })
+          .filter((slide) => slide.headline || slide.text)
+          .slice(0, 7)
+      : undefined,
     script: typeof raw.script === "string" ? raw.script : isVideo ? item.body : undefined,
     storyboard: Array.isArray(raw.storyboard) ? raw.storyboard.map(String).slice(0, 8) : isVideo ? ["Hook", "Proof point", "CTA"] : undefined,
     video_status: isVideo ? "coming_soon" : undefined,

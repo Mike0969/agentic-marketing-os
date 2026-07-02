@@ -120,7 +120,7 @@ export async function publishApprovedPackage(contentItemId: string) {
               : await publishTikTokPost(accessToken, authorUrn, message, imageUrl);
     await supabase
       .from("content_items")
-      .update({ status: "published", published_at: new Date().toISOString(), ready_package: { ...pkg, posted_url: res.url, posted_platform: platform } })
+      .update({ status: "published", published_at: new Date().toISOString(), ready_package: { ...pkg, posted_url: res.url, posted_platform: platform, posting_error: null } })
       .eq("id", contentItemId);
     await recordAgentRun({
       agentName: "Publishing Agent",
@@ -137,6 +137,10 @@ export async function publishApprovedPackage(contentItemId: string) {
     return { ok: true as const, url: res.url };
   } catch (e) {
     const error = e instanceof Error ? e.message : `${platform} post failed.`;
+    await supabase
+      .from("content_items")
+      .update({ ready_package: { ...pkg, posting_error: error } })
+      .eq("id", contentItemId);
     await recordAgentRun({
       agentName: "Publishing Agent",
       agentId: "agent-publishing",

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Clock, Loader2, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CalendarClock, ChevronLeft, ChevronRight, Clock, Loader2, Send, Trash2, X } from "lucide-react";
 import { OSBadge, OSButton, OSPanel } from "@/components/os/ui";
 import type { Brand, ContentItem } from "@/lib/types";
 
@@ -34,6 +34,31 @@ function timeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
+function hasLiveSocialConnector(platform: string) {
+  const value = platform.toLowerCase();
+  return value.includes("linkedin") || value === "x" || value.includes("twitter") || value.includes("facebook") || value.includes("instagram") || value.includes("tiktok");
+}
+
+function readyPackageHasError(item: ContentItem) {
+  const assets = item.ready_package?.assets ?? [];
+  return Boolean(item.ready_package?.posting_error || item.visual_asset_status === "error" || item.visual_asset_error || assets.some((asset) => asset.status === "error" || asset.error));
+}
+
+function itemErrorText(item: ContentItem) {
+  const assetError = item.ready_package?.assets?.find((asset) => asset.error)?.error;
+  return item.ready_package?.posting_error || item.visual_asset_error || assetError || "Error";
+}
+
+function scheduleTileClasses(item: ContentItem, transientFailed: boolean) {
+  if (transientFailed || readyPackageHasError(item)) {
+    return "border-rose-400/80 bg-rose-950/60 text-rose-50 shadow-[0_0_0_1px_rgba(251,113,133,0.45),0_0_18px_rgba(244,63,94,0.25)] animate-pulse";
+  }
+  if (item.status === "published") {
+    return "relative overflow-hidden border-emerald-300/50 bg-emerald-500/10 text-emerald-50 shadow-[0_0_0_1px_rgba(110,231,183,0.18)]";
+  }
+  return platformClasses(item.platform);
+}
+
 // Format a Date for an <input type="datetime-local"> value (local time, no seconds).
 function toLocalInput(d: Date) {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -47,11 +72,19 @@ export function ScheduleCalendar({ items, brands }: { items: ContentItem[]; bran
   const [selected, setSelected] = useState<ContentItem | null>(null);
   const [when, setWhen] = useState("");
   const [busy, setBusy] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [autofilling, setAutofilling] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [failedIds, setFailedIds] = useState<Record<string, string>>({});
+  const publishingRef = useRef(false);
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i)), [weekStart]);
   const scheduled = useMemo(() => list.filter((i) => i.scheduled_at && !i.archived_at), [list]);
   const unscheduled = useMemo(() => list.filter((i) => !i.scheduled_at && !i.archived_at), [list]);
+  const dueSocialCount = useMemo(
+    () => scheduled.filter((item) => item.status === "scheduled" && item.scheduled_at && Date.parse(item.scheduled_at) <= Date.now() && hasLiveSocialConnector(item.platform)).length,
+    [scheduled]
+  );
 
   function openItem(item: ContentItem) {
     setSelected(item);
@@ -80,6 +113,70 @@ export function ScheduleCalendar({ items, brands }: { items: ContentItem[]; bran
     }
   }
 
+  const runDueNow = useCallback(
+    async (silent = false) => {
+      if (publishingRef.current) return;
+      publishingRef.current = true;
+      setPublishing(true);
+      if (!silent) setMessage(null);
+      try {
+        const res = await fetch("/api/marketing/schedule/run-due", { method: "POST" });
+        const payload = (await res.json().catch(() => ({}))) as {
+          posted?: number;
+          attempted?: number;
+          skipped?: string;
+          results?: Array<{ id: string; ok: boolean; error?: string }>;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(payload.error ?? "Could not run due posts.");
+        const nextFailures = Object.fromEntries((payload.results ?? []).filter((result) => !result.ok).map((result) => [result.id, result.error ?? "Publishing error."]));
+        if (Object.keys(nextFailures).length) setFailedIds((cur) => ({ ...cur, ...nextFailures }));
+        if ((payload.posted ?? 0) > 0) {
+          window.location.reload();
+          return;
+        }
+        const failed = payload.results?.find((result) => !result.ok);
+        if (failed) {
+          setMessage(`Due post attempted but failed: ${failed.error ?? "Unknown publishing error."}`);
+        } else if (!silent) {
+          setMessage(payload.skipped ? `Publishing skipped: ${payload.skipped}.` : `Checked due posts: ${payload.attempted ?? 0} attempted, ${payload.posted ?? 0} posted.`);
+        }
+      } catch (e) {
+        setMessage(e instanceof Error ? e.message : "Could not run due posts.");
+      } finally {
+        publishingRef.current = false;
+        setPublishing(false);
+      }
+    },
+    []
+  );
+
+  async function autofillTimes() {
+    setAutofilling(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/marketing/schedule/autofill", { method: "POST" });
+      const payload = (await res.json().catch(() => ({}))) as { updated?: number; error?: string };
+      if (!res.ok) throw new Error(payload.error ?? "Could not auto-fill times.");
+      setMessage(`Auto-filled ${payload.updated ?? 0} missing schedule time${payload.updated === 1 ? "" : "s"}.`);
+      window.location.reload();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : "Could not auto-fill times.");
+    } finally {
+      setAutofilling(false);
+    }
+  }
+
+  useEffect(() => {
+    const hasDueSocial = () => list.some((item) => item.status === "scheduled" && item.scheduled_at && Date.parse(item.scheduled_at) <= Date.now() && hasLiveSocialConnector(item.platform));
+    const tick = () => {
+      if (hasDueSocial()) void runDueNow(true);
+    };
+    tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(id);
+  }, [list, runDueNow]);
+
   const rangeLabel = `${days[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${days[6].toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
   const today = new Date();
 
@@ -92,21 +189,35 @@ export function ScheduleCalendar({ items, brands }: { items: ContentItem[]; bran
           <OSButton variant="secondary" onClick={() => setWeekStart((w) => new Date(w.getFullYear(), w.getMonth(), w.getDate() + 7))}><ChevronRight className="h-4 w-4" /></OSButton>
           <span className="ml-1 text-sm font-medium text-neutral-300">{rangeLabel}</span>
         </div>
-        <span className="text-xs text-neutral-500">Posting runs from this schedule. Click a post to reschedule or remove.</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-neutral-500">Posting runs from this schedule. Click a post to reschedule or remove.</span>
+          <OSButton variant="secondary" onClick={() => runDueNow(false)} disabled={publishing}>
+            {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Run due now{dueSocialCount ? ` (${dueSocialCount})` : ""}
+          </OSButton>
+        </div>
       </div>
 
       {unscheduled.length ? (
         <OSPanel className="border-amber-500/20 bg-amber-500/5">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-amber-300">Approved, not scheduled — click to set a time ({unscheduled.length})</div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-300">Approved, not scheduled — click to set a time ({unscheduled.length})</div>
+            <OSButton variant="secondary" onClick={autofillTimes} disabled={autofilling}>
+              {autofilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />}
+              Auto-fill times
+            </OSButton>
+          </div>
           <div className="flex flex-wrap gap-2">
             {unscheduled.map((item) => (
-              <button key={item.id} type="button" onClick={() => openItem(item)} className={`rounded-md border px-2.5 py-1 text-xs ${platformClasses(item.platform)}`}>
+              <button key={item.id} type="button" onClick={() => openItem(item)} className={`rounded-md border px-2.5 py-1 text-xs ${scheduleTileClasses(item, Boolean(failedIds[item.id]))}`}>
                 {item.platform} · {item.title.slice(0, 32)}
+                {readyPackageHasError(item) || failedIds[item.id] ? <span className="ml-1 font-semibold uppercase">Error</span> : null}
               </button>
             ))}
           </div>
         </OSPanel>
       ) : null}
+      {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-7">
         {days.map((day) => {
@@ -121,12 +232,30 @@ export function ScheduleCalendar({ items, brands }: { items: ContentItem[]; bran
                 <span className={`text-xs ${isToday ? "text-cyan-300" : "text-neutral-500"}`}>{day.getDate()}</span>
               </div>
               <div className="space-y-1.5">
-                {dayItems.map((item) => (
-                  <button key={item.id} type="button" onClick={() => openItem(item)} className={`w-full rounded-md border px-2 py-1.5 text-left text-xs ${platformClasses(item.platform)}`}>
-                    <div className="flex items-center gap-1 font-medium"><Clock className="h-3 w-3" />{timeLabel(item.scheduled_at as string)}</div>
-                    <div className="mt-0.5 line-clamp-2 opacity-90">{item.title}</div>
-                  </button>
-                ))}
+                {dayItems.map((item) => {
+                  const isPosted = item.status === "published";
+                  const isError = readyPackageHasError(item) || Boolean(failedIds[item.id]);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => openItem(item)}
+                      className={`relative w-full rounded-md border px-2 py-1.5 text-left text-xs transition ${scheduleTileClasses(item, Boolean(failedIds[item.id]))}`}
+                      title={isError ? itemErrorText(item) || failedIds[item.id] : isPosted ? "Posted" : undefined}
+                    >
+                      <div className={`flex items-center justify-between gap-1 font-medium ${isPosted && !isError ? "blur-[0.6px]" : ""}`}>
+                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{timeLabel(item.scheduled_at as string)}</span>
+                        {isError ? <span className="rounded-sm bg-rose-400 px-1.5 py-0.5 text-[10px] font-black uppercase text-rose-950">Error</span> : null}
+                      </div>
+                      <div className={`mt-0.5 line-clamp-2 opacity-90 ${isPosted && !isError ? "blur-[0.6px]" : ""}`}>{item.title}</div>
+                      {isPosted && !isError ? (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-emerald-950/35 backdrop-blur-[1.5px]">
+                          <span className="rounded-sm border border-emerald-200/50 bg-emerald-400/95 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-950 shadow-sm">Posted</span>
+                        </div>
+                      ) : null}
+                    </button>
+                  );
+                })}
                 {!dayItems.length ? <div className="rounded border border-dashed border-neutral-800 px-2 py-3 text-center text-[11px] text-neutral-600">—</div> : null}
               </div>
             </OSPanel>

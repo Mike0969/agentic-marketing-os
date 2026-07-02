@@ -15,6 +15,7 @@ export function validatePackage(item: ContentItem): ValidationResult {
   const spec = PLATFORM_SPECS[key];
   const pkg = (item.ready_package ?? {}) as ReadyPackage;
   const issues: ValidationIssue[] = [];
+  const contentType = (item.content_type || "").toLowerCase();
 
   const text = (pkg.text || item.body || "").trim();
   const cta = (item.CTA || "").trim();
@@ -33,8 +34,9 @@ export function validatePackage(item: ContentItem): ValidationResult {
   const hasVideo = pkg.video_status === "draft_asset" || assets.some((a) => a.kind === "video_placeholder" && a.url && a.status === "generated");
 
   if (spec.requiresImage && !hasImage) issues.push({ severity: "blocker", message: `${spec.label} requires an image.` });
+  if (key === "instagram" && contentType.includes("image") && !hasImage) issues.push({ severity: "blocker", message: "Instagram image test requires an image." });
 
-  if (spec.carousel?.required) {
+  if (spec.carousel?.required && contentType.includes("carousel")) {
     if (slideCount < spec.carousel.minSlides) {
       issues.push({ severity: "blocker", message: `Carousel needs ${spec.carousel.minSlides}-${spec.carousel.maxSlides} slides (has ${slideCount}).` });
     } else if (slideCount > spec.carousel.maxSlides) {

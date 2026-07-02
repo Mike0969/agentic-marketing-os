@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Copy, Download, Loader2, Plus, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
 import { REJECT_REASONS } from "@/lib/marketing/reject-reasons";
@@ -17,13 +17,16 @@ type Props = {
 };
 
 // Platforms an operator can add as a native variant (one campaign idea -> one native package each).
-const ADDABLE_PLATFORMS: { key: string; label: string }[] = [
-  { key: "linkedin", label: "LinkedIn" },
-  { key: "x", label: "X" },
-  { key: "instagram", label: "Instagram" },
-  { key: "tiktok", label: "TikTok" },
-  { key: "facebook", label: "Facebook" }
+const ADDABLE_PLATFORMS: { key: string; label: string; platform: string }[] = [
+  { key: "linkedin", label: "LinkedIn", platform: "LinkedIn" },
+  { key: "x", label: "X", platform: "X" },
+  { key: "instagram", label: "Instagram carousel", platform: "Instagram" },
+  { key: "instagram_image", label: "IG image test", platform: "Instagram image test" },
+  { key: "tiktok", label: "TikTok", platform: "TikTok" },
+  { key: "facebook", label: "Facebook", platform: "Facebook" },
+  { key: "blog", label: "Blog", platform: "Blog" }
 ];
+type PlatformOption = (typeof ADDABLE_PLATFORMS)[number];
 
 function fallbackMarked(item: ContentItem) {
   return item.performance_summary?.toUpperCase().includes("FALLBACK") || item.ready_package?.fallback_used;
@@ -58,6 +61,49 @@ function desiredAssetCount(item: ContentItem) {
   return 1;
 }
 
+function formatPackageText(pkg: ReadyPackage) {
+  const parts = [pkg.title, pkg.text || pkg.caption];
+  if (pkg.slides?.length) {
+    parts.push(
+      pkg.slides
+        .map((slide, index) => [`Slide ${index + 1}`, slide.headline, slide.text].filter(Boolean).join("\n"))
+        .join("\n\n")
+    );
+  }
+  parts.push(pkg.body, pkg.hashtags?.join(" "));
+  return parts.filter(Boolean).join("\n\n");
+}
+
+function toDateTimeLocal(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
+function defaultDateTimeLocal(index: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + 1 + Math.floor(index / 3));
+  const slot = index % 3;
+  date.setHours(slot === 0 ? 9 : slot === 1 ? 14 : 19, 0, 0, 0);
+  return toDateTimeLocal(date.toISOString());
+}
+
+function formatSchedule(value: string | null | undefined) {
+  if (!value) return "No time set yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid time";
+  return date.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function platformOptionMatches(item: ContentItem, option: PlatformOption) {
+  const raw = `${item.platform} ${item.content_type}`.toLowerCase();
+  if (option.key === "instagram_image") return raw.includes("instagram") && raw.includes("image");
+  if (option.key === "instagram") return resolvePlatform(item.platform) === "instagram" && !raw.includes("image");
+  return resolvePlatform(item.platform) === option.key;
+}
+
 export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, connectedByBrand }: Props) {
   const [items, setItems] = useState(contentItems);
   const [assetItems, setAssetItems] = useState(assets);
@@ -71,6 +117,10 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
   const [tags, setTags] = useState<Record<string, string[]>>({});
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedBrandId, setSelectedBrandId] = useState(() => contentItems[0]?.brand_id ?? brands[0]?.id ?? "all");
+  const [scheduleTimes, setScheduleTimes] = useState<Record<string, string>>(() =>
+    Object.fromEntries(contentItems.map((item, index) => [item.id, toDateTimeLocal(item.scheduled_at) || defaultDateTimeLocal(index)]))
+  );
   const brandMap = useMemo(() => new Map(brands.map((brand) => [brand.id, brand])), [brands]);
   const campaignMap = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
   const assetsByItem = useMemo(() => {
@@ -81,12 +131,37 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
     return grouped;
   }, [assetItems]);
 
+  const brandCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) counts.set(item.brand_id, (counts.get(item.brand_id) ?? 0) + 1);
+    return counts;
+  }, [items]);
+
+  const visibleItems = useMemo(
+    () => (selectedBrandId === "all" ? items : items.filter((item) => item.brand_id === selectedBrandId)),
+    [items, selectedBrandId]
+  );
+
   const grouped = useMemo(() => {
     const map = new Map<string, ContentItem[]>();
-    for (const item of items) {
+    for (const item of visibleItems) {
       map.set(item.campaign_id, [...(map.get(item.campaign_id) ?? []), item]);
     }
     return [...map.entries()];
+  }, [visibleItems]);
+
+  useEffect(() => {
+    setScheduleTimes((current) => {
+      let changed = false;
+      const next = { ...current };
+      items.forEach((item, index) => {
+        if (!next[item.id]) {
+          next[item.id] = toDateTimeLocal(item.scheduled_at) || defaultDateTimeLocal(index);
+          changed = true;
+        }
+      });
+      return changed ? next : current;
+    });
   }, [items]);
 
   async function decide(item: ContentItem, decision: "approved" | "rejected" | "changes_requested") {
@@ -106,16 +181,17 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
         const response = await fetch(`/api/marketing/approvals/${item.id}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina" })
+          body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina", scheduled_at: scheduleTimes[item.id] || null })
         });
         const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
         if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Decision failed.");
-        setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+        setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.contentItem! : candidate)));
+        setScheduleTimes((current) => ({ ...current, [item.id]: toDateTimeLocal(payload.contentItem!.scheduled_at) || current[item.id] || "" }));
         setRejectId(null);
         const when = payload.contentItem.scheduled_at ? new Date(payload.contentItem.scheduled_at).toLocaleString() : null;
         setMessage(when ? `Approved — Crina scheduled it for ${when}.` : "Approved — added to the schedule.");
-      } else {
-        // Reject / request changes → Crina reroutes to Visual or Content and regenerates a better version.
+      } else if (decision === "changes_requested") {
+        // Request changes → Crina reroutes to Visual or Content and regenerates a better version.
         setReworkingIds((current) => ({ ...current, [item.id]: true }));
         setRejectId(null);
         setMessage(`Crina is reworking "${item.title}" based on your remark — regenerating (~20-40s)...`);
@@ -128,6 +204,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
           const payload = (await response.json()) as { contentItem?: ContentItem; routedTo?: string[]; error?: string };
           if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Rework failed.");
           setItems((current) => current.map((candidate) => (candidate.id === item.id ? payload.contentItem! : candidate)));
+          setScheduleTimes((current) => ({ ...current, [item.id]: toDateTimeLocal(payload.contentItem!.scheduled_at) || current[item.id] || "" }));
           setReworkedIds((current) => ({ ...current, [item.id]: true }));
           setReasons((current) => ({ ...current, [item.id]: "" }));
           setTags((current) => ({ ...current, [item.id]: [] }));
@@ -135,6 +212,18 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
         } finally {
           setReworkingIds((current) => ({ ...current, [item.id]: false }));
         }
+      } else {
+        // Reject completely → this is not the right idea/target/platform variant, so archive it.
+        const response = await fetch(`/api/marketing/approvals/${item.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision, feedback, gate: "gate_2", requested_by_agent: "Crina", archive: true })
+        });
+        const payload = (await response.json()) as { contentItem?: ContentItem; error?: string };
+        if (!response.ok || !payload.contentItem) throw new Error(payload.error ?? "Reject failed.");
+        setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+        setRejectId(null);
+        setMessage(`Rejected and removed "${item.title}" from Ready to Post.`);
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Decision failed.");
@@ -144,18 +233,18 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
   }
 
   // Add a native variant for one more platform (generates the platform-native package, not a cross-post).
-  async function addPlatform(campaignId: string, platform: string) {
-    setAddingFor(`${campaignId}:${platform}`);
-    setMessage(`Generating a native ${platform} package (~20-40s)…`);
+  async function addPlatform(campaignId: string, option: PlatformOption) {
+    setAddingFor(`${campaignId}:${option.key}`);
+    setMessage(`Generating a native ${option.label} package (~20-40s)…`);
     try {
       const response = await fetch(`/api/marketing/campaigns/${campaignId}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform })
+        body: JSON.stringify({ platform: option.platform })
       });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not add platform.");
-      setMessage(`${platform} package created — refreshing…`);
+      setMessage(`${option.label} package created — refreshing…`);
       window.location.reload();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not add platform.");
@@ -186,7 +275,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
 
   async function copyPackage(item: ContentItem) {
     const pkg = packageFor(item);
-    await navigator.clipboard.writeText([pkg.title, pkg.text, pkg.caption, pkg.body, pkg.hashtags?.join(" ")].filter(Boolean).join("\n\n"));
+    await navigator.clipboard.writeText(formatPackageText(pkg));
     setMessage("Package text copied.");
   }
 
@@ -230,6 +319,36 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
   return (
     <div className="space-y-5">
       {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
+      <OSPanel className="p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs uppercase tracking-wider text-neutral-500">Project folder</span>
+          {brands.map((brand) => {
+            const active = selectedBrandId === brand.id;
+            const count = brandCounts.get(brand.id) ?? 0;
+            return (
+              <button
+                key={brand.id}
+                type="button"
+                onClick={() => setSelectedBrandId(brand.id)}
+                className={`rounded-md border px-3 py-1.5 text-sm transition ${
+                  active ? "border-cyan-400 bg-cyan-400/10 text-cyan-100" : "border-neutral-800 bg-neutral-950 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                }`}
+              >
+                {brand.name} <span className="ml-1 text-xs text-neutral-500">{count}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setSelectedBrandId("all")}
+            className={`rounded-md border px-3 py-1.5 text-sm transition ${
+              selectedBrandId === "all" ? "border-cyan-400 bg-cyan-400/10 text-cyan-100" : "border-neutral-800 bg-neutral-950 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+            }`}
+          >
+            All <span className="ml-1 text-xs text-neutral-500">{items.length}</span>
+          </button>
+        </div>
+      </OSPanel>
       {grouped.map(([campaignId, campaignItems]) => {
         const campaign = campaignMap.get(campaignId);
         const brand = campaign ? brandMap.get(campaign.brand_id) : null;
@@ -239,31 +358,11 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
               <div>
                 <div className="text-xs uppercase tracking-wider text-neutral-500">{brand?.name ?? "Unknown brand"}</div>
                 <h2 className="mt-1 text-lg font-semibold text-neutral-50">{campaign?.title ?? "Campaign package"}</h2>
-                <p className="mt-1 max-w-3xl text-sm leading-6 text-neutral-400">Preview, approve, request changes, reject, copy, or export. No live posting occurs.</p>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-neutral-400">Review native platform packages, edit the scheduled time, approve only the platforms you want, request changes, or reject completely.</p>
               </div>
               <OSBadge tone="warn">{campaignItems.filter((item) => item.approval_status === "pending").length} need decision</OSBadge>
             </div>
-            {(() => {
-              const present = new Set(campaignItems.map((i) => resolvePlatform(i.platform)));
-              const missing = ADDABLE_PLATFORMS.filter((p) => !present.has(p.key as ReturnType<typeof resolvePlatform>));
-              if (!missing.length) return null;
-              return (
-                <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900/40 p-2">
-                  <span className="text-xs uppercase tracking-wider text-neutral-500">Add platform</span>
-                  {missing.map((p) => (
-                    <button
-                      key={p.key}
-                      type="button"
-                      disabled={Boolean(addingFor)}
-                      onClick={() => addPlatform(campaignId, p.label)}
-                      className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-200 transition hover:border-cyan-500 hover:text-cyan-200 disabled:opacity-50"
-                    >
-                      {addingFor === `${campaignId}:${p.label}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} {p.label}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
+            <PlatformSelector campaignId={campaignId} campaignItems={campaignItems} addingFor={addingFor} busyId={busyId} onAdd={addPlatform} onRemove={removePlatform} />
             <div className="grid gap-4 xl:grid-cols-2">
               {campaignItems.map((item) => (
                 <ReadyCard
@@ -272,6 +371,8 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
                   connected={(connectedByBrand[item.brand_id] ?? []).includes(resolvePlatform(item.platform) ?? "__none__")}
                   assets={assetsByItem.get(item.id) ?? []}
                   generatingAssets={generatingAssetIds[item.id] ?? false}
+                  scheduleValue={scheduleTimes[item.id] ?? ""}
+                  onScheduleChange={(value) => setScheduleTimes((current) => ({ ...current, [item.id]: value }))}
                   busy={busyId === item.id}
                   reworking={reworkingIds[item.id] ?? false}
                   reworked={reworkedIds[item.id] ?? false}
@@ -294,6 +395,17 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
                   onCopy={() => copyPackage(item)}
                   onDownload={() => downloadPackage(item)}
                   onRemove={() => removePlatform(item)}
+                  platformControls={
+                    <PlatformSelector
+                      campaignId={campaignId}
+                      campaignItems={campaignItems}
+                      addingFor={addingFor}
+                      busyId={busyId}
+                      onAdd={addPlatform}
+                      onRemove={removePlatform}
+                      compact
+                    />
+                  }
                 />
               ))}
             </div>
@@ -302,8 +414,68 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
       })}
       {!grouped.length ? (
         <OSPanel>
-          <p className="text-sm text-neutral-500">No ready-to-post packages yet. Approve a campaign objective, then let Crina run the internal loop to final review.</p>
+          <p className="text-sm text-neutral-500">No ready-to-post packages in this project folder. Choose another project or approve a campaign objective so Crina can create packages.</p>
         </OSPanel>
+      ) : null}
+    </div>
+  );
+}
+
+function PlatformSelector({
+  campaignId,
+  campaignItems,
+  addingFor,
+  busyId,
+  onAdd,
+  onRemove,
+  compact = false
+}: {
+  campaignId: string;
+  campaignItems: ContentItem[];
+  addingFor: string | null;
+  busyId: string | null;
+  onAdd: (campaignId: string, option: PlatformOption) => void;
+  onRemove: (item: ContentItem) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`${compact ? "mb-3" : "mb-4"} rounded-md border border-neutral-800 bg-neutral-900/40 p-2`}>
+      <div className="mb-2 text-xs uppercase tracking-wider text-neutral-500">{compact ? "Make this idea for more platforms" : "Select platforms for this idea"}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        {ADDABLE_PLATFORMS.map((p) => {
+          const existing = campaignItems.find((item) => platformOptionMatches(item, p));
+          const generating = addingFor === `${campaignId}:${p.key}`;
+          return existing ? (
+            <button
+              key={p.key}
+              type="button"
+              disabled={busyId === existing.id}
+              onClick={() => onRemove(existing)}
+              title={`Deselect ${p.label}`}
+              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300 transition hover:border-rose-500/50 hover:bg-rose-500/10 hover:text-rose-200 disabled:opacity-50"
+            >
+              {busyId === existing.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />} {p.label}
+              <XCircle className="h-3 w-3 opacity-70" />
+            </button>
+          ) : (
+            <button
+              key={p.key}
+              type="button"
+              disabled={Boolean(addingFor)}
+              onClick={() => onAdd(campaignId, p)}
+              className="inline-flex items-center gap-1 rounded-md border border-neutral-700 px-2.5 py-1 text-xs text-neutral-200 transition hover:border-cyan-500 hover:text-cyan-200 disabled:opacity-50"
+            >
+              {generating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />} {p.label}
+            </button>
+          );
+        })}
+      </div>
+      {addingFor?.startsWith(`${campaignId}:`) ? (
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-cyan-300">
+          <Loader2 className="h-3 w-3 animate-spin" /> Crina is writing the {ADDABLE_PLATFORMS.find((p) => p.key === addingFor.split(":")[1])?.label ?? "platform"} package — this can take ~1–2 min on the local model. The page refreshes automatically when it&apos;s ready.
+        </div>
+      ) : !compact ? (
+        <p className="mt-2 text-xs text-neutral-500">Generate every platform you want, then approve only those cards. Reject or remove variants that are wrong for the idea.</p>
       ) : null}
     </div>
   );
@@ -314,6 +486,8 @@ function ReadyCard({
   connected,
   assets,
   generatingAssets,
+  scheduleValue,
+  onScheduleChange,
   busy,
   reworking,
   reworked,
@@ -328,12 +502,15 @@ function ReadyCard({
   onOpenReject,
   onCopy,
   onDownload,
-  onRemove
+  onRemove,
+  platformControls
 }: {
   item: ContentItem;
   connected: boolean;
   assets: ContentAsset[];
   generatingAssets: boolean;
+  scheduleValue: string;
+  onScheduleChange: (value: string) => void;
   busy: boolean;
   reworking: boolean;
   reworked: boolean;
@@ -349,17 +526,36 @@ function ReadyCard({
   onCopy: () => void;
   onDownload: () => void;
   onRemove: () => void;
+  platformControls: ReactNode;
 }) {
   const pkg = packageFor(item);
-  const pending = item.approval_status === "pending" || item.workflow_stage === "human_final_approval";
+  const pending = item.approval_status === "pending" || item.workflow_stage === "human_final_approval" || item.status === "approval";
+  const approvedOrScheduled =
+    item.approval_status === "approved" ||
+    item.status === "scheduled" ||
+    item.workflow_stage === "publishing_prep" ||
+    item.workflow_stage === "scheduled";
+  const actionable = pending || approvedOrScheduled;
   const isVideo = `${item.platform} ${item.content_type}`.toLowerCase().includes("video");
-  const imageAssets = assets.filter((asset) => asset.url);
+  const packageAssets = (pkg.assets ?? []).map((asset, index) => ({
+    id: `${item.id}:package:${asset.position ?? index + 1}`,
+    content_item_id: item.id,
+    kind: asset.kind,
+    url: asset.url ?? null,
+    prompt: asset.prompt ?? null,
+    position: asset.position ?? index + 1,
+    model: asset.model ?? null,
+    provider: asset.provider ?? null,
+    status: asset.status ?? "placeholder",
+    error: asset.error ?? null
+  })) satisfies ContentAsset[];
+  const imageAssets = (assets.length ? assets : packageAssets).filter((asset) => asset.url);
   const primaryImage = imageAssets[0]?.url ?? item.visual_asset_url;
   const validation = validatePackage(item);
   const blockers = validation.issues.filter((i) => i.severity === "blocker");
   const warnings = validation.issues.filter((i) => i.severity === "warning");
   const [slide, setSlide] = useState(0);
-  const isCarousel = imageAssets.length > 1;
+  const isCarousel = imageAssets.length > 1 || Boolean(pkg.slides?.length);
   const activeSlide = isCarousel ? Math.min(slide, imageAssets.length - 1) : 0;
 
   return (
@@ -372,6 +568,8 @@ function ReadyCard({
           <OSBadge tone="info">Reworked · review again</OSBadge>
         ) : pending ? (
           <OSBadge tone="warn">Ready to review</OSBadge>
+        ) : approvedOrScheduled ? (
+          <OSBadge tone="ok">Selected for schedule</OSBadge>
         ) : (
           <OSBadge tone={item.approval_status === "approved" ? "ok" : "off"}>{item.approval_status}</OSBadge>
         )}
@@ -399,6 +597,27 @@ function ReadyCard({
           {warnings.map((issue, idx) => <OSBadge key={`w${idx}`} tone="warn">{issue.message}</OSBadge>)}
         </div>
       ) : null}
+
+      {platformControls}
+
+      <div className="mb-3 rounded-md border border-neutral-800 bg-neutral-900/60 p-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-neutral-500">Scheduled for</div>
+            <div className="mt-1 text-sm font-medium text-neutral-100">{scheduleValue ? formatSchedule(scheduleValue) : formatSchedule(item.scheduled_at)}</div>
+          </div>
+          <label className="text-xs text-neutral-500">
+            Change day/time
+            <input
+              type="datetime-local"
+              value={scheduleValue}
+              onChange={(event) => onScheduleChange(event.target.value)}
+              disabled={busy}
+              className="mt-1 block rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-sm text-neutral-100 outline-none transition focus:border-cyan-400 disabled:opacity-60"
+            />
+          </label>
+        </div>
+      </div>
 
       <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-900">
         {primaryImage ? (
@@ -433,7 +652,18 @@ function ReadyCard({
 
       <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-900/70 p-3">
         <div className="text-sm font-semibold text-neutral-50">{pkg.title ?? item.title}</div>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{pkg.text}</p>
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-300">{pkg.text || pkg.caption}</p>
+        {pkg.slides?.length ? (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {pkg.slides.map((slideItem, index) => (
+              <div key={`${index}:${slideItem.headline}`} className="rounded-md border border-neutral-800 bg-neutral-950/70 p-2">
+                <div className="text-xs uppercase tracking-wider text-neutral-500">Slide {index + 1}</div>
+                {slideItem.headline ? <div className="mt-1 text-sm font-semibold text-neutral-100">{slideItem.headline}</div> : null}
+                {slideItem.text ? <p className="mt-1 whitespace-pre-wrap text-sm leading-5 text-neutral-400">{slideItem.text}</p> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {pkg.body ? <p className="mt-3 line-clamp-6 whitespace-pre-wrap text-sm leading-6 text-neutral-400">{pkg.body}</p> : null}
         {pkg.hashtags?.length ? <div className="mt-3 text-sm text-cyan-300">{pkg.hashtags.join(" ")}</div> : null}
         {isVideo ? (
@@ -451,7 +681,7 @@ function ReadyCard({
 
       {rejecting ? (
         <div className="mt-3">
-          <p className="mb-2 text-xs uppercase tracking-wider text-neutral-500">Tap what&apos;s wrong (one tap = structured feedback Crina learns from). Free text optional.</p>
+          <p className="mb-2 text-xs uppercase tracking-wider text-neutral-500">Tell Crina what is wrong. Request changes keeps this variant and regenerates it; reject completely removes it from this campaign.</p>
           <div className="mb-2 flex flex-wrap gap-1.5">
             {REJECT_REASONS.map((r) => {
               const active = selectedTags.includes(r.label);
@@ -473,26 +703,27 @@ function ReadyCard({
           </div>
           <OSTextarea value={reason} onChange={(event) => onReason(event.target.value)} placeholder="Optional note: anything the chips don't cover..." />
           <div className="mt-2 flex flex-wrap gap-2">
+            <OSButton variant="secondary" onClick={onRequestChanges} disabled={busy || (!reason.trim() && selectedTags.length === 0)}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Request changes
+            </OSButton>
             <OSButton variant="danger" onClick={onReject} disabled={busy || (!reason.trim() && selectedTags.length === 0)}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-              Reject
-            </OSButton>
-            <OSButton variant="secondary" onClick={onRequestChanges} disabled={busy || (!reason.trim() && selectedTags.length === 0)}>
-              Request changes
+              Reject completely
             </OSButton>
           </div>
         </div>
       ) : null}
 
-      {pending && blockers.length ? (
+      {actionable && blockers.length ? (
         <p className="mt-3 text-xs text-rose-300">Not platform-ready — fix the blocker(s) above (send back to Crina) before approving.</p>
       ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
-        {pending ? (
+        {actionable ? (
           <>
             <OSButton onClick={onApprove} disabled={busy || blockers.length > 0}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Approve
+              {pending ? "Approve selected platform" : "Approve / update selected platform"}
             </OSButton>
             <OSButton variant="secondary" onClick={onOpenReject} disabled={busy}>
               Request changes / Reject

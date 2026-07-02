@@ -38,18 +38,24 @@ export function getAuthorizeUrl(state: string, verifier: string) {
 
 export type XToken = { access_token: string; expires_in?: number; refresh_token?: string; scope?: string };
 
+function confidentialAuthHeader() {
+  const id = process.env.X_CLIENT_ID;
+  const secret = process.env.X_CLIENT_SECRET;
+  if (!id || !secret) return null;
+  return `Basic ${Buffer.from(`${encodeURIComponent(id)}:${encodeURIComponent(secret)}`).toString("base64")}`;
+}
+
 export async function exchangeCode(code: string, verifier: string): Promise<XToken> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
     redirect_uri: xRedirectUri(),
-    client_id: process.env.X_CLIENT_ID ?? "",
     code_verifier: verifier
   });
   const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
-  if (process.env.X_CLIENT_SECRET) {
-    headers.Authorization = `Basic ${Buffer.from(`${process.env.X_CLIENT_ID}:${process.env.X_CLIENT_SECRET}`).toString("base64")}`;
-  }
+  const auth = confidentialAuthHeader();
+  if (auth) headers.Authorization = auth;
+  else body.set("client_id", process.env.X_CLIENT_ID ?? "");
   const res = await fetch(TOKEN_URL, { method: "POST", headers, body });
   if (!res.ok) throw new Error(`X token exchange failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   return (await res.json()) as XToken;
@@ -58,13 +64,12 @@ export async function exchangeCode(code: string, verifier: string): Promise<XTok
 export async function refreshToken(refreshToken: string): Promise<XToken> {
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    refresh_token: refreshToken,
-    client_id: process.env.X_CLIENT_ID ?? ""
+    refresh_token: refreshToken
   });
   const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded" };
-  if (process.env.X_CLIENT_SECRET) {
-    headers.Authorization = `Basic ${Buffer.from(`${process.env.X_CLIENT_ID}:${process.env.X_CLIENT_SECRET}`).toString("base64")}`;
-  }
+  const auth = confidentialAuthHeader();
+  if (auth) headers.Authorization = auth;
+  else body.set("client_id", process.env.X_CLIENT_ID ?? "");
   const res = await fetch(TOKEN_URL, { method: "POST", headers, body });
   if (!res.ok) throw new Error(`X token refresh failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   return (await res.json()) as XToken;

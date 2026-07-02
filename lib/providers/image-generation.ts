@@ -33,7 +33,7 @@ function imageModel() {
 
 function imageQuality(): ImageQuality {
   const configured = process.env.OPENAI_IMAGE_QUALITY?.trim().toLowerCase();
-  return configured === "low" || configured === "medium" || configured === "high" || configured === "auto" ? configured : "medium";
+  return configured === "low" || configured === "medium" || configured === "high" || configured === "auto" ? configured : "high";
 }
 
 const GPT_IMAGE_MODEL = imageModel();
@@ -58,8 +58,10 @@ function aspectInstruction(options: ImageGenerationOptions = {}) {
 
 function strengthenPrompt(prompt: string, options: ImageGenerationOptions = {}) {
   return [
-    "Create a premium brand-safe marketing visual.",
-    "High detail, polished commercial art direction, crisp subject, realistic lighting, strong composition, no generic stock-photo feel.",
+    "Create a premium brand-safe marketing visual for a serious commercial campaign.",
+    "Photorealistic or high-end editorial realism unless the brief explicitly asks otherwise.",
+    "High detail, polished commercial art direction, crisp subject, realistic lighting, strong composition, real materials, real scale, no generic stock-photo feel.",
+    "Avoid flat 2D illustration, cartoon AI motifs, neon sci-fi cliches, fake dashboards, fake logos, bland abstract gradients, and empty decorative scenes.",
     "No readable text, no captions, no UI screenshots, no watermarks, no fake logos, no real-person likeness unless explicitly provided.",
     aspectInstruction(options),
     "The image must support the campaign concept without relying on embedded words.",

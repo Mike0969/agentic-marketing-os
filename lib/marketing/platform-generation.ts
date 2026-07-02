@@ -31,6 +31,7 @@ export type PlatformPlan = {
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const list = (v: unknown) => (Array.isArray(v) ? v.map(String).map((x) => x.trim()).filter(Boolean) : []);
+const promptLeak = /\b(make this visual|not a 2d|use a hyper-realistic|text on image|visual direction|image prompt|carousel draft|slide\s+\d+\s*:|create a\s+\d+-slide|overlay text)\b/i;
 
 function normalizePost(json: unknown): NativeDraft | null {
   const d = (json ?? {}) as Record<string, unknown>;
@@ -49,8 +50,9 @@ function normalizeCarousel(json: unknown): NativeDraft | null {
       return { headline: str(o.headline) || str(o.title), text: str(o.text) || str(o.body) };
     })
     .filter((s) => s.headline || s.text);
-  if (!caption || slides.length < 3) return null;
-  return { title: str(d.title) || "Carousel", hook: str(d.hook) || slides[0]?.headline || "", body: caption, cta: str(d.cta) || "Learn more", hashtags: list(d.hashtags).slice(0, 10), slides: slides.slice(0, 7) };
+  const cleanSlides = slides.filter((s) => !promptLeak.test(`${s.headline}\n${s.text}`));
+  if (!caption || promptLeak.test(caption) || cleanSlides.length < 3) return null;
+  return { title: str(d.title) || "Carousel", hook: str(d.hook) || cleanSlides[0]?.headline || "", body: caption, cta: str(d.cta) || "Learn more", hashtags: list(d.hashtags).slice(0, 10), slides: cleanSlides.slice(0, 7) };
 }
 
 function normalizeVideo(json: unknown): NativeDraft | null {
@@ -61,17 +63,30 @@ function normalizeVideo(json: unknown): NativeDraft | null {
 }
 
 const postSchema = { title: "short name", hook: "scroll-stopping first line", body: "platform-tailored post text", cta: "one clear CTA", hashtags: ["#tag"] };
-const carouselSchema = { title: "short name", caption: "Instagram caption", cta: "one clear CTA", hashtags: ["#tag"], slides: [{ headline: "slide headline", text: "1-2 line slide body" }] };
+const carouselSchema = { title: "short name", hook: "short first-slide hook", caption: "final Instagram caption only, not slide instructions", cta: "one clear CTA", hashtags: ["#tag"], slides: [{ headline: "audience-facing slide headline", text: "1-2 short audience-facing slide lines" }] };
 const videoSchema = { title: "short name", hook: "first-2-seconds hook", script: "spoken ~20s voiceover script", storyboard: ["shot 1", "shot 2", "shot 3"], caption: "post caption", cta: "one clear CTA", hashtags: ["#tag"] };
 
 export function getPlatformPlan(platform: string): PlatformPlan {
   const key = resolvePlatform(platform);
+  const raw = platform.toLowerCase();
   const label = key ? PLATFORM_SPECS[key].label : platform;
+  if (key === "instagram" && raw.includes("image")) {
+    return {
+      key,
+      label: "Instagram image test",
+      contentType: "Image post",
+      assetKind: "image",
+      carouselCount: 0,
+      contentInstructions: "Write ONE Instagram image-post caption for a deliberate image+text test. Strong first line, concrete value, compact body, clear CTA, and 5-8 relevant hashtags. This is not the default IG carousel/reel path.",
+      contentSchema: postSchema,
+      normalize: normalizePost
+    };
+  }
   switch (key) {
     case "x":
       return { key, label, contentType: "Short post", assetKind: "image", carouselCount: 0, contentInstructions: "Write ONE X (Twitter) post: punchy, MAX 280 characters, a strong first line, at most 2 hashtags. NOT a LinkedIn essay — short and sharp.", contentSchema: postSchema, normalize: normalizePost };
     case "instagram":
-      return { key, label, contentType: "Carousel", assetKind: "carousel", carouselCount: 3, contentInstructions: "Design an Instagram CAROUSEL: a caption plus 3 slides. Slide 1 = a strong conversion hook cover; slide 2 = value/proof; slide 3 = the CTA. Each slide has a short headline + 1-2 lines. Return slides[] (exactly 3).", contentSchema: carouselSchema, normalize: normalizeCarousel };
+      return { key, label, contentType: "Carousel", assetKind: "carousel", carouselCount: 5, contentInstructions: "Design an Instagram CAROUSEL as final audience-facing copy: a caption plus exactly 5 slides. Slide 1 = a sharp conversion hook cover; slides 2-4 = value/proof/diligence questions; slide 5 = CTA. Each slide has a short headline + 1-2 short lines. Return slides[] only as final slide copy. Do NOT put image prompts, visual directions, 'text on image', 'make this visual', or 'Instagram carousel draft' language in caption or slides.", contentSchema: carouselSchema, normalize: normalizeCarousel };
     case "tiktok":
       return { key, label, contentType: "Short video", assetKind: "video", carouselCount: 0, contentInstructions: "Plan a TikTok short video: a hook in the first 2 seconds, a spoken ~20s script, and a 3-5 shot storyboard. Add a caption + CTA. Native, fast, punchy — no LinkedIn tone.", contentSchema: videoSchema, normalize: normalizeVideo };
     case "facebook":

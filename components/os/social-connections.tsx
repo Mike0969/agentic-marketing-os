@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 type ConnRow = { brand_id: string; platform: string; status: string };
+type OAuthStatus = Record<string, string | undefined>;
 
 const platforms = [
   { key: "linkedin", label: "LinkedIn" },
@@ -14,7 +15,32 @@ const platforms = [
   { key: "tiktok", label: "TikTok" }
 ] as const;
 
-export async function SocialConnections() {
+function messageFor(status?: string, detail?: string) {
+  if (!status) return null;
+  if (status === "connected") return { tone: "ok" as const, text: "Connected successfully." };
+  if (status === "denied") return { tone: "warn" as const, text: "Authorization was cancelled." };
+  if (status === "state_error") return { tone: "danger" as const, text: `OAuth state failed${detail ? ` (${detail})` : ""}. Start from the Settings page again and complete the flow in the same browser.` };
+  if (status === "error") {
+    const hint =
+      detail === "invalid_client"
+        ? "X rejected the client credentials. Use the OAuth 2.0 Client ID and OAuth 2.0 Client Secret for the same app."
+        : detail === "x_project"
+          ? "X accepted OAuth, but the app is not attached to an X Developer Project. Attach/create the app inside a Project, then use that app's OAuth 2.0 Client ID and Secret."
+        : detail === "invalid_grant"
+          ? "X rejected the one-time code. Start the connection again; OAuth codes expire quickly and can only be used once."
+          : detail === "redirect_uri"
+            ? "X rejected the redirect URI. It must exactly match X_REDIRECT_URI and the callback URL in the X developer portal."
+            : detail === "account_lookup"
+              ? "Token exchange worked, but X /2/users/me failed. Check that the app has users.read."
+              : detail === "db_write"
+                ? "X authorized, but saving the connection failed in Supabase."
+                : "The OAuth callback failed. Check the dev server log for the sanitized error.";
+    return { tone: "danger" as const, text: `${hint}${detail ? ` (${detail})` : ""}` };
+  }
+  return null;
+}
+
+export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OAuthStatus }) {
   const data = await getDashboardData();
   let connections: ConnRow[] = [];
   if (isSupabaseConfigured()) {
@@ -33,6 +59,16 @@ export async function SocialConnections() {
         <OSBadge tone={posting ? "ok" : "off"}>{posting ? "Posting ENABLED" : "Posting off"}</OSBadge>
       </div>
       <p className="mb-4 mt-1 text-sm text-neutral-500">Connect each brand&apos;s accounts. API keys live in <code className="text-neutral-400">.env.local</code> — here you just connect.</p>
+      {platforms.map((platform) => {
+        const message = messageFor(oauthStatus[platform.key], oauthStatus[`${platform.key}_detail`]);
+        if (!message) return null;
+        return (
+          <div key={`${platform.key}:message`} className="mb-3 rounded-md border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-sm text-neutral-300">
+            <OSBadge tone={message.tone}>{platform.label}</OSBadge>
+            <span className="ml-2">{message.text}</span>
+          </div>
+        );
+      })}
       <div className="space-y-3">
         {data.brands.map((brand) => (
           <div key={brand.id} className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">

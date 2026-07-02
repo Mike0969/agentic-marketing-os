@@ -49,6 +49,8 @@ export async function POST(request: Request, context: { params: Promise<{ conten
   const gate = typeof body.gate === "string" ? body.gate : "gate_2";
   const feedback = typeof body.feedback === "string" ? body.feedback.trim() : "";
   const requestedByAgent = typeof body.requested_by_agent === "string" ? body.requested_by_agent : "Crina";
+  const archiveRejected = decision === "rejected" && body.archive === true;
+  const requestedSchedule = typeof body.scheduled_at === "string" && body.scheduled_at.trim() ? new Date(body.scheduled_at) : null;
 
   if (!decisions.includes(decision)) {
     return NextResponse.json({ error: "Decision must be approved, rejected, or changes_requested." }, { status: 400 });
@@ -56,6 +58,10 @@ export async function POST(request: Request, context: { params: Promise<{ conten
 
   if (decision !== "approved" && !feedback) {
     return NextResponse.json({ error: "A reason is required for rejection or changes requested." }, { status: 400 });
+  }
+
+  if (requestedSchedule && Number.isNaN(requestedSchedule.getTime())) {
+    return NextResponse.json({ error: "A valid scheduled_at date/time is required." }, { status: 400 });
   }
 
   const nextStatus = gateNextStatus(gate, decision);
@@ -97,19 +103,32 @@ export async function POST(request: Request, context: { params: Promise<{ conten
     updatePayload.crina_review_notes = `Human ${decision.replaceAll("_", " ")}: ${feedback}. Crina and assigned agents must address this before returning to final approval.`;
   }
 
+  if (archiveRejected) {
+    updatePayload.archived_at = new Date().toISOString();
+    updatePayload.scheduled_at = null;
+    updatePayload.workflow_stage = "done";
+    updatePayload.current_owner = "Human";
+    updatePayload.next_owner = null;
+    updatePayload.performance_summary = `Human rejected and archived: ${feedback}`;
+  }
+
   // Autonomous scheduling (P1): on final approval, Crina assigns a region-aware time if the operator
   // hasn't set one — so the operator just views the schedule instead of picking slots.
   if (decision === "approved" && gate !== "gate_1") {
-    const { data: current } = await supabase.from("content_items").select("brand_id,scheduled_at").eq("id", contentItemId).maybeSingle();
-    if (current && !current.scheduled_at) {
-      const { count } = await supabase
-        .from("content_items")
-        .select("id", { count: "exact", head: true })
-        .eq("brand_id", current.brand_id)
-        .eq("status", "scheduled")
-        .not("scheduled_at", "is", null)
-        .gte("scheduled_at", new Date().toISOString());
-      updatePayload.scheduled_at = pickScheduledAt(defaultRegion(), count ?? 0);
+    if (requestedSchedule) {
+      updatePayload.scheduled_at = requestedSchedule.toISOString();
+    } else {
+      const { data: current } = await supabase.from("content_items").select("brand_id,scheduled_at").eq("id", contentItemId).maybeSingle();
+      if (current && !current.scheduled_at) {
+        const { count } = await supabase
+          .from("content_items")
+          .select("id", { count: "exact", head: true })
+          .eq("brand_id", current.brand_id)
+          .eq("status", "scheduled")
+          .not("scheduled_at", "is", null)
+          .gte("scheduled_at", new Date().toISOString());
+        updatePayload.scheduled_at = pickScheduledAt(defaultRegion(), count ?? 0);
+      }
     }
   }
 
