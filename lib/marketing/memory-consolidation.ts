@@ -45,15 +45,29 @@ export async function runMemoryConsolidation(args: { brandId?: string } = {}) {
     const outcomes = await getLatestConversionOutcomes(brand.id, 30);
     if (!((memory?.length ?? 0) || outcomes.length)) continue;
 
+    // P1c — objective verification: is the metric the playbook is supposed to move actually moving?
+    // Compare recent vs prior paid_conversion_rate. If flat/declining, the current playbook is NOT
+    // working and the editor must prune harder rather than enshrine rules the numbers don't back.
+    const rates = (outcomes as Array<{ paid_conversion_rate?: number | null }>)
+      .map((o) => (typeof o.paid_conversion_rate === "number" ? o.paid_conversion_rate : null))
+      .filter((x): x is number => x != null);
+    const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+    const mid = Math.floor(rates.length / 2);
+    const recentAvg = avg(rates.slice(0, mid || rates.length));
+    const priorAvg = avg(rates.slice(mid));
+    const trend = rates.length < 4 ? "insufficient-data" : recentAvg - priorAvg > 0.001 ? "improving" : recentAvg - priorAvg < -0.001 ? "declining" : "flat";
+
     const run = await runMarketingAgentModel({
       agentId: "agent-conversion",
       fallbackAgentName: "Conversion Agent",
       fallbackRole: "Memory editor",
       task: "Consolidate conversion memory",
       instructions:
-        "You are the memory EDITOR. Consolidate the accumulated conversion insights + the outcome metrics into a TIGHT ranked set of 3-7 high-signal rules for THIS brand only. Drop duplicates and drop any rule the metrics do not support — weight by paid_conversion_rate, paid, and revenue (more leads/investors/capital = stronger). Then write one tight paragraph (brain_summary) of what converts, written to REPLACE the prior bloated notes. Be concrete and evidence-led. No posting.",
+        "You are the memory EDITOR. Consolidate the accumulated conversion insights + the outcome metrics into a TIGHT ranked set of 3-7 high-signal rules for THIS brand only. Drop duplicates and drop any rule the metrics do not support — weight by paid_conversion_rate, paid, and revenue (more leads/investors/capital = stronger). " +
+        `The brand's paid_conversion_rate trend is currently ${trend}. If it is 'declining' or 'flat', the current playbook is NOT working — be MORE aggressive: keep only rules with hard metric evidence and cut the rest. ` +
+        "Then write one tight paragraph (brain_summary) of what converts, written to REPLACE the prior bloated notes. Be concrete and evidence-led. No posting.",
       outputSchema: consolidateSchema,
-      input: { brand, insights: memory ?? [], outcomes },
+      input: { brand, insights: memory ?? [], outcomes, metric_trend: { trend, recentAvg, priorAvg } },
       brainFiles: ["approval-rules.md"],
       temperature: 0.2,
       routeOrigin: "api.sales.consolidate"
@@ -67,8 +81,8 @@ export async function runMemoryConsolidation(args: { brandId?: string } = {}) {
     const summary = str(json.brain_summary);
 
     const block =
-      `# What converts for ${brand.name}\n${summary}\nRules:\n` +
-      rules.slice(0, 7).map((r, i) => `${i + 1}. ${str(rec(r).rule)}`).join("\n");
+      `# What converts for ${brand.name} (metric trend: ${trend})\n${summary}\nRules:\n` +
+      rules.slice(0, 7).map((r, i) => `${i + 1}. ${str(rec(r).rule)}${str(rec(r).evidence) ? ` — evidence: ${str(rec(r).evidence)}` : ""}`).join("\n");
     blocks.push(block);
 
     // Re-rank: write the consolidated rules as fresh high-rank rows so the read-back surfaces them.
@@ -78,7 +92,7 @@ export async function runMemoryConsolidation(args: { brandId?: string } = {}) {
       recommendation: null,
       rank: 1000 - i,
       paid_conversion_rate: null,
-      evidence: { consolidated: true, note: str(rec(r).evidence) },
+      evidence: { consolidated: true, note: str(rec(r).evidence), metric_trend: trend },
       source: "agent_estimated"
     }));
     if (rows.length) {
@@ -100,6 +114,17 @@ export async function runMemoryConsolidation(args: { brandId?: string } = {}) {
       await writeAgentMemory("agent-crina", hadOnlyConversion ? doc : `${prevCrina.slice(0, 1500)}\n\n${doc}`);
     } catch {
       // brain write is best-effort
+    }
+
+    // P1d — also persist to a repo file so Codex can promote it into the canonical hermes-brain/.
+    // Works locally; a no-op on read-only serverless FS (the durable runtime path is the DB above,
+    // which propose-ideas/run already read back via conversion_memory).
+    try {
+      const { writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      await writeFile(join(process.cwd(), "hermes-brain", "brand-playbooks.md"), doc, "utf8");
+    } catch {
+      // read-only FS — DB persistence is the durable path
     }
   }
 

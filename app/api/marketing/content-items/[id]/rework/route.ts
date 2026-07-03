@@ -9,6 +9,7 @@ import { getFeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
 import { getPlatformPlan, type NativeDraft } from "@/lib/marketing/platform-generation";
 import { saveContentAssets } from "@/lib/marketing/ready-package";
 import { routeFromTags } from "@/lib/marketing/reject-reasons";
+import { divergenceReason } from "@/lib/marketing/grader-divergence";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -139,6 +140,26 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const brand = brandRow as Brand | null;
   const { data: campaignRow } = item.campaign_id ? await supabase.from("campaigns").select("*").eq("id", item.campaign_id).maybeSingle() : { data: null };
   const campaign = campaignRow as Campaign | null;
+
+  // P2 — capture the rejection as a learning signal, tagging grader divergences (Crina passed but
+  // the operator rejected). The judge reads feedback_memory.rejected each run, so a GRADER MISS note
+  // teaches the honest grader exactly where its taste diverged from the operator's.
+  {
+    const { reason: learnReason, diverged, score } = divergenceReason(item, remark);
+    await supabase
+      .from("feedback_memory")
+      .insert({
+        agent_id: "agent-crina",
+        content_type: diverged ? "grader_divergence" : "operator_reject",
+        content_summary: `${item.title} — ${item.platform}`,
+        content_full: { content_item_id: item.id, brand_id: item.brand_id, platform: item.platform, crina_score: score, diverged },
+        decision: "rejected",
+        reason: learnReason,
+        decided_by: "human",
+        loop_iteration: item.loop_iteration ?? 1
+      })
+      .then(() => {}, () => {});
+  }
 
   // Routing: preset reason chips are authoritative; otherwise classify the free-text remark.
   let route = classify(remark);

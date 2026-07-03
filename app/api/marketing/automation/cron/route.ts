@@ -4,6 +4,8 @@ import { runGscIngestion } from "@/lib/analytics/gsc-ingestion";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
 import { runDuePosts } from "@/lib/marketing/schedule-runner";
+import { runMemoryConsolidation } from "@/lib/marketing/memory-consolidation";
+import { runReflection } from "@/lib/marketing/reflection";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Campaign, ContentItem } from "@/lib/types";
@@ -23,6 +25,45 @@ async function refreshGscIfStale(supabase: NonNullable<ReturnType<typeof createS
     const last = recent?.[0]?.created_at ? new Date(recent[0].created_at as string).getTime() : 0;
     if (Date.now() - last < GSC_REFRESH_MS) return { skipped: "recent" as const };
     return await runGscIngestion();
+  } catch {
+    return { skipped: "error" as const };
+  }
+}
+
+const LEARNING_REFRESH_MS = 7 * 24 * 60 * 60 * 1000; // consolidate the self-improving playbook weekly
+
+// P1b — the self-tuning pass on a schedule. Re-distils each brand's memory into a tighter,
+// metric-backed playbook at most once a week (Karpathy: the loop rewrites its own instructions).
+// Keyed off the last "Consolidate Memory" agent_run so it never over-runs. Never throws.
+async function runLearningIfDue(supabase: NonNullable<ReturnType<typeof createServiceClient>>) {
+  try {
+    const { data: recent } = await supabase
+      .from("agent_runs")
+      .select("created_at")
+      .eq("workflow_name", "Consolidate Memory")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const last = recent?.[0]?.created_at ? new Date(recent[0].created_at as string).getTime() : 0;
+    if (Date.now() - last < LEARNING_REFRESH_MS) return { skipped: "recent" as const };
+    return await runMemoryConsolidation();
+  } catch {
+    return { skipped: "error" as const };
+  }
+}
+
+// P3 — weekly reflection: read the loop's own traces + grader divergences and propose one rule
+// change. Keyed off the last "Weekly Reflection" agent_run so it runs at most weekly. Never throws.
+async function runReflectionIfDue(supabase: NonNullable<ReturnType<typeof createServiceClient>>) {
+  try {
+    const { data: recent } = await supabase
+      .from("agent_runs")
+      .select("created_at")
+      .eq("workflow_name", "Weekly Reflection")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const last = recent?.[0]?.created_at ? new Date(recent[0].created_at as string).getTime() : 0;
+    if (Date.now() - last < LEARNING_REFRESH_MS) return { skipped: "recent" as const };
+    return await runReflection();
   } catch {
     return { skipped: "error" as const };
   }
@@ -73,6 +114,10 @@ async function runCron(request: Request) {
   // Fire any human-approved posts whose scheduled time has arrived (gated by SOCIAL_POSTING_ENABLED).
   const duePosts = await runDuePosts().catch(() => ({ posted: 0, attempted: 0, skipped: "error" as const }));
 
+  // Weekly self-tuning: re-distil each brand's playbook from outcomes (P1b) + reflect on the traces (P3).
+  const learning = await runLearningIfDue(supabase);
+  const reflection = await runReflectionIfDue(supabase);
+
   const { data: campaigns, error } = await supabase
     .from("campaigns")
     .select("*")
@@ -88,7 +133,7 @@ async function runCron(request: Request) {
 
   if (!activeCampaignIds.length) {
     const notifications = await sendCrinaReadyToPostPings({ baseUrl: baseUrlFrom(request) });
-    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, message: "No campaigns are eligible for automation." });
+    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, learning, reflection, message: "No campaigns are eligible for automation." });
   }
 
   const { data: contentItems, error: contentError } = await supabase
@@ -132,7 +177,9 @@ async function runCron(request: Request) {
     results,
     notifications,
     gsc_ingestion: gscIngestion,
-    due_posts: duePosts
+    due_posts: duePosts,
+    learning,
+    reflection
   });
 }
 

@@ -13,7 +13,7 @@ import { composeCarouselSlide } from "@/lib/marketing/carousel-composer";
 import { getPlatformPlan, type NativeDraft } from "@/lib/marketing/platform-generation";
 import { createProjectAsset, findAssetCandidates, recordAssetUsage, resolveProjectSlug } from "@/lib/marketing/project-assets";
 import { saveContentAssets } from "@/lib/marketing/ready-package";
-import { CONTENT_RUBRIC, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
+import { CONTENT_RUBRIC, HONEST_GRADER_PREAMBLE, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -69,6 +69,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const brand = brandRow as Brand | null;
 
   const idea = (campaign.idea_brief ?? {}) as Record<string, unknown>;
+  // P4a — contract-first (Karpathy III): the judge grades against the campaign's agreed goal, not just
+  // the generic rubric. Uses existing campaign data; Codex can add explicit done-criteria templates.
+  const contract = String(idea.success_criteria ?? idea.primary_cta ?? campaign.objective ?? "").replace(/\s+/g, " ").slice(0, 300);
   const allPlatforms = Array.isArray(idea.platforms) ? (idea.platforms as string[]) : ["LinkedIn"];
   const platforms = requestedPlatform ? [requestedPlatform] : allPlatforms.slice(0, MAX_PLATFORMS);
   if (requestedPlatform) {
@@ -154,10 +157,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: `Judge ${artifactLabel}`,
-        instructions: `${rubric}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
+        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
         outputSchema: judgeSchema,
         input: { brand, platform, [artifactLabel]: artifact, campaign_idea: idea, conversion_insights: conversion.insights },
-        brainFiles: ["workflow-contract.md", "approval-rules.md"],
+        brainFiles: ["workflow-contract.md", "approval-rules.md", "grader-calibration.md"],
         temperature: 0.2,
         routeOrigin: "api.marketing.campaigns.run"
       });
