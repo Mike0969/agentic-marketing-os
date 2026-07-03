@@ -5,6 +5,7 @@ import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
 import { runDuePosts } from "@/lib/marketing/schedule-runner";
 import { runMemoryConsolidation } from "@/lib/marketing/memory-consolidation";
+import { runNurtureDrip } from "@/lib/marketing/nurture";
 import { runReflection } from "@/lib/marketing/reflection";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
@@ -114,6 +115,9 @@ async function runCron(request: Request) {
   // Fire any human-approved posts whose scheduled time has arrived (gated by SOCIAL_POSTING_ENABLED).
   const duePosts = await runDuePosts().catch(() => ({ posted: 0, attempted: 0, skipped: "error" as const }));
 
+  // Funnel drip: send any due nurture emails toward the MLM-subscribe CTA (no-op until Resend is set).
+  const nurture = await runNurtureDrip().catch(() => ({ sent: 0, skipped: "error" as const }));
+
   // Weekly self-tuning: re-distil each brand's playbook from outcomes (P1b) + reflect on the traces (P3).
   const learning = await runLearningIfDue(supabase);
   const reflection = await runReflectionIfDue(supabase);
@@ -133,7 +137,7 @@ async function runCron(request: Request) {
 
   if (!activeCampaignIds.length) {
     const notifications = await sendCrinaReadyToPostPings({ baseUrl: baseUrlFrom(request) });
-    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, learning, reflection, message: "No campaigns are eligible for automation." });
+    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, nurture, learning, reflection, message: "No campaigns are eligible for automation." });
   }
 
   const { data: contentItems, error: contentError } = await supabase
@@ -178,6 +182,7 @@ async function runCron(request: Request) {
     notifications,
     gsc_ingestion: gscIngestion,
     due_posts: duePosts,
+    nurture,
     learning,
     reflection
   });

@@ -1,3 +1,4 @@
+import { enrollLead } from "@/lib/marketing/nurture";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -178,6 +179,9 @@ export async function captureLead(input: LeadInput): Promise<CaptureResult> {
       .single();
 
     if (error) return { ok: false, status: 500, error: error.message };
+
+    // Funnel spine: enroll the new lead into the email nurture drip (best-effort; won't block capture).
+    void enrollLead(lead.id as string, brandId);
 
     const period = monthWindow();
     const { count } = await supabase

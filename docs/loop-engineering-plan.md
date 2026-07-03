@@ -63,4 +63,6 @@ The judge must grade **honestly**, and the self-tuning pass must be **scheduled 
 - [x] P2 divergence: rework flow records human rejects where Crina previously passed as grader-divergence memory.
 - [x] P3 cadence: cron runs weekly reflection from loop receipts/divergences.
 - [x] P4a contract: campaign run injects available success criteria/CTA/objective into judge prompt.
-- [~] P4b harness review: bottleneck API/report exists; visible dashboard/view still pending.
+- [x] P4b harness review: `lib/marketing/bottlenecks.ts` + `GET /api/marketing/bottlenecks` + a **Loop bottlenecks** table on the Analytics page (rework/fallback/avg-score by loop type). Delete-the-harness stays a periodic human/Codex review per model release.
+
+**All phases 1–4 complete.** Live insight on first run: visual loop = 60% fallback / avg score 35 → the current bottleneck to fix next.

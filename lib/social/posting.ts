@@ -137,6 +137,15 @@ export async function publishApprovedPackage(contentItemId: string) {
     return { ok: true as const, url: res.url };
   } catch (e) {
     const error = e instanceof Error ? e.message : `${platform} post failed.`;
+    // Self-heal: a 401/unauthorized means the stored token is dead — flag the connection so the UI
+    // shows "reconnect needed" instead of a misleading "connected" that never posts.
+    if (/\b401\b|unauthorized|invalid.*token|token.*invalid/i.test(error)) {
+      await supabase
+        .from("social_connections")
+        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .eq("brand_id", item.brand_id)
+        .eq("platform", platform);
+    }
     await supabase
       .from("content_items")
       .update({ ready_package: { ...pkg, posting_error: error } })

@@ -5,6 +5,7 @@ import { getDashboardData } from "@/lib/data";
 import { listIntegrationConfigs } from "@/lib/integration-store";
 import { getConversionMemoryContext, getLatestConversionOutcomes } from "@/lib/marketing/conversion-memory";
 import { resolvePlatform } from "@/lib/marketing/platform-specs";
+import { getLoopBottlenecks } from "@/lib/marketing/bottlenecks";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,7 @@ export default async function AnalyticsPage() {
   const runSuccess = runs.filter((r) => r.status === "success").length;
   const runFallback = runs.filter((r) => r.status === "fallback").length;
   const runError = runs.filter((r) => r.status === "error").length;
+  const bottlenecks = await getLoopBottlenecks();
 
   // Real conversion funnel per brand (Crina owns the analyst role). Agent-estimated until outcomes
   // are logged in Sales, so an all-zero funnel shows an honest empty state, never invented numbers.
@@ -195,6 +197,44 @@ export default async function AnalyticsPage() {
           </ul>
         </OSPanel>
       </div>
+
+      {/* Loop bottlenecks — where the loop reworks/falls back most (the next thing to fix) */}
+      {bottlenecks?.byType.length ? (
+        <OSPanel className="mt-6">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-neutral-400" />
+              <h2 className="text-lg font-semibold text-neutral-100">Loop bottlenecks</h2>
+            </div>
+            <OSBadge tone="info">last {bottlenecks.sample} rounds</OSBadge>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs uppercase tracking-wider text-neutral-500">
+                <tr>
+                  <th className="py-2 pr-3">Loop</th>
+                  <th className="py-2 pr-3 text-right">Rounds</th>
+                  <th className="py-2 pr-3 text-right">Rework</th>
+                  <th className="py-2 pr-3 text-right">Fallback</th>
+                  <th className="py-2 text-right">Avg score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bottlenecks.byType.map((b) => (
+                  <tr key={b.loop_type} className="border-t border-neutral-800">
+                    <td className="py-2 pr-3 font-medium capitalize text-neutral-200">{b.loop_type}</td>
+                    <td className="py-2 pr-3 text-right text-neutral-300">{b.runs}</td>
+                    <td className={`py-2 pr-3 text-right ${b.rework_rate > 0.4 ? "text-amber-400" : "text-neutral-300"}`}>{Math.round(b.rework_rate * 100)}%</td>
+                    <td className={`py-2 pr-3 text-right ${b.fallback_rate > 0.4 ? "text-rose-400" : "text-neutral-300"}`}>{Math.round(b.fallback_rate * 100)}%</td>
+                    <td className="py-2 text-right text-neutral-300">{b.avg_score ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-neutral-600">Karpathy IX: the highest rework/fallback loop is the next thing to fix.</p>
+        </OSPanel>
+      ) : null}
 
       {/* Real conversion funnel (the loop's objective metric) */}
       <div className="mb-3 mt-7 flex items-center gap-2">
