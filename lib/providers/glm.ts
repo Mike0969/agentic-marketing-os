@@ -6,6 +6,9 @@ const STATIC_MODELS = ["glm-5.2", "glm-4.7", "glm-4.5-flash"];
 const DEFAULT_MODEL = process.env.ZHIPU_MODEL || "glm-5.2";
 const RATE_LIMIT_MESSAGE = "GLM-5.2 rate limit — add credits at z.ai or retry in 60s";
 const RATE_LIMIT_RETRY_MS = 10000;
+// Bound completion length so backends (e.g. OpenRouter) don't reserve the full
+// model context and reject on affordability. Overridable via GLM_MAX_TOKENS.
+const MAX_TOKENS = Number(process.env.GLM_MAX_TOKENS) || 4096;
 
 function apiKey() {
   return process.env.ZHIPU_API_KEY;
@@ -32,6 +35,7 @@ async function chatCompletion(model: string, prompt: string, system?: string, te
     body: JSON.stringify({
       model,
       temperature,
+      max_tokens: MAX_TOKENS,
       messages: [
         ...(system ? [{ role: "system", content: system }] : []),
         { role: "user", content: prompt }
@@ -71,7 +75,8 @@ export async function testCall(prompt: string, model = DEFAULT_MODEL) {
 //   2. OpenRouter          (OPENROUTER_API_KEY) — paid-credits backup
 //   3. HuggingFace router  (HF_API_KEY)         — free, slowest, last resort
 //
-// Fallback only happens on HTTP 429 / 503 (rate limit / temp unavailable).
+// Fallback only happens on HTTP 429 / 503 (rate limit / temp unavailable) or
+// 402 (payment required — this source can't serve, not a fatal bug).
 // Any other error bubbles up from the source that raised it.
 
 type GLMSource = "zai" | "openrouter" | "huggingface";
@@ -99,6 +104,7 @@ async function callWithKey(args: {
     body: JSON.stringify({
       model,
       temperature,
+      max_tokens: MAX_TOKENS,
       messages: [
         ...(system ? [{ role: "system", content: system }] : []),
         { role: "user", content: prompt }
@@ -151,8 +157,8 @@ export async function callGLM(
         source: "zai"
       });
     } catch (e: any) {
-      if (e.status !== 429 && e.status !== 503) throw e; // only fallback on rate limit
-      console.warn("ZAI rate limited, trying OpenRouter...");
+      if (e.status !== 429 && e.status !== 503 && e.status !== 402) throw e; // fallback on rate limit / payment required
+      console.warn("ZAI unavailable, trying OpenRouter...");
     }
   }
 
@@ -169,8 +175,8 @@ export async function callGLM(
         source: "openrouter"
       });
     } catch (e: any) {
-      if (e.status !== 429 && e.status !== 503) throw e;
-      console.warn("OpenRouter rate limited, trying HuggingFace...");
+      if (e.status !== 429 && e.status !== 503 && e.status !== 402) throw e;
+      console.warn("OpenRouter unavailable, trying HuggingFace...");
     }
   }
 

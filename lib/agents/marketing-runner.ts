@@ -35,6 +35,7 @@ export type MarketingAgentRunResult = {
   error: string | null;
   routeOrigin: string;
   rateLimited: boolean;
+  fallbackUsed: boolean;
 };
 
 const HARD_SAFETY_RULES = [
@@ -79,7 +80,8 @@ function normalizeResult(
   provider: string,
   configSource: MarketingAgentRunResult["configSource"],
   brainResourcesUsed: string[],
-  profile: HermesAgentProfile | null
+  profile: HermesAgentProfile | null,
+  fallbackUsed = false
 ): MarketingAgentRunResult {
   return {
     ok: result.ok,
@@ -99,7 +101,8 @@ function normalizeResult(
     profile,
     error: result.error,
     routeOrigin: options.routeOrigin,
-    rateLimited: result.rateLimited === true
+    rateLimited: result.rateLimited === true,
+    fallbackUsed
   };
 }
 
@@ -118,9 +121,7 @@ export async function runMarketingAgentModel(options: MarketingAgentRunOptions):
   const systemPrompt = buildSystemPrompt(profile, options);
   const userPrompt = buildUserPrompt(options, brain.text);
 
-  const result = await callModel({
-    provider: runtime.provider,
-    model: runtime.model,
+  const callArgs = {
     agentId: options.agentId,
     fallbackAgentName: options.fallbackAgentName,
     fallbackRole: options.fallbackRole,
@@ -132,7 +133,20 @@ export async function runMarketingAgentModel(options: MarketingAgentRunOptions):
     hermesInput: options.input,
     hermesInstructions: options.instructions,
     brainFiles: options.brainFiles
-  });
+  };
+
+  const result = await callModel({ provider: runtime.provider, model: runtime.model, ...callArgs });
+
+  // Cross-provider resilience: if a non-hermes provider fails, retry ONCE via
+  // hermes (the proven-working default). Never fabricate output; only swap the
+  // failing result for a real hermes result, and mark the fallback honestly.
+  if (!result.ok && runtime.provider !== "hermes") {
+    const hermesModel = process.env.HERMES_AGENT_MODEL || "gpt-5.5";
+    const fallback = await callModel({ provider: "hermes", model: hermesModel, ...callArgs });
+    if (fallback.ok) {
+      return normalizeResult(fallback, options, "hermes", runtime.source, brain.resourcesUsed, profile, true);
+    }
+  }
 
   return normalizeResult(result, options, runtime.provider, runtime.source, brain.resourcesUsed, profile);
 }
