@@ -1,4 +1,5 @@
 import { recordAgentRun } from "@/lib/agents/agent-runs";
+import { notifyOperator } from "@/lib/marketing/notify";
 import { publishMemberPost, refreshToken as refreshLinkedInToken } from "@/lib/social/linkedin";
 import { publishPost as publishXPost, refreshToken as refreshXToken } from "@/lib/social/x";
 import { publishPost as publishFacebookPost } from "@/lib/social/facebook";
@@ -134,6 +135,7 @@ export async function publishApprovedPackage(contentItemId: string) {
       model: null,
       durationMs: 0
     });
+    void notifyOperator(`✅ Posted to ${platform} (${item.title})${res.url ? `\n${res.url}` : ""}`);
     return { ok: true as const, url: res.url };
   } catch (e) {
     const error = e instanceof Error ? e.message : `${platform} post failed.`;
@@ -162,6 +164,7 @@ export async function publishApprovedPackage(contentItemId: string) {
       model: null,
       durationMs: 0
     });
+    void notifyOperator(`⚠️ ${platform} post FAILED (${item.title}): ${error}`);
     return { ok: false as const, error };
   }
 }

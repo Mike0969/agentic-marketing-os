@@ -4,6 +4,7 @@ import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
+import { notifyOperator } from "@/lib/marketing/notify";
 import { runConversionAnalysis } from "@/lib/marketing/conversion-agent";
 import { defaultRegion, pickScheduledAt } from "@/lib/marketing/auto-schedule";
 import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
@@ -483,6 +484,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await runConversionAnalysis({ brandId: campaign.brand_id, campaignId: id });
   } catch {
     // never break the run on conversion-analysis failure
+  }
+
+  if (!requestedPlatform && created.length) {
+    void notifyOperator(`🏁 Campaign "${campaign.title}" finished — ${created.length} package(s) ready to review:\n${created.map((c) => `• ${c.platform} ${c.score}/100${c.blocked ? " (blocked)" : ""}`).join("\n")}`);
   }
 
   revalidatePath("/marketing/campaigns");

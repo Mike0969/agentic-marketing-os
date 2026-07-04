@@ -7,6 +7,7 @@ import { runDuePosts } from "@/lib/marketing/schedule-runner";
 import { runMemoryConsolidation } from "@/lib/marketing/memory-consolidation";
 import { runNurtureDrip } from "@/lib/marketing/nurture";
 import { runReflection } from "@/lib/marketing/reflection";
+import { runWeeklySummary } from "@/lib/marketing/weekly-summary";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Campaign, ContentItem } from "@/lib/types";
@@ -70,6 +71,23 @@ async function runReflectionIfDue(supabase: NonNullable<ReturnType<typeof create
   }
 }
 
+// Weekly operator digest to Telegram (guarded off the last "Weekly Summary" run).
+async function runWeeklySummaryIfDue(supabase: NonNullable<ReturnType<typeof createServiceClient>>) {
+  try {
+    const { data: recent } = await supabase
+      .from("agent_runs")
+      .select("created_at")
+      .eq("workflow_name", "Weekly Summary")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const last = recent?.[0]?.created_at ? new Date(recent[0].created_at as string).getTime() : 0;
+    if (Date.now() - last < LEARNING_REFRESH_MS) return { skipped: "recent" as const };
+    return await runWeeklySummary();
+  } catch {
+    return { skipped: "error" as const };
+  }
+}
+
 async function jsonFrom(response: Response) {
   return (await response.json().catch(() => ({}))) as Record<string, unknown>;
 }
@@ -121,6 +139,7 @@ async function runCron(request: Request) {
   // Weekly self-tuning: re-distil each brand's playbook from outcomes (P1b) + reflect on the traces (P3).
   const learning = await runLearningIfDue(supabase);
   const reflection = await runReflectionIfDue(supabase);
+  const weeklySummary = await runWeeklySummaryIfDue(supabase);
 
   const { data: campaigns, error } = await supabase
     .from("campaigns")
@@ -137,7 +156,7 @@ async function runCron(request: Request) {
 
   if (!activeCampaignIds.length) {
     const notifications = await sendCrinaReadyToPostPings({ baseUrl: baseUrlFrom(request) });
-    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, nurture, learning, reflection, message: "No campaigns are eligible for automation." });
+    return NextResponse.json({ processed: 0, results: [], notifications, gsc_ingestion: gscIngestion, due_posts: duePosts, nurture, learning, reflection, weeklySummary, message: "No campaigns are eligible for automation." });
   }
 
   const { data: contentItems, error: contentError } = await supabase
@@ -184,7 +203,8 @@ async function runCron(request: Request) {
     due_posts: duePosts,
     nurture,
     learning,
-    reflection
+    reflection,
+    weeklySummary
   });
 }
 
