@@ -170,7 +170,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         safetyPass: !(j.safety_pass === false),
         judgeNotes: typeof j.judge_notes === "string" ? j.judge_notes : "",
         improvements: Array.isArray(j.improvements) ? j.improvements.map(String) : [],
-        fallbackUsed: !review.ok,
+        fallbackUsed: !review.ok || review.fallbackUsed,
         tokensTotal: review.usage.tokensTotal,
         latencyMs: review.durationMs
       };
@@ -203,7 +203,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           outputSummary: draft ? `${draft.title} — ${draft.hook}`.slice(0, 180) : "no draft produced",
           provider: content.provider,
           model: content.modelUsed,
-          fallbackUsed: !draft,
+          fallbackUsed: !draft || content.fallbackUsed,
           tokensPrompt: content.usage.tokensPrompt,
           tokensCompletion: content.usage.tokensCompletion,
           tokensTotal: content.usage.tokensTotal,
@@ -318,7 +318,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           const concept = typeof vj.concept === "string" ? vj.concept.trim() : "";
           const prompt = typeof vj.prompt === "string" ? vj.prompt.trim() : typeof vj.image_prompt === "string" ? (vj.image_prompt as string).trim() : "";
           const candidate = prompt ? { concept, prompt } : null;
-          return { candidate, outputSummary: (concept || prompt).slice(0, 180) || "no concept produced", provider: v.provider, model: v.modelUsed, fallbackUsed: !candidate, tokensPrompt: v.usage.tokensPrompt, tokensCompletion: v.usage.tokensCompletion, tokensTotal: v.usage.tokensTotal, latencyMs: v.durationMs };
+          return { candidate, outputSummary: (concept || prompt).slice(0, 180) || "no concept produced", provider: v.provider, model: v.modelUsed, fallbackUsed: !candidate || v.fallbackUsed, tokensPrompt: v.usage.tokensPrompt, tokensCompletion: v.usage.tokensCompletion, tokensTotal: v.usage.tokensTotal, latencyMs: v.durationMs };
         },
         judge: async (candidate) => judgeWith(VISUAL_RUBRIC, "visual", candidate)
       });

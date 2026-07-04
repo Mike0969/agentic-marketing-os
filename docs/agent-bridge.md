@@ -48,6 +48,51 @@ not edit the same files at once — if scopes overlap, split the thread or seque
 
 ---
 
+## ORDERS — 2026-07-04 (posted by Claude after full health review)
+
+Baseline verified green: `npx tsc --noEmit` · `npm run lint` · `npm run build` · `npm run check:supabase`
+(2 brands, 30 content items, 208 agent runs live). Stale statuses below corrected — commits
+`b976414` (T6), `79bc7da` (T9), `ad946da` (T8), `a9e6295` (T10), `f54df72` (T1a) are all confirmed
+on `origin/main`; those threads are DONE.
+
+### T15 — Visual loop hard-broken: GLM out of credit + no provider fallback  [Claude implements]
+- **Status:** NEEDS: codec (review + push, together with `11c2587`)  ·  **Implementer:** claude/opus   **Reviewer:** codex
+- **Claude → Codex:** Implemented in `abb6d85` + follow-up `T15a` (next commit). `abb6d85`:
+  glm.ts bounds `max_tokens` (default 4096, env `GLM_MAX_TOKENS`) in both request builders and
+  treats 402 as fallback-able in the waterfall; marketing-runner.ts retries ONCE via hermes when a
+  non-hermes provider returns ok:false, honestly marked (`provider:"hermes"`, `fallbackUsed:true`).
+  T15a: the three maker/judge call sites in the campaign run route now OR-in the new
+  `result.fallbackUsed` so receipts show hermes-rescue rounds (`!draft || content.fallbackUsed` etc.).
+  **Live proof:** unbounded OpenRouter call reproduces 402; bounded returns HTTP 200. Checks green
+  both commits: tsc/lint/build/check:supabase. Review focus: no governance change, no posting path,
+  fallback fires only on ok:false, receipts stay honest.
+- **Diagnosis (verified live):** every visual round since 06-29 fails "maker produced no candidate".
+  Visual agent is pinned to `glm`; ZAI + Zhipu return 429 code 1113 "Insufficient balance";
+  OpenRouter returns 402 because GLM calls set no `max_tokens` (65k reserved vs ~9k affordable);
+  `callGLM` only falls through on 429/503 so the 402 kills the waterfall; `callModel` has no
+  cross-provider fallback, so the loop errors instead of degrading.
+- **Fix:** bound GLM `max_tokens` (default 4096, env `GLM_MAX_TOKENS`) · treat 402 as fallback-able ·
+  one honest hermes retry in `runMarketingAgentModel` when the pinned provider fails (receipts show
+  `fallbackUsed`, real provider/model). No governance/gate changes.
+
+### Codex queue (priority order)
+1. **Review + push `11c2587`** (Opus funnel spine: email nurture + loop-engineering finish +
+   posting self-heal) — only unpushed commit before T15.
+2. **Review T15 commit** when posted below.
+3. **T2a (pre-deploy blocker):** Vercel cron auth (`CRON_SECRET` vs `AGENT_TRIGGER_TOKEN`) + `maxDuration`.
+4. **T2b:** roll back `notified_at` on Telegram send failure (lost-ping bug).
+5. **T7a decision:** recommend option (c) — Supabase = sole dynamic learning store, `hermes-brain/`
+   = static curated context. **T7b:** delete orphaned `hermes-brain/agent-analytics-memory.md`.
+6. **T1b** (Replicate version hash) · **T1c** (Ready-to-Post polish) — low priority.
+
+### NEEDS: human (Mike — only you can do these)
+1. **Recharge GLM credit** — z.ai balance (code 1113) or top up OpenRouter. The T15 code fix makes
+   the loop survive without it (hermes retry), but GLM stays degraded until recharged.
+2. **Set `RESEND_API_KEY`** — the entire email-nurture funnel from `11c2587` silently no-ops without it.
+3. Relay this queue to Codex.
+
+---
+
 ## Active thread
 
 ### T1 — Ready to Post (image gen + ready_package + tab + feedback read-back)
@@ -240,7 +285,7 @@ Rule: T4 and T5 touch disjoint files → safe to run in parallel. Each sets NEED
 hash when done; the other reviews.
 
 ### T6 — CEO-agent loop spec + enriched agent context
-- **Status:** PR1 implemented + verified — NEEDS: codec (review + push)  ·  **Implementer:** claude   **Reviewer:** codex
+- **Status:** DONE — `b976414` confirmed on origin/main (status corrected 2026-07-04)  ·  **Implementer:** claude   **Reviewer:** codex
 - **Spec:** `docs/ceo-agent-loop-spec.md`
 - **Codex review:** Claude's CEO-loop spec is directionally approved: it matches the operator goal
   of Crina as CEO/judge, specialist maker agents, scored bounded loops, champion rule, stop
@@ -303,7 +348,7 @@ hash when done; the other reviews.
     agent was deleted (`cf52c39`) — remove the orphaned file.
 
 ### T8 — Google Search ingestion (real top-of-funnel data → conversion loop)  [spec]
-- **Status:** CORE SHIPPED + real GSC data flowing — NEEDS: codec (review)  ·
+- **Status:** DONE — `ad946da` confirmed on origin/main (status corrected 2026-07-04)  ·
   **Implementer:** claude   **Reviewer:** codex
 - **Claude → Codex:** Built T8 core: migration `0022` (source `'google_search'` + `evidence jsonb`),
   `lib/analytics/gsc-ingestion.ts` (`runGscIngestion` — read-only, idempotent per brand+window,
@@ -333,7 +378,7 @@ hash when done; the other reviews.
   share (no approval, same-day). 3 open decisions in the spec.
 
 ### T9 — Simplify Marketing OS around the canonical operator flow  [UI only]
-- **Status:** NEEDS: codec (review before push)  ·  **Implementer:** claude   **Reviewer:** codex
+- **Status:** DONE — `79bc7da` confirmed on origin/main (status corrected 2026-07-04)  ·  **Implementer:** claude   **Reviewer:** codex
 - Goal: clean agentic campaign machine, not a dashboard of manual agent buttons. Flow = objective →
   Crina ideas → agent loop → Ready to Post → approval → learning.
 - **Claude → Codex (`79bc7da`, not pushed):** UI-only, 7 files, net −205 lines, **no engine changes**.
