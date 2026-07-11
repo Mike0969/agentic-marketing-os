@@ -66,3 +66,15 @@ test("respects the limit", () => {
 test("empty library returns nothing", () => {
   assert.equal(selectAssetCandidates([], [], "x").length, 0);
 });
+
+test("poolSize matches cloud: if the top-N ranked are all used on this platform, return none (not a lower pick)", () => {
+  // 25 eligible; the top 24 by rank were already used on linkedin; one lower-ranked fresh asset exists.
+  const top = Array.from({ length: 24 }, (_, i) => asset(`top${i}`, { quality_score: 100 - i }));
+  const lower = asset("lower", { quality_score: 1 });
+  const assets = [...top, lower];
+  const usages: UsageLike[] = top.map((a) => ({ asset_id: a.id, platform: "linkedin" }));
+  // With the cloud cap (24), the pool is the top-24 (all used) → none, mirroring Supabase.
+  assert.equal(selectAssetCandidates(assets, usages, "linkedin", 6, 24).length, 0);
+  // Without the cap, the lower-ranked asset would leak through — the bug we are preventing.
+  assert.equal(selectAssetCandidates(assets, usages, "linkedin", 6).length, 1);
+});

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { createProjectAsset, listProjectAssets, type AssetFilters } from "@/lib/marketing/project-assets";
+import { registerLocalUpload } from "@/lib/marketing/project-assets-local";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import type { AssetSourceTool, ProjectAssetType, ProjectSlug } from "@/lib/types";
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
   const file = form.get("file");
   let uploadedFileName: string | null = null;
   let uploadedMime: string | null = null;
+  let localFileName: string | null = null; // set only when a file is stored locally
   if (file && file instanceof File && file.size > 0) {
     uploadedFileName = file.name;
     uploadedMime = file.type || null;
@@ -78,9 +80,9 @@ export async function POST(request: Request) {
       // Local mode: store under public/inspiration/<slug>/ so agents and the UI can read it.
       const dir = pathMod.join(process.cwd(), "public", "inspiration", slug);
       await mkdir(dir, { recursive: true });
-      const localName = `${randomUUID()}-${safeName}`;
-      await writeFile(pathMod.join(dir, localName), bytes);
-      fileUrl = `/inspiration/${slug}/${localName}`;
+      localFileName = `${randomUUID()}-${safeName}`;
+      await writeFile(pathMod.join(dir, localFileName), bytes);
+      fileUrl = `/inspiration/${slug}/${localFileName}`;
     }
   }
 
@@ -90,11 +92,8 @@ export async function POST(request: Request) {
   const sourceTool = str("source_tool");
   const qs = Number(str("quality_score") ?? "0");
   const inferredAssetType = inferAssetType({ requested: assetType, fileName: uploadedFileName, mime: uploadedMime, fileUrl });
-
-  const asset = await createProjectAsset({
-    project_slug: slug as ProjectSlug,
+  const meta = {
     brand_id: str("brand_id"),
-    file_url: fileUrl,
     asset_type: inferredAssetType,
     title: str("title") ?? uploadedFileName ?? "Untitled asset",
     description: str("description"),
@@ -108,7 +107,13 @@ export async function POST(request: Request) {
     approved: bool("approved"),
     source_tool: (TOOLS.includes(sourceTool as AssetSourceTool) ? sourceTool : "manual_upload") as AssetSourceTool,
     rights_status: str("rights_status")
-  });
+  };
+
+  // A locally-stored file is registered via its canonical path id (one identity, no
+  // duplicate record on the next folder scan); everything else goes through the normal path.
+  const asset = localFileName
+    ? await registerLocalUpload({ slug: slug as ProjectSlug, fileName: localFileName, metadata: meta })
+    : await createProjectAsset({ project_slug: slug as ProjectSlug, file_url: fileUrl, ...meta });
 
   if (!asset) return NextResponse.json({ error: "Could not save asset." }, { status: 500 });
   revalidatePath("/marketing/assets");

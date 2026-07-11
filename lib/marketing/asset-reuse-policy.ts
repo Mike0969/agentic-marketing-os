@@ -19,7 +19,11 @@ export interface UsageLike {
   platform: string | null;
 }
 
-export function selectAssetCandidates<T extends AssetLike>(assets: T[], usages: UsageLike[], platform: string, limit = 6): T[] {
+// `poolSize` mirrors the Supabase query, which fetches the top-N ranked rows and
+// ONLY then applies the reuse filter. Passing the same cap (24) keeps the local and
+// cloud backends bit-for-bit equivalent: if the top-N are all disqualified by prior
+// usage, both return nothing (so Crina generates instead of reaching for a lower pick).
+export function selectAssetCandidates<T extends AssetLike>(assets: T[], usages: UsageLike[], platform: string, limit = 6, poolSize?: number): T[] {
   const p = platform.toLowerCase();
   const usageByAsset = new Map<string, UsageLike[]>();
   for (const u of usages) usageByAsset.set(u.asset_id, [...(usageByAsset.get(u.asset_id) ?? []), u]);
@@ -29,8 +33,9 @@ export function selectAssetCandidates<T extends AssetLike>(assets: T[], usages: 
     if (b.quality_score !== a.quality_score) return b.quality_score - a.quality_score;
     return (a.used_count ?? 0) - (b.used_count ?? 0);
   });
+  const pool = typeof poolSize === "number" ? ranked.slice(0, poolSize) : ranked;
 
-  return ranked
+  return pool
     .filter((asset) => {
       const u = usageByAsset.get(asset.id) ?? [];
       if (u.some((usage) => (usage.platform ?? "").toLowerCase() === p)) return false; // never same platform twice

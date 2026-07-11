@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { selectAssetCandidates } from "@/lib/marketing/asset-reuse-policy";
 import { createLocalAsset, findLocalAssetCandidates, listLocalAssets, recordLocalAssetUsage } from "@/lib/marketing/project-assets-local";
 import type { ProjectAsset, ProjectSlug } from "@/lib/types";
 
@@ -110,25 +111,13 @@ export async function findAssetCandidates(args: { projectSlug: ProjectSlug; plat
   const assets = (data ?? []) as ProjectAsset[];
   if (!assets.length) return [];
 
-  // Enforce reuse policy after ranking:
-  // - never repeat the same asset on the same platform
-  // - if reuse_allowed=false, use it once total, then exclude it from all future platform searches
+  // Reuse policy via the shared, tested selector so cloud and local never diverge.
+  // `assets` is already the DB-ranked top-24, so no extra pool cap is needed here.
   const { data: usages } = await supabase
     .from("project_asset_usages")
     .select("asset_id,platform")
     .in("asset_id", assets.map((a) => a.id));
-  const usageByAsset = new Map<string, Array<{ platform: string | null }>>();
-  for (const usage of (usages ?? []) as Array<{ asset_id: string; platform: string | null }>) {
-    usageByAsset.set(usage.asset_id, [...(usageByAsset.get(usage.asset_id) ?? []), { platform: usage.platform }]);
-  }
-  return assets
-    .filter((asset) => {
-      const assetUsages = usageByAsset.get(asset.id) ?? [];
-      if (assetUsages.some((usage) => usage.platform === platform)) return false;
-      if (!asset.reuse_allowed && assetUsages.length > 0) return false;
-      return true;
-    })
-    .slice(0, args.limit ?? 6);
+  return selectAssetCandidates(assets, (usages ?? []) as Array<{ asset_id: string; platform: string | null }>, platform, args.limit ?? 6);
 }
 
 /** Record that an asset was attached to a post; bumps used_count + last_used_at. */
