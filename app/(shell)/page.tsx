@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, Megaphone, TrendingUp } from "lucide-react";
 import { OSBadge, OSPanel, PageHeading } from "@/components/os/ui";
+import { AutonomyStatus } from "@/components/os/autonomy-status";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { getHermesHealth } from "@/lib/agents/hermes-health";
 
@@ -69,6 +70,11 @@ export default async function OsHomePage() {
             </Link>
           );
         })}
+      </div>
+
+      {/* Autonomy readiness */}
+      <div className="mt-6">
+        <AutonomyStatus />
       </div>
 
       {/* Recent agent runs (all domains) */}

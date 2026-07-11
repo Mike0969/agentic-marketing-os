@@ -14,7 +14,9 @@
     "check:supabase": "node scripts/check-supabase.mjs",
     "check:workflow-schema": "node scripts/check-workflow-schema.mjs",
     "migrate": "node scripts/run-migration.mjs",
-    "seed:supabase": "node scripts/seed-supabase.mjs"
+    "seed:supabase": "node scripts/seed-supabase.mjs",
+    "preflight": "node --experimental-strip-types scripts/preflight.mts",
+    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
