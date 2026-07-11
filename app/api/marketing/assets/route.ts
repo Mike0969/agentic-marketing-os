@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import pathMod from "node:path";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
@@ -64,6 +62,7 @@ export async function POST(request: Request) {
   let uploadedFileName: string | null = null;
   let uploadedMime: string | null = null;
   let localFileName: string | null = null; // set only when a file is stored locally
+  let localBytes: Buffer | null = null;
   if (file && file instanceof File && file.size > 0) {
     uploadedFileName = file.name;
     uploadedMime = file.type || null;
@@ -77,11 +76,10 @@ export async function POST(request: Request) {
       if (error) return NextResponse.json({ error: `Upload failed: ${error.message}` }, { status: 500 });
       fileUrl = supabase.storage.from("marketing-assets").getPublicUrl(path).data.publicUrl;
     } else {
-      // Local mode: store under public/inspiration/<slug>/ so agents and the UI can read it.
-      const dir = pathMod.join(process.cwd(), "public", "inspiration", slug);
-      await mkdir(dir, { recursive: true });
+      // Local mode: registerLocalUpload writes the media atomically under the library
+      // lock (see below), so we only stage the name/bytes here.
       localFileName = `${randomUUID()}-${safeName}`;
-      await writeFile(pathMod.join(dir, localFileName), bytes);
+      localBytes = bytes;
       fileUrl = `/inspiration/${slug}/${localFileName}`;
     }
   }
@@ -111,8 +109,8 @@ export async function POST(request: Request) {
 
   // A locally-stored file is registered via its canonical path id (one identity, no
   // duplicate record on the next folder scan); everything else goes through the normal path.
-  const asset = localFileName
-    ? await registerLocalUpload({ slug: slug as ProjectSlug, fileName: localFileName, metadata: meta })
+  const asset = localFileName && localBytes
+    ? await registerLocalUpload({ slug: slug as ProjectSlug, fileName: localFileName, bytes: localBytes, metadata: meta })
     : await createProjectAsset({ project_slug: slug as ProjectSlug, file_url: fileUrl, ...meta });
 
   if (!asset) return NextResponse.json({ error: "Could not save asset." }, { status: 500 });

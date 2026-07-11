@@ -1,8 +1,14 @@
 // Local-folder backend for the Project Asset Library — used when Supabase is not
-// configured (local mode) so the inspiration library still works: the operator
-// drops their own videos/visuals into `public/inspiration/<project_slug>/` and the
-// agents search them exactly like the cloud library, honoring the same reuse rule
-// (never the same asset twice on the same platform; single-use assets once total).
+// configured (local mode). The operator drops their own videos/visuals into
+// `public/inspiration/<project_slug>/`; this backend builds and manages that library
+// with the same shape and reuse rule as the cloud library (never the same asset twice
+// on the same platform; single-use assets once total).
+//
+// Consumption note: the agents pick assets via `findAssetCandidates`, which is called
+// from the campaign-run path. That path currently requires Supabase, so in pure local
+// mode this backend powers the asset UI/API and library management; agent consumption
+// of these assets activates on the cloud path once Supabase is connected (both paths
+// share the same reuse policy, so the library you build locally carries over).
 //
 // Storage: media lives under `public/inspiration/<slug>/` (served by Next at
 // `/inspiration/...`). The manifest + usage log live in `data/project-assets.json`.
@@ -273,19 +279,42 @@ export async function createLocalAsset(input: Partial<ProjectAsset> & { project_
   });
 }
 
-// Register a file the upload route just wrote under public/inspiration/<slug>/.
-// Writes the operator metadata as a sidecar and scans, so the asset gets its ONE
-// canonical path-derived id (no duplicate auto-approved record on the next scan — C2).
-export async function registerLocalUpload(args: { slug: ProjectSlug; fileName: string; metadata?: Partial<ProjectAsset> }): Promise<ProjectAsset | null> {
+// Fields registration is allowed to set from a trusted, route-built metadata object.
+const UPLOAD_META_FIELDS = [
+  "brand_id", "asset_type", "title", "description", "tags", "platform_fit", "content_theme",
+  "visual_style", "quality_score", "reuse_allowed", "mandatory", "approved", "source_tool", "rights_status"
+] as const;
+
+function applyUploadMetadata(asset: ProjectAsset, metadata: Partial<ProjectAsset>): void {
+  for (const k of UPLOAD_META_FIELDS) {
+    if (metadata[k] !== undefined) (asset as Record<string, unknown>)[k] = metadata[k];
+  }
+  asset.updated_at = new Date().toISOString();
+}
+
+// Publish an uploaded file into the local library atomically. The media write, sidecar
+// write, scan, and metadata reconciliation all happen under ONE lock, so a concurrent
+// lazy scan can never register the canonical id with default metadata first and strand
+// the operator's real values (e.g. an approved=false upload staying auto-approved) — R2-1.
+// Reconciliation also corrects any record a prior scan may already have created.
+export async function registerLocalUpload(args: { slug: ProjectSlug; fileName: string; bytes: Buffer; metadata?: Partial<ProjectAsset> }): Promise<ProjectAsset | null> {
   const relPath = path.posix.join("inspiration", args.slug, args.fileName);
   const id = idForPath(relPath);
-  if (args.metadata && Object.keys(args.metadata).length) {
+  return withLock(async () => {
     const dir = path.join(mediaRoot, args.slug);
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, `${args.fileName}.json`), JSON.stringify(args.metadata, null, 2));
-  }
-  const manifest = await scanInspirationFolder();
-  return manifest.assets.find((a) => a.id === id) ?? null;
+    if (args.metadata && Object.keys(args.metadata).length) {
+      await writeFile(path.join(dir, `${args.fileName}.json`), JSON.stringify(args.metadata, null, 2));
+    }
+    await writeFile(path.join(dir, args.fileName), args.bytes); // media becomes visible only inside the lock
+    const manifest = await scanAndPersist();
+    const asset = manifest.assets.find((a) => a.id === id) ?? null;
+    if (asset && args.metadata) {
+      applyUploadMetadata(asset, args.metadata);
+      await writeManifest(manifest);
+    }
+    return asset;
+  });
 }
 
 export async function recordLocalAssetUsage(args: { assetId: string; contentItemId?: string | null; campaignId?: string | null; platform?: string | null; reused?: boolean }): Promise<void> {

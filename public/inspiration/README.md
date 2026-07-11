@@ -1,8 +1,13 @@
 # Inspiration library (local mode)
 
-Drop your own videos/visuals here and the marketing agents will use them as
-inspiration when creating posts — Crina searches this library BEFORE routing to
-the Visual Agent.
+Drop your own videos/visuals here to build your inspiration library. Crina searches
+this library BEFORE routing to the Visual Agent (`findAssetCandidates`).
+
+**When do agents actually use them?** Agent selection runs on the campaign path,
+which currently needs your Supabase database connected. So in local mode (database
+off) you build and manage the library here; the agents start drawing on it once
+Supabase is connected. The library and its reuse rules are identical across both
+modes, so what you set up here carries straight over.
 
 ## Where
 - `public/inspiration/gridfactory/` — GridFactory assets
