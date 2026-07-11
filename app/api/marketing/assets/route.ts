@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import pathMod from "node:path";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
@@ -45,7 +47,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
-  if (!isSupabaseConfigured()) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
 
   const form = await request.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "Expected multipart/form-data." }, { status: 400 });
@@ -64,14 +65,23 @@ export async function POST(request: Request) {
   if (file && file instanceof File && file.size > 0) {
     uploadedFileName = file.name;
     uploadedMime = file.type || null;
-    const supabase = createServiceClient();
-    if (!supabase) return NextResponse.json({ error: "Storage not available." }, { status: 503 });
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(-60) || "asset";
-    const path = `projects/${slug}/${randomUUID()}-${safeName}`;
     const bytes = Buffer.from(await file.arrayBuffer());
-    const { error } = await supabase.storage.from("marketing-assets").upload(path, bytes, { contentType: file.type || "application/octet-stream", upsert: false });
-    if (error) return NextResponse.json({ error: `Upload failed: ${error.message}` }, { status: 500 });
-    fileUrl = supabase.storage.from("marketing-assets").getPublicUrl(path).data.publicUrl;
+    if (isSupabaseConfigured()) {
+      const supabase = createServiceClient();
+      if (!supabase) return NextResponse.json({ error: "Storage not available." }, { status: 503 });
+      const path = `projects/${slug}/${randomUUID()}-${safeName}`;
+      const { error } = await supabase.storage.from("marketing-assets").upload(path, bytes, { contentType: file.type || "application/octet-stream", upsert: false });
+      if (error) return NextResponse.json({ error: `Upload failed: ${error.message}` }, { status: 500 });
+      fileUrl = supabase.storage.from("marketing-assets").getPublicUrl(path).data.publicUrl;
+    } else {
+      // Local mode: store under public/inspiration/<slug>/ so agents and the UI can read it.
+      const dir = pathMod.join(process.cwd(), "public", "inspiration", slug);
+      await mkdir(dir, { recursive: true });
+      const localName = `${randomUUID()}-${safeName}`;
+      await writeFile(pathMod.join(dir, localName), bytes);
+      fileUrl = `/inspiration/${slug}/${localName}`;
+    }
   }
 
   if (!fileUrl) return NextResponse.json({ error: "Provide a file or a file_url." }, { status: 400 });

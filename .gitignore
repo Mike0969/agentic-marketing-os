@@ -7,3 +7,12 @@ data/local-dashboard.json
 .agents
 skills-lock.json
 graphify-out
+
+# Local inspiration library (generated manifest + operator-dropped media)
+data/project-assets.json
+/public/inspiration/*/*
+!/public/inspiration/*/.gitkeep
+
+# Local-mode env backup (contains secrets)
+.env.local.*.bak
+.env.local.pre-localmode.bak

@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { createLocalAsset, findLocalAssetCandidates, listLocalAssets, recordLocalAssetUsage } from "@/lib/marketing/project-assets-local";
 import type { ProjectAsset, ProjectSlug } from "@/lib/types";
 
 // The Project Asset Library data layer. Crina searches this BEFORE routing to the Visual Agent.
@@ -38,7 +39,7 @@ export type AssetFilters = {
 
 export async function listProjectAssets(filters: AssetFilters = {}): Promise<ProjectAsset[]> {
   const supabase = await db();
-  if (!supabase) return [];
+  if (!supabase) return listLocalAssets(filters);
   let query = supabase.from("project_assets").select("*").order("mandatory", { ascending: false }).order("quality_score", { ascending: false }).order("created_at", { ascending: false });
   if (filters.projectSlug) query = query.eq("project_slug", filters.projectSlug);
   if (filters.assetType) query = query.eq("asset_type", filters.assetType);
@@ -52,7 +53,7 @@ export async function listProjectAssets(filters: AssetFilters = {}): Promise<Pro
 
 export async function createProjectAsset(input: Partial<ProjectAsset> & { project_slug: ProjectSlug }): Promise<ProjectAsset | null> {
   const supabase = await db();
-  if (!supabase) return null;
+  if (!supabase) return createLocalAsset(input);
   const { data, error } = await supabase
     .from("project_assets")
     .insert({
@@ -94,7 +95,7 @@ export async function updateProjectAsset(id: string, patch: Partial<ProjectAsset
  */
 export async function findAssetCandidates(args: { projectSlug: ProjectSlug; platform: string; limit?: number }): Promise<ProjectAsset[]> {
   const supabase = await db();
-  if (!supabase) return [];
+  if (!supabase) return findLocalAssetCandidates(args);
   const platform = args.platform.toLowerCase();
   const { data } = await supabase
     .from("project_assets")
@@ -133,7 +134,7 @@ export async function findAssetCandidates(args: { projectSlug: ProjectSlug; plat
 /** Record that an asset was attached to a post; bumps used_count + last_used_at. */
 export async function recordAssetUsage(args: { assetId: string; contentItemId?: string | null; campaignId?: string | null; platform?: string | null; reused?: boolean }): Promise<void> {
   const supabase = await db();
-  if (!supabase) return;
+  if (!supabase) return recordLocalAssetUsage(args);
   await supabase.from("project_asset_usages").insert({
     asset_id: args.assetId,
     content_item_id: args.contentItemId ?? null,
