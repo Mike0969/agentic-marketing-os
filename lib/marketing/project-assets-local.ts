@@ -7,8 +7,10 @@
 // Consumption note: the agents pick assets via `findAssetCandidates`, which is called
 // from the campaign-run path. That path currently requires Supabase, so in pure local
 // mode this backend powers the asset UI/API and library management; agent consumption
-// of these assets activates on the cloud path once Supabase is connected (both paths
-// share the same reuse policy, so the library you build locally carries over).
+// of these assets activates on the cloud path once Supabase is connected. The two
+// backends share the same reuse POLICY but NOT the same STORE: enabling Supabase reads
+// the cloud `project_assets` table and does not auto-import this local manifest/files
+// (re-upload local assets via the Assets page to populate the cloud library).
 //
 // Storage: media lives under `public/inspiration/<slug>/` (served by Next at
 // `/inspiration/...`). The manifest + usage log live in `data/project-assets.json`.

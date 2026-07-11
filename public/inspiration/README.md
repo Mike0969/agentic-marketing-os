@@ -6,8 +6,13 @@ this library BEFORE routing to the Visual Agent (`findAssetCandidates`).
 **When do agents actually use them?** Agent selection runs on the campaign path,
 which currently needs your Supabase database connected. So in local mode (database
 off) you build and manage the library here; the agents start drawing on it once
-Supabase is connected. The library and its reuse rules are identical across both
-modes, so what you set up here carries straight over.
+Supabase is connected.
+
+**Moving to Supabase:** the local library and the cloud library are separate
+stores. Enabling Supabase switches the app to the cloud `project_assets` table —
+it does **not** automatically import these local files. To use these same assets in
+cloud mode, re-upload them through the Assets page once Supabase is connected. (The
+reuse rules and behaviour are identical in both modes; only the stored files differ.)
 
 ## Where
 - `public/inspiration/gridfactory/` — GridFactory assets
