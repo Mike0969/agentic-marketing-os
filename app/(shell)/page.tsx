@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Megaphone, TrendingUp } from "lucide-react";
 import { OSBadge, OSPanel, PageHeading } from "@/components/os/ui";
 import { AutonomyStatus } from "@/components/os/autonomy-status";
+import { Brain3D } from "@/components/os/brain-3d";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { getHermesHealth } from "@/lib/agents/hermes-health";
 
@@ -71,6 +72,9 @@ export default async function OsHomePage() {
           );
         })}
       </div>
+
+      {/* 3D command center */}
+      <Brain3D />
 
       {/* Autonomy readiness */}
       <div className="mt-6">

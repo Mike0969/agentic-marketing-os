@@ -64,6 +64,6 @@ function isPublicPath(pathname: string) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|brain/vendor/.*|lead(?:/.*)?|api/auth/logout|api/auth/linkedin/start|api/auth/linkedin/callback|api/auth/x/start|api/auth/x/callback|api/auth/facebook/start|api/auth/facebook/callback|api/auth/instagram/start|api/auth/instagram/callback|api/auth/tiktok/start|api/auth/tiktok/callback|api/health|api/agents/team|api/leads/capture|api/marketing/seo-loop|api/marketing/automation/cron|api/marketing/campaigns/.*/orchestrate|api/marketing/campaigns/.*/automation/tick|api/marketing/campaigns/propose-ideas|api/marketing/campaigns/.*/run|api/marketing/content-items/.*/rework|api/sales/analyze|api/sales/consolidate|api/analytics/search-console/ingest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
+    "/((?!_next/static|_next/image|favicon.ico|brain/vendor/.*|lead(?:/.*)?|api/auth/logout|api/auth/linkedin/start|api/auth/linkedin/callback|api/auth/x/start|api/auth/x/callback|api/auth/facebook/start|api/auth/facebook/callback|api/auth/instagram/start|api/auth/instagram/callback|api/auth/tiktok/start|api/auth/tiktok/callback|api/health|api/brain/graph|api/agents/team|api/leads/capture|api/marketing/seo-loop|api/marketing/automation/cron|api/marketing/campaigns/.*/orchestrate|api/marketing/campaigns/.*/automation/tick|api/marketing/campaigns/propose-ideas|api/marketing/campaigns/.*/run|api/marketing/content-items/.*/rework|api/sales/analyze|api/sales/consolidate|api/analytics/search-console/ingest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"
   ]
 };
