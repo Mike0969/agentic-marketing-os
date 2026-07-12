@@ -70,7 +70,7 @@ test("no secret-shaped values leak: output has only the allowed node keys", () =
     brands: { state: "ok", data: [{ id: "x", name: "Brand", token: "ZZ_SECRET" } as unknown as Brand] },
     agents: okAgents, statusByAgentName: {}, mailingActive: false
   });
-  const allowed = new Set(["id", "label", "type", "status", "href", "val"]);
+  const allowed = new Set(["id", "label", "type", "status", "href", "val", "group", "groupLabel"]);
   for (const n of g.nodes) for (const k of Object.keys(n)) assert.ok(allowed.has(k), `unexpected node key ${k}`);
   assert.ok(!JSON.stringify(g).includes("ZZ_SECRET"), "extra source fields never leak");
 });

@@ -8,7 +8,7 @@
 export type NodeType = "os" | "business" | "domain" | "agent";
 export type NodeStatus = "active" | "planned" | "success" | "fallback" | "error" | "rate_limited" | "idle";
 
-export interface OrgNode { id: string; label: string; type: NodeType; status: NodeStatus; href: string | null; val: number }
+export interface OrgNode { id: string; label: string; type: NodeType; status: NodeStatus; href: string | null; val: number; group: string; groupLabel: string }
 export interface OrgLink { source: string; target: string }
 export interface OrgGraph { nodes: OrgNode[]; links: OrgLink[]; generatedAt: string }
 
@@ -35,15 +35,17 @@ const KNOWN_AGENTS: Agent[] = [
 
 // Frozen function-domain map. Mailing's activity depends on Resend being configured.
 function domains(mailingActive: boolean): OrgNode[] {
+  const d = (id: string, label: string, status: NodeStatus, href: string | null): OrgNode =>
+    ({ id: `domain:${id}`, label, type: "domain", status, href, val: 8, group: `dom:${id}`, groupLabel: label });
   return [
-    { id: "domain:marketing", label: "Marketing", type: "domain", status: "active", href: "/marketing", val: 8 },
-    { id: "domain:sales", label: "Sales", type: "domain", status: "active", href: "/sales", val: 8 },
-    { id: "domain:mailing", label: "Mailing", type: "domain", status: mailingActive ? "active" : "planned", href: mailingActive ? "/marketing" : null, val: 8 },
-    { id: "domain:ads", label: "Ads", type: "domain", status: "planned", href: null, val: 8 },
-    { id: "domain:trading", label: "Trading", type: "domain", status: "planned", href: null, val: 8 },
-    { id: "domain:investor", label: "Investor platform", type: "domain", status: "planned", href: null, val: 8 },
-    { id: "domain:assistant", label: "Personal assistant", type: "domain", status: "planned", href: null, val: 8 },
-    { id: "domain:web", label: "Web assistants", type: "domain", status: "planned", href: null, val: 8 }
+    d("marketing", "Marketing", "active", "/marketing"),
+    d("sales", "Sales", "active", "/sales"),
+    d("mailing", "Mailing", mailingActive ? "active" : "planned", mailingActive ? "/marketing" : null),
+    d("ads", "Ads", "planned", null),
+    d("trading", "Trading", "planned", null),
+    d("investor", "Investor platform", "planned", null),
+    d("assistant", "Personal assistant", "planned", null),
+    d("web", "Web assistants", "planned", null)
   ];
 }
 
@@ -66,13 +68,13 @@ export function buildOrgGraph(input: {
   const seen = new Set<string>();
   const push = (n: OrgNode) => { if (!seen.has(n.id)) { seen.add(n.id); nodes.push(n); } };
 
-  push({ id: "os", label: "Command Center", type: "os", status: "active", href: "/", val: 20 });
+  push({ id: "os", label: "Command Center", type: "os", status: "active", href: "/", val: 20, group: "core", groupLabel: "Core" });
 
   const businessIds: string[] = [];
   for (const b of brands) {
     const id = `business:${b.id}`;
     businessIds.push(id);
-    push({ id, label: b.name, type: "business", status: "active", href: "/marketing", val: 12 });
+    push({ id, label: b.name, type: "business", status: "active", href: "/marketing", val: 12, group: `biz:${b.id}`, groupLabel: b.name });
   }
 
   const domainNodes = domains(input.mailingActive);
@@ -82,7 +84,7 @@ export function buildOrgGraph(input: {
   for (const a of agents) {
     const id = `agent:${a.id}`;
     agentIds.push(id);
-    push({ id, label: a.name, type: "agent", status: normStatus(input.statusByAgentName[a.name]), href: "/agents", val: 5 });
+    push({ id, label: a.name, type: "agent", status: normStatus(input.statusByAgentName[a.name]), href: "/agents", val: 5, group: "agents", groupLabel: "Agents" });
   }
 
   // links: os→business, os→domain, business→marketing, marketing→agent. Dedup + only
