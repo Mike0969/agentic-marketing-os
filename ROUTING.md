@@ -11,7 +11,7 @@ when the user says any of these (or a close variant), execute the mapped action 
 | "review plan" / "review the plan" | run `/codex:adversarial-review --model gpt-5.6-sol --effort xhigh --background` — challenge PLAN.md against REVIEW-RUBRIC.md — missing edge cases, interface mismatches, unstated assumptions, tasks that fail their own acceptance criteria. poll with `/codex:status`, collect with `/codex:result`, write findings to REVIEW.md with severity tags (blocker / major / nit). |
 | "reconcile" / "fix the plan" | read REVIEW.md. address every blocker and major in the plan (accept, rebut with reasoning, or amend). write PLAN.v2.md. ignore nits unless free. max 2 review round-trips total — after that, ship. |
 | "dispatch" / "implement the plan" | split the task DAG in PLAN.v2.md by task class (see dispatch table). create one git worktree per lane. package each task per HANDOFF rules below. route each task to its lane. |
-| "review code" / "final review" | run `/codex:adversarial-review --model gpt-5.6-terra --effort high --background` on the merged diff, checking every acceptance criterion in PLAN.v2.md. terra, not sol: code errors surface in tests, plan errors compound — spend accordingly. |
+| "review code" / "final review" | run `/codex:adversarial-review --model gpt-5.6-sol --effort high --background` on the merged diff, checking every acceptance criterion in PLAN.v2.md. Operator preference: use sol for code review too (not terra). |
 | "rescue" / "it's stuck" | run `/codex:rescue --model gpt-5.6-sol --effort high <task description>` — fix with the smallest safe patch. |
 | "handoff" / "transfer" | run `/codex:transfer` to create a persistent codex thread from this session; give the user the `codex resume <session-id>` command. |
 | "status" | run `/codex:status` and summarize all background jobs in one line each. |
@@ -23,10 +23,10 @@ when the user says any of these (or a close variant), execute the mapped action 
 | planning, architecture, task DAG | fable 5 (you) | adaptive | claude code plan mode | plan |
 | plan review | gpt-5.6-sol | xhigh | `/codex:adversarial-review --background` vs REVIEW-RUBRIC.md | plan-review |
 | implementation (all of it) | opus 4.8 | high | claude code, per HANDOFF packets | impl |
-| code review | gpt-5.6-terra | high | `/codex:adversarial-review --model gpt-5.6-terra --background` vs PLAN.v2.md | code-review |
+| code review | gpt-5.6-sol | high | `/codex:adversarial-review --model gpt-5.6-sol --background` vs PLAN.v2.md | code-review |
 | stuck task recovery | gpt-5.6-sol | high | `/codex:rescue` | rescue |
 
-the asymmetry is deliberate: plan errors compound downstream, so the plan gets the frontier reviewer (sol xhigh). code errors surface in tests, so code review runs on the cheap tier (terra). spend where errors compound.
+both plan review and code review use sol (operator preference, 2026-07-12): sol xhigh for plans, sol high for code. terra remains available as a config profile for ad-hoc cheap passes.
 
 opus implements only what's in PLAN.v2.md, packet by packet.
 
