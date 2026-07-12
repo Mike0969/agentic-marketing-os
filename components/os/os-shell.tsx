@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bot, Gauge, LogOut, Megaphone, Settings, TrendingUp } from "lucide-react";
+import { Bot, Brain, Gauge, LogOut, Megaphone, Settings, TrendingUp } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
@@ -10,6 +10,7 @@ const nav = [
   { href: "/marketing", label: "Marketing", icon: Megaphone },
   { href: "/sales", label: "Sales", icon: TrendingUp },
   { href: "/agents", label: "Agents", icon: Bot },
+  { href: "/brain", label: "Brain", icon: Brain },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 

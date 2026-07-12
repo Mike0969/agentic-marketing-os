@@ -16,7 +16,8 @@
     "migrate": "node scripts/run-migration.mjs",
     "seed:supabase": "node scripts/seed-supabase.mjs",
     "preflight": "node --experimental-strip-types scripts/preflight.mts",
-    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\""
+    "brain:graph": "node scripts/sync-brain-graph.mjs",
+    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\" && node --test scripts/test-brain-sync.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
