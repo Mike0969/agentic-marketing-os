@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lead/Lag Trading Desk</title>
+<style>
+  :root {
+    --bg:#0a0a0a; --panel:#111111; --line:#1f1f1f; --txt:#e5e5e5; --dim:#888;
+    --green:#22c55e; --red:#ef4444; --yellow:#eab308; --orange:#f97316;
+    --blue:#3b82f6; --best:#a855f7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
+  h1{font-size:16px;margin:0 0 4px;letter-spacing:.5px}
+  .sub{color:var(--dim);font-size:12px;margin-bottom:16px}
+  .head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-bottom:16px}
+  .pill{padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--line);background:#000}
+  .pill.up{color:var(--green);border-color:#22c55e44}
+  .pill.down{color:var(--red);border-color:#ef444444}
+  .pill.flat{color:var(--dim)}
+  .conf{color:var(--dim);font-size:12px}
+  .dot{height:8px;width:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;background:#0d0d0d}
+  tr:last-child td{border-bottom:none}
+  tr.best{background:#a855f70d}
+  td .sym{font-weight:700}
+  .rank{font-weight:700;color:var(--yellow)}
+  .rank.zero{color:var(--dim)}
+  .st{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700}
+  .st-WAITING{background:#262626;color:var(--dim)}
+  .st-LEADER-BREAK{background:#3b82f61a;color:var(--blue)}
+  .st-TREND-CONFIRMED{background:#eab3081a;color:var(--yellow)}
+  .st-LAG-OPPORTUNITY{background:#a855f71a;color:var(--best)}
+  .st-FADE-LEADER{background:#f973161a;color:var(--orange)}
+  .flag{display:inline-block;padding:1px 6px;border-radius:5px;font-size:10px;background:#ef44441a;color:var(--red);margin-right:4px}
+  .dir.up{color:var(--green)} .dir.down{color:var(--red)}
+  .timeline{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .timeline h2{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin:0 0 10px}
+  .tl{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tl .step{padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:#000;font-size:12px}
+  .tl .arrow{color:var(--dim)}
+  .conn{font-size:11px;color:var(--dim)}
+  .conn.ok{color:var(--green)} .conn.bad{color:var(--red)}
+  .empty{color:var(--dim);padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LEAD / LAG DESK <span class="conn" id="conn">…connecting</span></h1>
+  <div class="sub">EVWMA break sequence · latched states · updates on transition only</div>
+
+  <div class="head">
+    <span class="pill flat" id="usd">USD —</span>
+    <span class="conf" id="conf"></span>
+    <span class="pill flat" id="best">BEST LAG —</span>
+  </div>
+
+  <table id="tbl">
+    <thead>
+      <tr>
+        <th>Symbol</th><th>Break</th><th>Dir</th><th>Lag (ATR)</th>
+        <th>Trend</th><th>Flags</th><th>State</th>
+      </tr>
+    </thead>
+    <tbody id="rows"><tr><td colspan="7" class="empty">waiting for first sweep…</td></tr></tbody>
+  </table>
+
+  <div class="timeline">
+    <h2>Break sequence timeline</h2>
+    <div class="tl" id="tl"><span class="conn">—</span></div>
+  </div>
+</div>
+
+<script>
+const wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+let ws;
+function connect() {
+  ws = new WebSocket(wsUrl);
+  const el = document.getElementById("conn");
+  ws.onopen = () => { el.textContent = "live"; el.className = "conn ok"; };
+  ws.onclose = () => { el.textContent = "reconnecting…"; el.className = "conn bad"; setTimeout(connect, 2000); };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (ev) => render(JSON.parse(ev.data));
+}
+function dirLabel(d){ return d>0?"UP":(d<0?"DOWN":"—"); }
+function dirClass(d){ return d>0?"up":(d<0?"down":""); }
+function fmtTime(t){ if(!t) return "—"; return new Date(t*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
+
+function render(s) {
+  const usd = document.getElementById("usd");
+  const dir = s.usd_direction||0;
+  usd.textContent = "USD " + dirLabel(dir);
+  usd.className = "pill " + (dir>0?"up":dir<0?"down":"flat");
+  document.getElementById("conf").textContent = "confidence " + (s.usd_confidence||0).toFixed(2) + " · anchors " + (s.usd_state||"—");
+  const best = document.getElementById("best");
+  best.textContent = "BEST LAG " + (s.best_lag_symbol||"—");
+  best.className = "pill " + (s.best_lag_symbol?"up":"flat");
+
+  const rows = document.getElementById("rows");
+  if (!s.ready || !s.rows || !s.rows.length) {
+    rows.innerHTML = '<tr><td colspan="7" class="empty">no data yet — is the scanner / TradingView connected?</td></tr>';
+    document.getElementById("tl").innerHTML = '<span class="conn">—</span>';
+    return;
+  }
+  const ordered = [...s.rows].sort((a,b)=> (a.rank===0?99:a.rank)-(b.rank===0?99:b.rank) || b.score-a.score);
+  rows.innerHTML = ordered.map(r => {
+    const cls = r.is_best_lag ? "best" : "";
+    const rank = r.rank>0 ? `${r.rank} · ${fmtTime(r.broke_at)}` : "—";
+    const flags = (r.flags||[]).map(f=>`<span class="flag">${f}</span>`).join("");
+    return `<tr class="${cls}">
+      <td class="sym">${r.symbol}</td>
+      <td class="rank ${r.rank>0?"":"zero"}">${rank}</td>
+      <td class="dir ${dirClass(r.direction)}">${dirLabel(r.direction)}</td>
+      <td>${r.lag_distance?.toFixed(2)}</td>
+      <td>${r.trend_strength_pct}%</td>
+      <td>${flags}</td>
+      <td><span class="st st-${r.state}">${r.state}</span></td>
+    </tr>`;
+  }).join("");
+
+  // timeline of broken instruments in order
+  const broken = s.rows.filter(r=>r.rank>0).sort((a,b)=>a.rank-b.rank);
+  const tl = document.getElementById("tl");
+  tl.innerHTML = broken.length
+    ? broken.map((r,i)=> `${i?'<span class="arrow">›</span>':''}<span class="step"><b>${r.rank}</b> ${r.symbol} <span style="color:var(--dim)">${fmtTime(r.broke_at)}</span></span>`).join("")
+    : '<span class="conn">no breaks yet</span>';
+}
+
+connect();
+</script>
+</body>
+</html>
