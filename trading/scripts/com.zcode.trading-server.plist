@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zcode.trading-server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading/scripts/run-server.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading</string>
+
+    <!-- Start at login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on crash: this is a long-running daemon (it must stay up). -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading/logs/server.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading/logs/server.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/dubai/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>/Users/dubai</string>
+    </dict>
+</dict>
+</plist>

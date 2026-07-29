@@ -27,39 +27,49 @@ direction flip (consensus USD direction reversing) resets them.
 
 ## Run
 
+Two macOS launchd agents do all the work (both survive reboot, auto-start at login):
+
+| Agent | Role | Cadence |
+|---|---|---|
+| `trading-scanner` | Data collector — pulls 12 instruments × {15m,1h} from TradingView, caches to SQLite | every 15 min (one-shot + exit) |
+| `trading-server` | Dashboard — pure read-only view over the cache, serves the UI + WebSocket | continuous on `:8000` |
+
+The server **never touches the TradingView MCP** — it recomputes the EVWMA +
+score snapshot from the SQLite cache locally. So it's instant, safe to run
+continuously, and can't collide with the scanner or the other MCP clients on
+the shared CDP bridge.
+
+### Commands (from the repo root)
+```bash
+npm run trading:install     # install + start BOTH agents
+npm run trading:status      # are they running?
+npm run trading:open        # open the dashboard in your browser
+npm run trading:logs        # tail both logs
+npm run trading:uninstall   # stop + remove both
+npm run trading:backtest    # measure the edge on accumulated data
+npm run trading:test        # run the pytest suite
+```
+
+### Direct URLs
+- **Dashboard:** http://127.0.0.1:8000
+- **Snapshot JSON:** http://127.0.0.1:8000/api/snapshot
+- **Health:** http://127.0.0.1:8000/api/health
+- Also embedded as the `/trading` tab in the Agentic OS.
+
+### Manual / dev
 ```bash
 cd trading
 uv run pytest                              # engine correctness (offline)
-uv run python -m trading.server            # dashboard (FastAPI + WS) on :8000
+uv run python -m trading.server            # dashboard on :8000 (foreground)
 uv run python -m trading.scanner --source mcp --once   # single sweep + exit
 uv run python -m trading.backtest --source db --bars 16
-```
-
-Then open the `/trading` tab in the Agentic OS (the FastAPI server is served on
-`http://127.0.0.1:8000` by default and iframe-embedded).
-
-## Persistent data collection (accumulates edge-validation history)
-
-The scanner runs as a **macOS launchd agent** that fires a one-shot sweep every
-15 minutes (matching the 15m bar close) and exits. This keeps the time it
-"drives" the shared TradingView CDP chart brief, minimizing collision with the
-other MCP clients (Hermes/Claude/Codex) on the same bridge. The OHLCV cache in
-`trading/data/trading.db` grows over time; once it has a few weeks of history,
-re-run the backtest for a statistically meaningful edge measurement.
-
-From the repo root:
-```bash
-npm run trading:install     # install + start the agent (auto-starts at login)
-npm run trading:status      # is a sweep running?
-npm run trading:logs        # tail the sweep logs
-npm run trading:uninstall   # stop + remove
-npm run trading:backtest    # measure the edge on accumulated data
 ```
 
 Requirements for live data: **TradingView Desktop must be running** with
 `--remote-debugging-port=9222` (it already is). The `VANTAGE:` broker prefix
 is confirmed working; indices not on Vantage are pinned to TradingView's free
 feeds (e.g. `TVC:NI225` for the Nikkei).
+
 
 
 ## Config
