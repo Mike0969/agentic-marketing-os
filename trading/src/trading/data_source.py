@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from abc import ABC, abstractmethod
@@ -23,6 +24,8 @@ from dataclasses import dataclass
 import pandas as pd
 
 from .config import TIMEFRAMES, settings
+
+log = logging.getLogger("trading.data_source")
 
 
 @dataclass
@@ -159,87 +162,58 @@ class TradingViewMCPSource(DataSource):
     The node server is a CDP bridge that needs TradingView Desktop running with
     --remote-debugging-port=9222. We drive it as an unattended client:
       set symbol -> set timeframe -> read OHLCV -> next (serialized).
+
+    Uses the official `mcp` SDK client (handles the JSON-RPC framing, the
+    initialize + notifications/initialized handshake, and result unwrapping),
+    which is far more robust than hand-rolling the stdio protocol.
     """
 
     def __init__(self, server_path: str | None = None, broker: str | None = None) -> None:
         self.server_path = server_path or settings.tv_server_path
         self.broker = broker or os.environ.get("TRADING_BROKER", "VANTAGE")
-        self._proc: asyncio.subprocess.Process | None = None
-        self._next_id = 1
+        self._params = None  # StdioServerParameters
+        self._cm_stack: asyncio.AsyncContextManager | None = None
+        self._session = None  # mcp.ClientSession
         self._lock = asyncio.Lock()
-        self._initialized = False
 
     @property
     def name(self) -> str:
         return "tradingview-mcp"
 
-    async def _ensure(self) -> None:
-        if self._proc is not None and self._proc.returncode is None:
-            return
-        # Spawn the node MCP server.
-        self._proc = await asyncio.create_subprocess_exec(
-            "node", self.server_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        # MCP initialize handshake.
-        await self._call("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "trading-scanner", "version": "1.0"},
-        })
-        self._initialized = True
-
-    async def _call(self, method: str, params: dict | None = None) -> dict:
-        """Send one JSON-RPC request over stdio and read one response."""
-        await self._ensure()
-        assert self._proc and self._proc.stdin and self._proc.stdout
-        req_id = self._next_id
-        self._next_id += 1
-        msg = {"jsonrpc": "2.0", "id": req_id, "method": method, "params": params or {}}
-        data = json.dumps(msg).encode()
-        header = f"Content-Length: {len(data)}\r\n\r\n".encode()
-        async with self._lock:
-            self._proc.stdin.write(header + data)
-            await self._proc.stdin.drain()
-            return await self._read_response(req_id)
+    async def _ensure(self) -> "ClientSession":  # type: ignore[name-defined]
+        """Lazily spawn the server + open + initialize a client session."""
+        if self._session is not None:
+            return self._session
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        self._params = StdioServerParameters(
+            command="node", args=[self.server_path])
+        # stdio_client + ClientSession are async context managers; we enter them
+        # manually so the session lives across multiple calls.
+        self._stdio_cm = stdio_client(self._params)
+        read, write = await self._stdio_cm.__aenter__()
+        self._session_cm = ClientSession(read, write)
+        self._session = await self._session_cm.__aenter__()
+        await self._session.initialize()
+        return self._session
 
     async def _call_tool(self, name: str, args: dict) -> dict:
-        return await self._call("tools/call", {"name": name, "arguments": args})
-
-    async def _read_response(self, req_id: int, timeout: float = 30.0) -> dict:
-        """Read framed JSON-RPC responses until we see ours."""
-        assert self._proc and self._proc.stdout
-        buf = b""
-        while True:
-            try:
-                chunk = await asyncio.wait_for(self._proc.stdout.read(4096), timeout=timeout)
-            except asyncio.TimeoutError:
-                raise RuntimeError(f"MCP response timeout (id={req_id})")
-            if not chunk:
-                raise RuntimeError("MCP server closed stdout")
-            buf += chunk
-            while b"\r\n\r\n" in buf:
-                head, rest = buf.split(b"\r\n\r\n", 1)
-                cl = _content_length(head)
-                if cl is None or len(rest) < cl:
-                    break  # need more bytes
-                body = rest[:cl]
-                buf = rest[cl:]
-                msg = json.loads(body.decode())
-                if msg.get("id") == req_id:
-                    return msg
-                # notifications / other ids: keep reading
+        """Call a tool and unwrap its content[].text JSON into a dict."""
+        session = await self._ensure()
+        result = await session.call_tool(name, args)
+        return _unwrap_tool_result(result)
 
     async def get_ohlcv(self, symbol: str, timeframe: str, bars: int) -> OHLCV | None:
         tf = TIMEFRAMES.get(timeframe, timeframe)
         async with self._lock:
-            await self._call_tool("chart_set_symbol", {"symbol": f"{self.broker}:{symbol}"})
-            await self._call_tool("chart_set_timeframe", {"timeframe": tf})
-            resp = await self._call_tool("data_get_ohlcv",
-                                         {"count": min(bars, 500), "summary": False})
-        payload = _unwrap_tool_result(resp)
+            try:
+                await self._call_tool("chart_set_symbol", {"symbol": f"{self.broker}:{symbol}"})
+                await self._call_tool("chart_set_timeframe", {"timeframe": tf})
+                payload = await self._call_tool("data_get_ohlcv",
+                                                {"count": min(bars, 500), "summary": False})
+            except Exception as e:  # noqa: BLE001
+                log.warning("MCP get_ohlcv(%s, %s) failed: %s", symbol, timeframe, e)
+                return None
         df = parse_mcp_ohlcv(payload)
         if df is None or df.empty:
             return None
@@ -248,42 +222,42 @@ class TradingViewMCPSource(DataSource):
     async def health(self) -> dict:
         """Call tv_health_check to verify the CDP/TradingView link."""
         try:
-            resp = await self._call_tool("tv_health_check", {})
-            return _unwrap_tool_result(resp)
+            return await self._call_tool("tv_health_check", {})
         except Exception as e:  # noqa: BLE001
             return {"success": False, "error": str(e)}
 
     async def close(self) -> None:
-        if self._proc and self._proc.returncode is None:
+        # Exit the context managers in reverse order; tolerate partial states.
+        for cm_attr in ("_session_cm", "_stdio_cm"):
+            cm = getattr(self, cm_attr, None)
+            if cm is None:
+                continue
             try:
-                self._proc.terminate()
-                await asyncio.wait_for(self._proc.wait(), timeout=5)
+                await cm.__aexit__(None, None, None)
             except Exception:  # noqa: BLE001
-                self._proc.kill()
-        self._proc = None
+                pass
+        self._session = None
+        self._session_cm = None
+        self._stdio_cm = None
 
 
-def _content_length(head: bytes) -> int | None:
-    for line in head.split(b"\r\n"):
-        if line.lower().startswith(b"content-length:"):
-            try:
-                return int(line.split(b":", 1)[1].strip())
-            except ValueError:
-                return None
-    return None
+def _unwrap_tool_result(result) -> dict:
+    """An MCP tools/call result wraps the payload in content[].text (JSON).
 
-
-def _unwrap_tool_result(resp: dict) -> dict:
-    """An MCP tools/call response wraps the payload in content[].text (JSON)."""
-    result = resp.get("result") or {}
-    content = result.get("content")
+    Accepts either the SDK's CallToolResult object (has .content) or a raw dict.
+    """
+    content = getattr(result, "content", None)
+    if content is None and isinstance(result, dict):
+        content = (result.get("result") or {}).get("content")
     if isinstance(content, list):
         for item in content:
-            if item.get("type") == "text":
+            text = item.text if hasattr(item, "text") else item.get("text") if isinstance(item, dict) else None
+            if text:
                 try:
-                    return json.loads(item["text"])
-                except (json.JSONDecodeError, KeyError):
+                    return json.loads(text)
+                except (json.JSONDecodeError, TypeError):
                     continue
     if isinstance(result, dict) and ("bars" in result or "success" in result):
         return result
     return {}
+
