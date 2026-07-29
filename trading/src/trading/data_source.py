@@ -37,7 +37,8 @@ class DataSource(ABC):
     """Swappable data interface consumed by the scoring engine."""
 
     @abstractmethod
-    async def get_ohlcv(self, symbol: str, timeframe: str, bars: int) -> OHLCV | None: ...
+    async def get_ohlcv(self, symbol: str, timeframe: str, bars: int,
+                        quote: str | None = None) -> OHLCV | None: ...
 
     async def close(self) -> None: ...
 
@@ -64,7 +65,8 @@ class CsvSource(DataSource):
     def _path(self, symbol: str, timeframe: str) -> str:
         return os.path.join(self.data_dir, f"{symbol}_{timeframe}.csv")
 
-    async def get_ohlcv(self, symbol: str, timeframe: str, bars: int) -> OHLCV | None:
+    async def get_ohlcv(self, symbol: str, timeframe: str, bars: int,
+                        quote: str | None = None) -> OHLCV | None:
         path = self._path(symbol, timeframe)
         if not os.path.exists(path):
             return None
@@ -203,21 +205,44 @@ class TradingViewMCPSource(DataSource):
         result = await session.call_tool(name, args)
         return _unwrap_tool_result(result)
 
-    async def get_ohlcv(self, symbol: str, timeframe: str, bars: int) -> OHLCV | None:
+    async def get_ohlcv(self, symbol: str, timeframe: str, bars: int,
+                       quote: str | None = None, timeout: float = 40.0) -> OHLCV | None:
+        """Fetch OHLCV. `quote` is the full EXCHANGE:TICKER; when omitted we
+        build <broker>:<symbol> for backward compatibility.
+
+        `timeout` caps the whole symbol+tf read so one stuck chart-switch on the
+        shared CDP bridge can't stall an entire sweep — it's skipped instead.
+        """
         tf = TIMEFRAMES.get(timeframe, timeframe)
+        tv_symbol = quote or f"{self.broker}:{symbol}"
         async with self._lock:
             try:
-                await self._call_tool("chart_set_symbol", {"symbol": f"{self.broker}:{symbol}"})
-                await self._call_tool("chart_set_timeframe", {"timeframe": tf})
-                payload = await self._call_tool("data_get_ohlcv",
-                                                {"count": min(bars, 500), "summary": False})
+                async def _read():
+                    await self._call_tool("chart_set_symbol", {"symbol": tv_symbol})
+                    await self._call_tool("chart_set_timeframe", {"timeframe": tf})
+                    return await self._call_tool("data_get_ohlcv",
+                                                 {"count": min(bars, 500), "summary": False})
+                payload = await asyncio.wait_for(_read(), timeout=timeout)
+            except asyncio.TimeoutError:
+                log.warning("MCP get_ohlcv(%s, %s) timed out after %ss (chart busy?)",
+                            tv_symbol, timeframe, timeout)
+                # Recycle the session so the next call reconnects cleanly.
+                await self._recycle()
+                return None
             except Exception as e:  # noqa: BLE001
-                log.warning("MCP get_ohlcv(%s, %s) failed: %s", symbol, timeframe, e)
+                log.warning("MCP get_ohlcv(%s, %s) failed: %s", tv_symbol, timeframe, e)
                 return None
         df = parse_mcp_ohlcv(payload)
         if df is None or df.empty:
             return None
         return OHLCV(df=df)
+
+    async def _recycle(self) -> None:
+        """Drop the current MCP session so the next call re-initializes."""
+        try:
+            await self.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     async def health(self) -> dict:
         """Call tv_health_check to verify the CDP/TradingView link."""

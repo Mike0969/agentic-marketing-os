@@ -28,5 +28,6 @@ trading/data/*.csv
 trading/.env*
 trading/.pytest_cache/
 trading/.ruff_cache/
+trading/logs/
 !trading/.env.example
 

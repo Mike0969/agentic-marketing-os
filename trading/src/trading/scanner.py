@@ -57,8 +57,8 @@ class Scanner:
         bars = config.settings.ohlcv_bars
         for inst in self.instruments:
             try:
-                primary_ohlcv = await self.source.get_ohlcv(inst.symbol, config.PRIMARY_TF, bars)
-                context_ohlcv = await self.source.get_ohlcv(inst.symbol, config.CONTEXT_TF, bars)
+                primary_ohlcv = await self.source.get_ohlcv(inst.symbol, config.PRIMARY_TF, bars, inst.quote)
+                context_ohlcv = await self.source.get_ohlcv(inst.symbol, config.CONTEXT_TF, bars, inst.quote)
                 # trigger not needed for the score yet; fetched for completeness if cheap.
             except Exception as e:  # noqa: BLE001
                 log.warning("fetch failed for %s: %s", inst.symbol, e)
@@ -117,7 +117,7 @@ class Scanner:
         # We use EURUSD as the heartbeat; any instrument works.
         inst = self.instruments[0]
         try:
-            ohlcv = await self.source.get_ohlcv(inst.symbol, config.PRIMARY_TF, 2)
+            ohlcv = await self.source.get_ohlcv(inst.symbol, config.PRIMARY_TF, 2, inst.quote)
         except Exception:  # noqa: BLE001
             return False
         if ohlcv is None or ohlcv.df.empty:
@@ -132,22 +132,48 @@ class Scanner:
         return False
 
     async def run(self, poll_seconds: int | None = None) -> None:
-        """Background loop: re-sweep on 15m bar close (or poll_seconds)."""
+        """Background loop: re-sweep on 15m bar close (or poll_seconds).
+
+        Hardened for unattended long-running operation:
+          - every sweep is isolated; a failure never kills the loop
+          - the MCP source is recycled on repeated failures (reconnects CDP)
+          - a heartbeat is logged periodically so it's easy to confirm it's alive
+        """
         poll = poll_seconds or config.settings.poll_seconds
         log.info("scanner starting (source=%s, poll=%ss)", self.source.name, poll)
         # First sweep immediately so the dashboard has data on boot.
+        consecutive_failures = 0
         try:
             await self.sweep_once()
+            consecutive_failures = 0
         except Exception as e:  # noqa: BLE001
             log.warning("initial sweep failed: %s", e)
+        last_heartbeat = time.time()
         while True:
             await asyncio.sleep(min(poll, 60))  # wake often enough to catch bar close
             try:
-                if await self._primary_just_closed():
+                closed = await self._primary_just_closed()
+                if closed:
                     log.info("15m bar closed -> sweeping")
                     await self.sweep_once()
+                    consecutive_failures = 0
+                # Heartbeat every ~15 min regardless of sweeps.
+                if time.time() - last_heartbeat > 900:
+                    last_heartbeat = time.time()
+                    snap = self.snapshot
+                    log.info("heartbeat ok | source=%s | last_sweep=%s | rows=%s",
+                             self.source.name,
+                             bool(snap), len(snap.rows) if snap else 0)
             except Exception as e:  # noqa: BLE001
-                log.warning("sweep error: %s", e)
+                consecutive_failures += 1
+                log.warning("sweep error (#%d): %s", consecutive_failures, e)
+                # On repeated failures, recycle the source (forces a CDP reconnect).
+                if consecutive_failures % 3 == 0:
+                    log.warning("recycling data source after %d failures", consecutive_failures)
+                    try:
+                        await self.source.close()
+                    except Exception:  # noqa: BLE001
+                        pass
 
     async def close(self) -> None:
         await self.source.close()
@@ -166,11 +192,20 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     p = argparse.ArgumentParser(description="Lead/lag trading scanner")
     p.add_argument("--source", choices=["mcp", "csv"], default="mcp")
+    p.add_argument("--once", action="store_true",
+                   help="run a single sweep and exit (for launchd cron use). "
+                        "Minimizes the window of driving the shared TradingView "
+                        "chart, avoiding collision with other MCP clients.")
     args = p.parse_args()
     scanner = Scanner(source=_build_source(args.source))
     try:
-        asyncio.run(scanner.run())
+        if args.once:
+            asyncio.run(scanner.sweep_once())
+        else:
+            asyncio.run(scanner.run())
     except KeyboardInterrupt:
+        pass
+    finally:
         asyncio.run(scanner.close())
 
 

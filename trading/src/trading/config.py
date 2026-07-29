@@ -28,32 +28,42 @@ class Instrument:
 
 
 def _q(ticker: str, broker: str | None = None) -> str:
-    """Build the broker-prefixed quote symbol. UNVERIFIED prefix — confirm at runtime."""
+    """Build the broker-prefixed quote symbol."""
     b = broker or os.environ.get("TRADING_BROKER", "VANTAGE")
     return f"{b}:{ticker}"
 
 
 def instruments() -> list[Instrument]:
     broker = os.environ.get("TRADING_BROKER", "VANTAGE")
+    # (symbol, group, invert, quote_override)
+    # quote_override: an explicit EXCHANGE:TICKER when the instrument is NOT on
+    # the default broker feed (indices often live on TVC/FOREXCOM/FXCM, not
+    # Vantage). When None, it defaults to <broker>:<symbol>.
     raw = [
         # FX majors (not USD-base) — no inversion needed; falling EURUSD = USD up.
-        ("EURUSD", "fx", False),
-        ("GBPUSD", "fx", False),
-        ("AUDUSD", "fx", False),
-        ("NZDUSD", "fx", False),
+        ("EURUSD", "fx", False, None),
+        ("GBPUSD", "fx", False, None),
+        ("AUDUSD", "fx", False, None),
+        ("NZDUSD", "fx", False, None),
         # USD anchors — USD-base, so invert to the common USD direction.
-        ("USDCAD", "fx", True),
-        ("USDCHF", "fx", True),
+        ("USDCAD", "fx", True, None),
+        ("USDCHF", "fx", True, None),
         # Metals (priced in USD; rising = USD down, like EURUSD).
-        ("XAUUSD", "metal", False),
-        ("XAGUSD", "metal", False),
+        ("XAUUSD", "metal", False, None),
+        ("XAGUSD", "metal", False, None),
         # Indices (own dynamics; observed chain Nikkei -> Nasdaq -> S&P -> Dow).
-        ("JPN225", "index", False),
-        ("NAS100", "index", False),
-        ("SP500", "index", False),
-        ("DJ30", "index", False),
+        # Not on Vantage — pinned to TradingView's free feeds (confirmed via
+        # symbol_search): Nikkei on TVC, US indices on TVC.
+        ("JPN225", "index", False, "TVC:NI225"),
+        ("NAS100", "index", False, None),
+        ("SP500", "index", False, None),
+        ("DJ30", "index", False, None),
     ]
-    return [Instrument(s, _q(s, broker), g, inv) for s, g, inv in raw]
+    out: list[Instrument] = []
+    for sym, grp, inv, override in raw:
+        quote = override or _q(sym, broker)
+        out.append(Instrument(sym, quote, grp, inv))
+    return out
 
 
 # The two anchors whose position vs EVWMA drive USD confirmation.

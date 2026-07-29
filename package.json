@@ -17,7 +17,14 @@
     "seed:supabase": "node scripts/seed-supabase.mjs",
     "preflight": "node --experimental-strip-types scripts/preflight.mts",
     "brain:graph": "node scripts/sync-brain-graph.mjs",
-    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\" && node --test scripts/test-brain-sync.mjs"
+    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\" && node --test scripts/test-brain-sync.mjs",
+    "trading:install": "bash trading/scripts/scanner-service.sh install",
+    "trading:uninstall": "bash trading/scripts/scanner-service.sh uninstall",
+    "trading:status": "bash trading/scripts/scanner-service.sh status",
+    "trading:logs": "bash trading/scripts/scanner-service.sh logs",
+    "trading:server": "cd trading && uv run python -m trading.server",
+    "trading:backtest": "cd trading && uv run python -m trading.backtest --source db",
+    "trading:test": "cd trading && uv run pytest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",

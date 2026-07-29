@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zcode.trading-scanner</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading/scripts/run-scanner.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading</string>
+
+    <!-- ONE-SHOT every 15 minutes (matches the 15m bar close cadence).
+         The script runs a single sweep and exits. This minimizes the time the
+         scanner holds the shared TradingView CDP chart, avoiding collision
+         with the other MCP clients (Hermes/Claude/Codex) on the same bridge. -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+
+    <!-- Also fire once shortly after login. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Do NOT keep-alive: this is a periodic one-shot, not a daemon. A crash
+         just means that cycle's sweep is skipped; the next interval retries. -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <!-- Logs (append; rotate manually or via newsyslog if needed). -->
+    <key>StandardOutPath</key>
+    <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading/logs/scanner.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/dubai/Claude Folder/agentic-marketing-os/trading/logs/scanner.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/dubai/.local/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>HOME</key>
+        <string>/Users/dubai</string>
+    </dict>
+</dict>
+</plist>

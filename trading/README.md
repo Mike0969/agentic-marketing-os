@@ -30,14 +30,37 @@ direction flip (consensus USD direction reversing) resets them.
 ```bash
 cd trading
 uv run pytest                              # engine correctness (offline)
-uv run python -m trading.server            # dashboard + scanner (main command)
-# or separately:
-uv run python -m trading.scanner --source mcp
+uv run python -m trading.server            # dashboard (FastAPI + WS) on :8000
+uv run python -m trading.scanner --source mcp --once   # single sweep + exit
 uv run python -m trading.backtest --source db --bars 16
 ```
 
 Then open the `/trading` tab in the Agentic OS (the FastAPI server is served on
 `http://127.0.0.1:8000` by default and iframe-embedded).
+
+## Persistent data collection (accumulates edge-validation history)
+
+The scanner runs as a **macOS launchd agent** that fires a one-shot sweep every
+15 minutes (matching the 15m bar close) and exits. This keeps the time it
+"drives" the shared TradingView CDP chart brief, minimizing collision with the
+other MCP clients (Hermes/Claude/Codex) on the same bridge. The OHLCV cache in
+`trading/data/trading.db` grows over time; once it has a few weeks of history,
+re-run the backtest for a statistically meaningful edge measurement.
+
+From the repo root:
+```bash
+npm run trading:install     # install + start the agent (auto-starts at login)
+npm run trading:status      # is a sweep running?
+npm run trading:logs        # tail the sweep logs
+npm run trading:uninstall   # stop + remove
+npm run trading:backtest    # measure the edge on accumulated data
+```
+
+Requirements for live data: **TradingView Desktop must be running** with
+`--remote-debugging-port=9222` (it already is). The `VANTAGE:` broker prefix
+is confirmed working; indices not on Vantage are pinned to TradingView's free
+feeds (e.g. `TVC:NI225` for the Nikkei).
+
 
 ## Config
 
