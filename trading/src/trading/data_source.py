@@ -206,12 +206,16 @@ class TradingViewMCPSource(DataSource):
         return _unwrap_tool_result(result)
 
     async def get_ohlcv(self, symbol: str, timeframe: str, bars: int,
-                       quote: str | None = None, timeout: float = 40.0) -> OHLCV | None:
+                       quote: str | None = None, timeout: float = 40.0,
+                       price_min: float = 0.0, price_max: float = 1e9) -> OHLCV | None:
         """Fetch OHLCV. `quote` is the full EXCHANGE:TICKER; when omitted we
         build <broker>:<symbol> for backward compatibility.
 
         `timeout` caps the whole symbol+tf read so one stuck chart-switch on the
         shared CDP bridge can't stall an entire sweep — it's skipped instead.
+        `price_min`/`price_max` reject bars outside the symbol's plausible range
+        (guards against cross-symbol contamination: the shared chart can return
+        leftover bars from the previous symbol before it finishes switching).
         """
         tf = TIMEFRAMES.get(timeframe, timeframe)
         tv_symbol = quote or f"{self.broker}:{symbol}"
@@ -220,13 +224,20 @@ class TradingViewMCPSource(DataSource):
                 async def _read():
                     await self._call_tool("chart_set_symbol", {"symbol": tv_symbol})
                     await self._call_tool("chart_set_timeframe", {"timeframe": tf})
+                    # Verify the chart actually loaded OUR symbol before reading.
+                    # If it still shows another symbol, the read would be garbage.
+                    state = await self._call_tool("chart_get_state", {})
+                    loaded = (state or {}).get("symbol", "")
+                    if loaded and loaded != tv_symbol:
+                        # Retry the switch once; the chart was mid-transition.
+                        await self._call_tool("chart_set_symbol", {"symbol": tv_symbol})
+                        await asyncio.sleep(1.0)
                     return await self._call_tool("data_get_ohlcv",
                                                  {"count": min(bars, 500), "summary": False})
                 payload = await asyncio.wait_for(_read(), timeout=timeout)
             except asyncio.TimeoutError:
                 log.warning("MCP get_ohlcv(%s, %s) timed out after %ss (chart busy?)",
                             tv_symbol, timeframe, timeout)
-                # Recycle the session so the next call reconnects cleanly.
                 await self._recycle()
                 return None
             except Exception as e:  # noqa: BLE001
@@ -235,6 +246,16 @@ class TradingViewMCPSource(DataSource):
         df = parse_mcp_ohlcv(payload)
         if df is None or df.empty:
             return None
+        # Reject bars outside the plausible price range (cross-symbol guard).
+        in_range = df["close"].between(price_min, price_max)
+        if not in_range.all():
+            bad = int((~in_range).sum())
+            log.warning("MCP get_ohlcv(%s): discarded %d/%d bars outside price range "
+                        "[%.4f, %.4f] (cross-symbol contamination?)",
+                        symbol, bad, len(df), price_min, price_max)
+            df = df[in_range].reset_index(drop=True)
+            if df.empty:
+                return None
         return OHLCV(df=df)
 
     async def _recycle(self) -> None:

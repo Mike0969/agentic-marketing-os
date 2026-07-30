@@ -102,6 +102,27 @@
   .empty-row{color:var(--dim);padding:40px;text-align:center}
   .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--dim2);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:6px}
   @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* Readable warnings: light text, dark amber bg, with tooltip */
+  .flags .flag{cursor:help;color:#ffe8b3;background:rgba(210,153,34,.22);border:1px solid rgba(210,153,34,.4)}
+  .flags .flag.veto{color:#ffd9b3;background:rgba(219,109,40,.22);border-color:rgba(219,109,40,.45)}
+  .info-btn{margin-left:auto;background:transparent !important;border-color:var(--line2) !important;color:var(--dim) !important}
+  .info-btn:hover{color:var(--txt) !important;border-color:var(--blue) !important}
+
+  /* Modal */
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;align-items:center;justify-content:center;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line2);border-radius:14px;max-width:640px;width:100%;max-height:84vh;overflow:auto;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line);font-size:15px}
+  .modal-head .x{cursor:pointer;color:var(--dim);font-size:16px;padding:2px 8px}
+  .modal-head .x:hover{color:var(--txt)}
+  .modal-body{padding:18px 20px;font-size:13px;color:var(--txt);line-height:1.6}
+  .modal-body p{margin:0 0 12px}
+  .modal-body ul{margin:0 0 12px;padding-left:20px}
+  .modal-body li{margin-bottom:6px}
+  .modal-body b{color:#fff}
+  .modal-body code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px;color:var(--blue)}
+  .dim-note{color:var(--orange) !important;font-size:12px}
 </style>
 </head>
 <body>
@@ -112,16 +133,22 @@
       <div class="logo">L</div>
       <div>
         <h1>LEAD / LAG DESK</h1>
-        <div class="sub">EVWMA break-sequence scanner · latched states</div>
+        <div class="sub">EVWMA break-sequence scanner · 15m timeframe · auto-scan every 15 min</div>
       </div>
     </div>
-    <div class="status"><span class="dot" id="conn-dot"></span><span id="conn-txt">connecting…</span></div>
+    <div class="status">
+      <span class="dot" id="conn-dot"></span><span id="conn-txt">connecting…</span>
+      <span style="margin:0 6px;color:var(--dim2)">·</span>
+      <span id="next-scan" style="color:var(--dim)">next scan —</span>
+    </div>
   </div>
 
   <!-- Consensus banner -->
   <div class="banner">
     <span class="pill flat" id="usd">USD —</span>
-    <span class="meta">anchors <b id="anchor-state">—</b> · confidence <b id="conf">—</b> · updated <b id="upd">—</b></span>
+    <span class="meta">
+      vs <b>USD</b> on <b>15m</b> · anchors <b id="anchor-state">—</b> · confidence <b id="conf">—</b> · data <b id="upd">—</b>
+    </span>
     <span style="flex:1"></span>
     <span class="pill best" id="best" style="display:none">★ BEST LAG <b id="best-sym"></b></span>
   </div>
@@ -132,6 +159,8 @@
     <button class="tab" data-group="fx">Currencies</button>
     <button class="tab" data-group="metal">Metals</button>
     <button class="tab" data-group="index">Indices</button>
+    <span style="flex:1"></span>
+    <button class="tab info-btn" id="info-btn">ⓘ How this works</button>
   </div>
 
   <!-- Main table -->
@@ -139,7 +168,7 @@
     <table id="tbl">
       <thead>
         <tr>
-          <th>Instrument</th><th>Break</th><th>Price Dir</th><th>Lag (ATR)</th>
+          <th>Instrument</th><th>Break (15m)</th><th>Price vs USD</th><th>Lag (ATR)</th>
           <th>Trend</th><th>Warnings</th><th>State</th>
         </tr>
       </thead>
@@ -165,6 +194,35 @@
       <span><i style="background:var(--dim2)"></i>WAITING</span>
     </div>
     <div id="age">—</div>
+  </div>
+
+  <!-- Info modal: explains the whole system -->
+  <div class="modal-bg" id="modal-bg">
+    <div class="modal">
+      <div class="modal-head"><b>How this works</b><span class="x" id="modal-close">✕</span></div>
+      <div class="modal-body">
+        <p><b>What you're seeing.</b> Correlated instruments make the same move, but NOT at the same time. One moves first (LEADER), one moves last (LAGGER). The LAGGER is the trade candidate because it still has room to run.</p>
+        <p><b>Data source.</b> Real OHLCV bars pulled from <b>your TradingView Desktop</b> (via the local CDP bridge on port 9222). No synthetic data. The scanner is a background macOS agent (<code>com.zcode.trading-scanner</code>) that fires a sweep every 15 minutes, pulls 12 instruments, and stores them in a local SQLite cache.</p>
+        <p><b>Who scans.</b> Not a person and not an AI agent — an automated Python service (<code>trading/scanner.py</code>) running as a launchd job. It has no "memory" of past chats; its only state is the SQLite database of bars. The dashboard (<code>trading-server</code>) is a separate agent that just reads that cache and shows it.</p>
+        <p><b>Price direction = vs USD, on the 15m timeframe.</b> "EURUSD UP" means the euro rose against the dollar on the 15m chart. USD-base pairs (USDCAD, USDCHF) are marked <span class="inv">inv</span> — when they go DOWN, that's the SAME move as EURUSD going UP (USD weakening). So during one USD move you'll see opposite arrows on different pairs, which is correct.</p>
+        <p><b>States:</b></p>
+        <ul>
+          <li><b>WAITING</b> — no clear consensus yet (the USD anchors disagree).</li>
+          <li><b>LEADER-BREAK</b> — the 1st pair in a cluster crossed its EVWMA line. Attention.</li>
+          <li><b>TREND-CONFIRMED</b> — a 2nd pair confirmed; the 15m trend looks real.</li>
+          <li><b>LAG-OPPORTUNITY</b> — this pair is the furthest from breaking = the best catch-up candidate.</li>
+          <li><b>FADE-LEADER</b> — the leader is over-extended and may snap back (fade it).</li>
+        </ul>
+        <p><b>Warnings (click a row's flag to read its meaning):</b></p>
+        <ul>
+          <li><b>whipsaw</b> — the EVWMA was crossed both UP and DOWN in a short window. Choppy / unreliable; don't trust this break.</li>
+          <li><b>1h-whipsaw</b> — same chop on the 1h chart. A 1h whipsaw invalidates a 15m signal.</li>
+          <li><b>volume-veto</b> — price touched a key level (range high/low or POC) on HIGH volume. That's a breakout, not a reversal — don't count it as a turn.</li>
+        </ul>
+        <p><b>Auto-update.</b> The page refreshes itself via WebSocket whenever the cache changes — you do not need to refresh. "next scan" counts down to the next 15-minute sweep.</p>
+        <p class="dim-note">⚠ This is research tooling. The edge is NOT yet validated — backtest on accumulated data before trusting any signal.</p>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -202,6 +260,31 @@ const dirClass = d => d>0?"up":(d<0?"down":"flat");
 const fmtTime = t => { if(!t) return "—"; const d=new Date(t*1000); return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); };
 const fmtAgo = s => { if(!s) return "—"; const m=(Date.now()/1000 - s)/60; if(m<1) return "just now"; if(m<60) return Math.floor(m)+"m ago"; return Math.floor(m/60)+"h ago"; };
 const groupLabel = g => g==="fx"?"FX":g==="metal"?"METAL":"INDEX";
+
+// Tooltip explanations for each warning flag (hover to read).
+const FLAG_TITLES = {
+  "whipsaw": "EVWMA crossed both UP and DOWN in a short window — choppy, this break is unreliable.",
+  "1h-whipsaw": "Same whipsaw on the 1h chart — a 1h whipsaw invalidates a 15m signal.",
+  "volume-veto": "Price touched a key level on HIGH volume — treat as a breakout, not a reversal."
+};
+
+// --- Modal (How this works) ---
+document.getElementById("info-btn").addEventListener("click", ()=>document.getElementById("modal-bg").classList.add("show"));
+document.getElementById("modal-close").addEventListener("click", ()=>document.getElementById("modal-bg").classList.remove("show"));
+document.getElementById("modal-bg").addEventListener("click", e=>{ if(e.target.id==="modal-bg") e.target.classList.remove("show"); });
+
+// --- Next-scan countdown (scanner fires every 15 min) ---
+const SCAN_INTERVAL = 900; // seconds
+function nextScanCountdown(){
+  const el=document.getElementById("next-scan");
+  if(!el) return;
+  // Align to the next 15-min boundary (scanner fires on bar close).
+  const now=Math.floor(Date.now()/1000);
+  const till=SCAN_INTERVAL - (now % SCAN_INTERVAL);
+  const m=Math.floor(till/60), s=till%60;
+  el.textContent=`next scan in ${m}m ${s.toString().padStart(2,'0')}s`;
+}
+setInterval(nextScanCountdown, 1000); nextScanCountdown();
 
 // active group tab (persisted in-memory)
 let activeGroup = "all";
@@ -265,7 +348,11 @@ function renderTable(s){
     const lagSign=r.lag_distance>=0?"+":"-";
     const lagCls=r.lag_distance>=0?"pos":"neg";
     const lagBar = `<span class="lag-bar"><span class="fill ${lagCls}" style="width:${lagW}px;${r.lag_distance<0?'right:50%;left:auto':'left:50%'}"></span></span><span class="lag-val">${lagSign}${lagAbs.toFixed(2)}</span>`;
-    const flags=(r.flags||[]).map(f=>`<span class="flag ${f.includes('veto')?'veto':''}">${f}</span>`).join("");
+    const flags=(r.flags||[]).map(f=>{
+      const cls=f.includes('veto')?'veto':'';
+      const tip=FLAG_TITLES[f]||f;
+      return `<span class="flag ${cls}" title="${tip}">${f}</span>`;
+    }).join("");
     // Price direction = the pair's OWN raw direction (what a chart shows).
     const inv = r.inverted ? `<span class="inv">inv</span>` : "";
     return `<tr class="${r.is_best_lag?'best':''}">

@@ -25,6 +25,20 @@ class Instrument:
     quote: str           # e.g. "VANTAGE:EURUSD"
     group: str           # "fx" | "metal" | "index"
     invert: bool = False # invert so all instruments share one USD direction
+    price_min: float = 0.0   # sanity floor for the symbol's price scale
+    price_max: float = 1e9   # sanity ceiling (reject bars outside this range)
+
+
+# Plausible price ranges per symbol (used to reject cross-symbol contamination
+# — the shared CDP chart can return leftover bars from the previous symbol if
+# it hasn't finished switching). Tuned to each instrument's real scale.
+_PRICE_RANGES = {
+    "EURUSD": (0.8, 1.3), "GBPUSD": (1.0, 1.6), "AUDUSD": (0.5, 0.9),
+    "NZDUSD": (0.4, 0.8), "USDCAD": (1.2, 1.6), "USDCHF": (0.7, 1.05),
+    "XAUUSD": (1000.0, 7000.0), "XAGUSD": (15.0, 120.0),
+    "JPN225": (20000.0, 80000.0), "NAS100": (10000.0, 30000.0),
+    "SP500": (3000.0, 9000.0), "DJ30": (25000.0, 55000.0),
+}
 
 
 def _q(ticker: str, broker: str | None = None) -> str:
@@ -62,7 +76,8 @@ def instruments() -> list[Instrument]:
     out: list[Instrument] = []
     for sym, grp, inv, override in raw:
         quote = override or _q(sym, broker)
-        out.append(Instrument(sym, quote, grp, inv))
+        pmin, pmax = _PRICE_RANGES.get(sym, (0.0, 1e9))
+        out.append(Instrument(sym, quote, grp, inv, price_min=pmin, price_max=pmax))
     return out
 
 

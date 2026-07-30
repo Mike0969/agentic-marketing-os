@@ -97,14 +97,21 @@ def compute_snapshot() -> Snapshot | None:
         # Ensure numeric dtypes (SQLite may return generic).
         for c in ("open", "high", "low", "close", "volume"):
             primary_df[c] = pd.to_numeric(primary_df[c], errors="coerce")
+        # Defensive: drop any bars outside the symbol's plausible price range
+        # (guards against any contamination that slipped into the cache).
+        primary_df = primary_df[primary_df["close"].between(inst.price_min, inst.price_max)].reset_index(drop=True)
+        if len(primary_df) < 60:
+            continue
         primary = compute_evwma(primary_df)
         context = None
         context_clean = None
         if context_df is not None and not context_df.empty and len(context_df) >= 60:
             for c in ("open", "high", "low", "close", "volume"):
                 context_df[c] = pd.to_numeric(context_df[c], errors="coerce")
-            context = compute_evwma(context_df)
-            context_clean = context_df
+            context_df = context_df[context_df["close"].between(inst.price_min, inst.price_max)].reset_index(drop=True)
+            if len(context_df) >= 60:
+                context = compute_evwma(context_df)
+                context_clean = context_df
         features[inst.symbol] = InstrumentFeatures(
             symbol=inst.symbol, primary=primary, primary_df=primary_df,
             context=context, context_df=context_clean, invert=inst.invert,

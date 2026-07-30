@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Callable
 
@@ -57,8 +58,12 @@ class Scanner:
         bars = config.settings.ohlcv_bars
         for inst in self.instruments:
             try:
-                primary_ohlcv = await self.source.get_ohlcv(inst.symbol, config.PRIMARY_TF, bars, inst.quote)
-                context_ohlcv = await self.source.get_ohlcv(inst.symbol, config.CONTEXT_TF, bars, inst.quote)
+                primary_ohlcv = await self.source.get_ohlcv(
+                    inst.symbol, config.PRIMARY_TF, bars, inst.quote,
+                    price_min=inst.price_min, price_max=inst.price_max)
+                context_ohlcv = await self.source.get_ohlcv(
+                    inst.symbol, config.CONTEXT_TF, bars, inst.quote,
+                    price_min=inst.price_min, price_max=inst.price_max)
                 # trigger not needed for the score yet; fetched for completeness if cheap.
             except Exception as e:  # noqa: BLE001
                 log.warning("fetch failed for %s: %s", inst.symbol, e)
@@ -91,6 +96,13 @@ class Scanner:
         # Apply latched state onto the snapshot rows for display stability.
         for r in snap.rows:
             r.state = self.latch.latched_state(r.symbol)
+
+        log.info(
+            "sweep done | %d instruments | USD dir=%s (%s) conf=%.2f | best LAG=%s | %d transitions",
+            len(snap.rows),
+            "UP" if snap.usd_direction > 0 else "DOWN" if snap.usd_direction < 0 else "none",
+            snap.usd_state, snap.usd_confidence, snap.best_lag_symbol, len(transitions),
+        )
 
         if persist:
             self._persist(snap, transitions)
@@ -189,8 +201,22 @@ def _build_source(kind: str | None = None) -> DataSource:
 
 def main() -> None:
     import argparse
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    import sys
+    # Force unbuffered, line-flushed output so launchd captures every line
+    # immediately (default logging buffers, which made logs appear empty).
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+    for h in logging.root.handlers:
+        h.stream = sys.stderr
+        # Reconfigure the underlying stream to be line-buffered / unbuffered.
+        try:
+            h.stream.reconfigure(line_buffering=True)
+        except Exception:  # noqa: BLE001
+            pass
+    log.info("scanner main starting (pid=%s, once mode via launchd)", os.getpid())
     p = argparse.ArgumentParser(description="Lead/lag trading scanner")
     p.add_argument("--source", choices=["mcp", "csv"], default="mcp")
     p.add_argument("--once", action="store_true",
