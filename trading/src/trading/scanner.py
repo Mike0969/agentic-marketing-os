@@ -78,7 +78,8 @@ class Scanner:
                 context_df = context_ohlcv.df
             features[inst.symbol] = InstrumentFeatures(
                 symbol=inst.symbol, primary=primary, primary_df=primary_ohlcv.df,
-                context=context, context_df=context_df, invert=inst.invert)
+                context=context, context_df=context_df, invert=inst.invert,
+                group=inst.group)
 
         if not features:
             log.warning("sweep produced no features (is TradingView connected?)")

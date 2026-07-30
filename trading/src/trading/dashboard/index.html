@@ -46,6 +46,13 @@
 
   /* Table */
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+
+  /* Group tabs */
+  .tabs{display:flex;gap:6px;margin-bottom:12px}
+  .tab{background:var(--panel);border:1px solid var(--line);color:var(--dim);padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;font-family:inherit}
+  .tab:hover{border-color:var(--line2);color:var(--txt)}
+  .tab.active{background:var(--blue);color:#000;border-color:var(--blue)}
+  .tab .cnt{display:inline-block;margin-left:6px;font-size:10px;opacity:.7}
   table{width:100%;border-collapse:collapse}
   th,td{padding:11px 14px;text-align:left;white-space:nowrap}
   th{color:var(--dim);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.6px;background:var(--panel2);border-bottom:1px solid var(--line)}
@@ -61,6 +68,7 @@
   .rank.r1{color:var(--green)}
   .brk-t{font-size:10px;color:var(--dim);margin-top:1px}
   .dir.up{color:var(--green)} .dir.down{color:var(--red)} .dir.flat{color:var(--dim)}
+  .inv{display:inline-block;padding:0 4px;border-radius:3px;font-size:8px;background:var(--line2);color:var(--dim);margin-left:2px;font-weight:700;vertical-align:1px}
   .lag-bar{position:relative;width:80px;height:5px;background:var(--line);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
   .lag-bar .fill{position:absolute;top:0;left:50%;height:100%;border-radius:3px}
   .lag-bar .fill.pos{background:var(--green)}
@@ -118,12 +126,20 @@
     <span class="pill best" id="best" style="display:none">★ BEST LAG <b id="best-sym"></b></span>
   </div>
 
+  <!-- Group tabs -->
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-group="all">All</button>
+    <button class="tab" data-group="fx">Currencies</button>
+    <button class="tab" data-group="metal">Metals</button>
+    <button class="tab" data-group="index">Indices</button>
+  </div>
+
   <!-- Main table -->
   <div class="card">
     <table id="tbl">
       <thead>
         <tr>
-          <th>Instrument</th><th>Break</th><th>Dir</th><th>Lag (ATR)</th>
+          <th>Instrument</th><th>Break</th><th>Price Dir</th><th>Lag (ATR)</th>
           <th>Trend</th><th>Warnings</th><th>State</th>
         </tr>
       </thead>
@@ -185,14 +201,21 @@ const dirLabel = d => d>0?"UP":(d<0?"DOWN":"—");
 const dirClass = d => d>0?"up":(d<0?"down":"flat");
 const fmtTime = t => { if(!t) return "—"; const d=new Date(t*1000); return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); };
 const fmtAgo = s => { if(!s) return "—"; const m=(Date.now()/1000 - s)/60; if(m<1) return "just now"; if(m<60) return Math.floor(m)+"m ago"; return Math.floor(m/60)+"h ago"; };
-const groupLabel = sym => {
-  const fx=["EURUSD","GBPUSD","AUDUSD","NZDUSD","USDCAD","USDCHF"];
-  const metal=["XAUUSD","XAGUSD"];
-  if(fx.includes(sym)) return "FX"; if(metal.includes(sym)) return "METAL"; return "INDEX";
-};
+const groupLabel = g => g==="fx"?"FX":g==="metal"?"METAL":"INDEX";
+
+// active group tab (persisted in-memory)
+let activeGroup = "all";
+let lastData = null;
+document.getElementById("tabs").addEventListener("click", e=>{
+  const t = e.target.closest(".tab"); if(!t) return;
+  activeGroup = t.dataset.group;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active", x===t));
+  if(lastData) renderTable(lastData);
+});
 
 // --- Render ---
 function render(s){
+  lastData = s;
   const usd=document.getElementById("usd"), dir=s.usd_direction||0;
   usd.textContent = "USD "+dirLabel(dir);
   usd.className = "pill "+(dir>0?"up":dir<0?"down":"flat");
@@ -205,13 +228,29 @@ function render(s){
   if(s.best_lag_symbol){ best.style.display="inline-flex"; document.getElementById("best-sym").textContent=s.best_lag_symbol; }
   else best.style.display="none";
 
+  // update tab counts
+  const counts = {all:s.rows?.length||0, fx:0, metal:0, index:0};
+  (s.rows||[]).forEach(r=>{ if(counts[r.group]!=null) counts[r.group]++; });
+  document.querySelectorAll(".tab").forEach(t=>{
+    const g=t.dataset.group; const c=counts[g]||0;
+    let cnt=t.querySelector(".cnt"); if(!cnt){cnt=document.createElement("span");cnt.className="cnt";t.appendChild(cnt);}
+    cnt.textContent=c;
+  });
+
+  renderTable(s);
+  renderTimeline(s);
+}
+
+function renderTable(s){
   const rows=document.getElementById("rows");
   if(!s.ready || !s.rows || !s.rows.length){
     rows.innerHTML='<tr><td colspan="7" class="empty-row">no data yet — waiting for the scanner to populate the cache</td></tr>';
     return;
   }
+  // Filter by active group tab.
+  let filtered = activeGroup==="all" ? s.rows : s.rows.filter(r=>r.group===activeGroup);
   // Sort: best lag first, then by rank, then score.
-  const ordered=[...s.rows].sort((a,b)=>{
+  const ordered=[...filtered].sort((a,b)=>{
     if(a.is_best_lag!==b.is_best_lag) return a.is_best_lag?-1:0;
     const ra=a.rank||99, rb=b.rank||99;
     if(ra!==rb) return ra-rb;
@@ -222,24 +261,27 @@ function render(s){
     const rankTxt = r.rank>0?("#"+r.rank):"—";
     const brkT = r.rank>0?("<div class='brk-t'>"+fmtTime(r.broke_at)+"</div>"):"";
     const lagAbs=Math.abs(r.lag_distance||0);
-    const lagW=Math.min(lagAbs*12,40); // scale to bar width
+    const lagW=Math.min(lagAbs*12,40);
     const lagSign=r.lag_distance>=0?"+":"-";
     const lagCls=r.lag_distance>=0?"pos":"neg";
     const lagBar = `<span class="lag-bar"><span class="fill ${lagCls}" style="width:${lagW}px;${r.lag_distance<0?'right:50%;left:auto':'left:50%'}"></span></span><span class="lag-val">${lagSign}${lagAbs.toFixed(2)}</span>`;
     const flags=(r.flags||[]).map(f=>`<span class="flag ${f.includes('veto')?'veto':''}">${f}</span>`).join("");
+    // Price direction = the pair's OWN raw direction (what a chart shows).
+    const inv = r.inverted ? `<span class="inv">inv</span>` : "";
     return `<tr class="${r.is_best_lag?'best':''}">
-      <td><span class="sym">${r.symbol}</span><span class="grp">${groupLabel(r.symbol)}</span></td>
+      <td><span class="sym">${r.symbol}</span><span class="grp">${groupLabel(r.group)}</span></td>
       <td><span class="rank ${rankCls}">${rankTxt}</span>${brkT}</td>
-      <td class="dir ${dirClass(r.direction)}">${dirLabel(r.direction)}</td>
+      <td class="dir ${dirClass(r.raw_direction)}">${dirLabel(r.raw_direction)} ${inv}</td>
       <td>${lagBar}</td>
       <td class="trend">${(r.trend_strength_pct||0).toFixed(0)}%</td>
       <td class="flags">${flags||"<span style='color:var(--dim2)'>—</span>"}</td>
       <td><span class="st st-${r.state}">${r.state}</span></td>
     </tr>`;
   }).join("");
+}
 
-  // Timeline
-  const broken=s.rows.filter(r=>r.rank>0).sort((a,b)=>a.rank-b.rank);
+function renderTimeline(s){
+  const broken=(s.rows||[]).filter(r=>r.rank>0).sort((a,b)=>a.rank-b.rank);
   document.getElementById("tl-count").textContent = broken.length? broken.length+" broken":"";
   const tl=document.getElementById("tl");
   tl.innerHTML = broken.length

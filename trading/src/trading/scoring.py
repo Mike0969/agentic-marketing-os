@@ -44,6 +44,7 @@ class InstrumentFeatures:
     context: EvwmaResult | None   # 1h
     context_df: pd.DataFrame | None
     invert: bool                  # USD alignment
+    group: str = "fx"             # "fx" | "metal" | "index"
 
 
 @dataclass
@@ -79,6 +80,10 @@ class Factors:
     state: str = config.WAITING
     is_best_lag: bool = False
     flags: list[str] = field(default_factory=list)
+    # display helpers
+    group: str = "fx"             # "fx" | "metal" | "index"
+    raw_direction: int = 0        # the pair's OWN price direction (+1 up / -1 down), pre-USD-alignment
+    inverted: bool = False        # is this a USD-base pair (display hint)
 
 
 def _usd_aligned(value: float, invert: bool) -> float:
@@ -134,6 +139,11 @@ def compute_factors(features: InstrumentFeatures, consensus_dir: int) -> Factors
     p = features.primary
     df = features.primary_df
 
+    last_close = float(df["close"].iloc[-1])
+    last_center = float(p.center.iloc[-1])
+    atr = p.atr.iloc[-1]
+    atr = float(atr) if atr == atr and atr > 0 else (last_close * 0.001)  # fallback
+
     # 1. Break sequence — most recent cross in the consensus direction.
     br = last_break(p, df, direction=consensus_dir)
     if br is None:
@@ -142,14 +152,19 @@ def compute_factors(features: InstrumentFeatures, consensus_dir: int) -> Factors
     else:
         break_rank = BreakRank(rank=1, bar_index=br.bar_index, time=br.time, direction=br.direction)
 
+    # RAW direction: the pair's OWN latest EVWMA cross (any direction), not the
+    # USD-aligned consensus. This is what a chart actually shows (EURUSD up,
+    # USDCAD down during the same USD move). Falls back to close-vs-center.
+    raw_br = last_break(p, df)
+    if raw_br is not None:
+        raw_direction = raw_br.direction
+    else:
+        raw_direction = 1 if last_close > last_center else -1
+
     # 2. Trend strength.
     ts = trend_strength(p)
 
     # 3. Lag distance (USD-aligned). Close vs EVWMA center, in ATR units.
-    last_close = float(df["close"].iloc[-1])
-    last_center = float(p.center.iloc[-1])
-    atr = p.atr.iloc[-1]
-    atr = float(atr) if atr == atr and atr > 0 else (last_close * 0.001)  # fallback
     raw_lag = (last_close - last_center) / atr
     # In the consensus direction, the LAGGER has NOT yet crossed, so its lag is
     # opposite to the direction. Express lag_distance as "distance still to go"
@@ -196,6 +211,9 @@ def compute_factors(features: InstrumentFeatures, consensus_dir: int) -> Factors
         poc=round(poc, 5) if poc is not None else None,
         volume_veto=veto,
         flags=flags,
+        group=features.group,
+        raw_direction=raw_direction,
+        inverted=features.invert,
     )
 
 
@@ -243,6 +261,19 @@ class Snapshot:
     best_lag_symbol: str | None = None
 
 
+def _rank_by_group(factors: dict[str, Factors], cluster: tuple[str, ...]) -> None:
+    """Rank the break sequence (by cross time) within one correlation cluster.
+    Rank 1 = broke first (leader); higher = later (lagger). Unbroken -> 0."""
+    in_cluster = {sym: f for sym, f in factors.items() if f.group in cluster}
+    broken = sorted(
+        [(sym, f.break_rank.time) for sym, f in in_cluster.items() if f.break_rank.rank > 0],
+        key=lambda x: x[1],
+    )
+    for rank, (sym, _) in enumerate(broken, start=1):
+        factors[sym].break_rank.rank = rank
+    # Instruments that didn't break in this direction stay at rank 0 (lagger).
+
+
 def score_all(features_map: dict[str, InstrumentFeatures]) -> Snapshot:
     """Compute factors for all instruments, rank the break sequence, combine
     into one score per instrument, and assign the latched state."""
@@ -254,21 +285,25 @@ def score_all(features_map: dict[str, InstrumentFeatures]) -> Snapshot:
     factors = {sym: compute_factors(feat, consensus_dir if consensus_dir != 0 else 1)
                for sym, feat in features_map.items()}
 
-    # 1. Rank the break sequence: order by cross time ascending (earliest = 1st).
+    # 1. Rank the break sequence WITHIN each correlation cluster.
+    # Lead/lag only makes sense among tightly-correlated instruments: FX majors
+    # + metals are one USD-driven cluster; indices are a separate cluster (their
+    # own Nikkei->Nasdaq->S&P->Dow chain). Ranking across clusters mixes
+    # unrelated leaders/laggers, so we rank per-group.
     if consensus_dir != 0:
-        broken = [(sym, f.break_rank.time) for sym, f in factors.items() if f.break_rank.rank > 0]
-        broken.sort(key=lambda x: x[1])
-        for rank, (sym, _) in enumerate(broken, start=1):
-            factors[sym].break_rank.rank = rank
+        _rank_by_group(factors, cluster=("fx", "metal"))
+        _rank_by_group(factors, cluster=("index",))
 
     # Composite score: reward being the lagger (low rank number is leader; high
     # lag_distance is lagger). Score = weighted blend, higher = better candidate.
-    max_lag = max((abs(f.lag_distance) for f in factors.values()), default=1.0) or 1.0
+    # Normalize lag + rank WITHIN each group so a metal's score isn't drowned
+    # out by FX's larger ATR swings, and vice versa.
+    groups = {f.group for f in factors.values()}
+    max_lag_by_group = {g: max((abs(f.lag_distance) for f in factors.values() if f.group == g), default=1.0) or 1.0 for g in groups}
+    count_by_group = {g: sum(1 for f in factors.values() if f.group == g) for g in groups}
     for f in factors.values():
-        # Lagger traits: not first to break (rank high or 0) + large lag distance
-        # + strong trend + no whipsaw. Higher score = better LAG candidate.
-        rank_norm = (f.break_rank.rank / max(len(factors), 1)) if f.break_rank.rank > 0 else 1.0
-        lag_norm = abs(f.lag_distance) / max_lag
+        rank_norm = (f.break_rank.rank / max(count_by_group[f.group], 1)) if f.break_rank.rank > 0 else 1.0
+        lag_norm = abs(f.lag_distance) / max_lag_by_group[f.group]
         trend_norm = f.trend_strength_pct / 100.0
         penalty = 0.25 if (f.whipsaw or f.whipsaw_1h) else 0.0
         f.score = round(

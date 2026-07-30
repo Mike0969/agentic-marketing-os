@@ -42,11 +42,14 @@ last_cache_key: str = ""  # changes when cache is updated -> WS push trigger
 def _row_dict(r) -> dict:
     return {
         "symbol": r.symbol,
+        "group": r.group,
         "state": r.state,
         "score": r.score,
         "rank": r.break_rank.rank,
         "broke_at": r.break_rank.time,
         "direction": r.direction,
+        "raw_direction": r.raw_direction,
+        "inverted": r.inverted,
         "lag_distance": r.lag_distance,
         "trend_strength_pct": r.trend_strength_pct,
         "flags": r.flags,
@@ -104,7 +107,8 @@ def compute_snapshot() -> Snapshot | None:
             context_clean = context_df
         features[inst.symbol] = InstrumentFeatures(
             symbol=inst.symbol, primary=primary, primary_df=primary_df,
-            context=context, context_df=context_clean, invert=inst.invert)
+            context=context, context_df=context_clean, invert=inst.invert,
+            group=inst.group)
     if len(features) < 2:
         return None
     return score_all(features)

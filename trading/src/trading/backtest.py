@@ -52,7 +52,8 @@ def _window_features(frames: dict[str, pd.DataFrame], end: int, instruments) -> 
         primary = compute_evwma(sub)
         out[inst.symbol] = InstrumentFeatures(
             symbol=inst.symbol, primary=primary, primary_df=sub,
-            context=None, context_df=None, invert=inst.invert)
+            context=None, context_df=None, invert=inst.invert,
+            group=inst.group)
     return out
 
 
