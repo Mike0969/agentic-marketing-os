@@ -157,6 +157,21 @@ export function computeReadiness(env: Env = process.env as Env): ReadinessReport
     missingEnv: postingReady ? [] : postingEnabled ? ["<network>_CLIENT_ID", "<network>_CLIENT_SECRET"] : ["SOCIAL_POSTING_ENABLED=true"]
   });
 
+  // 5b. Social token encryption at rest. Without a key, new tokens are stored as plaintext.
+  const tokenKeyReady = has(env, "SOCIAL_TOKEN_ENCRYPTION_KEY");
+  capabilities.push(
+    cap(
+      "social-token-encryption",
+      "Social token encryption",
+      "recommended",
+      tokenKeyReady,
+      tokenKeyReady
+        ? "Social account tokens are encrypted before they are stored."
+        : "Not set — connected social account tokens are stored unencrypted.",
+      ["SOCIAL_TOKEN_ENCRYPTION_KEY"]
+    )
+  );
+
   // 6. Operator notifications (Telegram or Slack) — how the loop pings a human.
   const notifyReady = firstPresent(env, ["TELEGRAM_BOT_TOKEN", "SLACK_BOT_TOKEN"]);
   capabilities.push(

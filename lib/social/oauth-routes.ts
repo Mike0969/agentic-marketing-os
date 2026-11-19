@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { saveConnection } from "@/lib/social/connection-store";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -173,7 +174,8 @@ export async function handleSocialOAuthCallback<Token extends { access_token: st
       if (supabase) {
         const accountAccessToken = account.accessToken ?? token.access_token;
         const expiresAt = account.accessToken ? null : token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
-        const { error } = await supabase.from("social_connections").upsert(
+        const { error } = await saveConnection(
+          supabase,
           {
             brand_id: brandId,
             platform: options.platform,
@@ -185,8 +187,7 @@ export async function handleSocialOAuthCallback<Token extends { access_token: st
             status: "connected",
             connected_by: account.handle ?? "admin",
             updated_at: new Date().toISOString()
-          },
-          { onConflict: "brand_id,platform" }
+          }
         );
         if (error) throw new Error(`Supabase social connection upsert failed: ${error.message}`);
       }

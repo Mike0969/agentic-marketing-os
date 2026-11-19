@@ -5,6 +5,7 @@ import { publishPost as publishXPost, refreshToken as refreshXToken } from "@/li
 import { publishPost as publishFacebookPost } from "@/lib/social/facebook";
 import { publishPost as publishInstagramPost } from "@/lib/social/instagram";
 import { publishPost as publishTikTokPost } from "@/lib/social/tiktok";
+import { loadConnection, updateConnectionTokens, type Connection } from "@/lib/social/connection-store";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { ContentItem } from "@/lib/types";
@@ -19,13 +20,6 @@ export function socialPostingEnabled() {
 }
 
 type SocialPlatform = "linkedin" | "x" | "facebook" | "instagram" | "tiktok";
-type Connection = {
-  access_token: string | null;
-  refresh_token: string | null;
-  expires_at: string | null;
-  author_urn: string | null;
-  status: string;
-};
 
 function normalizePlatform(platform: string): SocialPlatform | null {
   const value = platform.toLowerCase();
@@ -60,11 +54,7 @@ async function refreshIfNeeded(
     refresh_token: token.refresh_token ?? args.conn.refresh_token,
     expires_at: token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : args.conn.expires_at
   };
-  await supabase
-    .from("social_connections")
-    .update({ ...updated, updated_at: new Date().toISOString() })
-    .eq("brand_id", args.brandId)
-    .eq("platform", args.platform);
+  await updateConnectionTokens(supabase, args.brandId, args.platform, updated);
   return { ...args.conn, ...updated };
 }
 
@@ -81,14 +71,9 @@ export async function publishApprovedPackage(contentItemId: string) {
   const platform = normalizePlatform(item.platform || "");
   if (!platform) return { ok: false as const, error: `No connector yet for "${item.platform}".` };
 
-  const { data: connRow } = await supabase
-    .from("social_connections")
-    .select("access_token,refresh_token,expires_at,author_urn,status")
-    .eq("brand_id", item.brand_id)
-    .eq("platform", platform)
-    .eq("status", "connected")
-    .maybeSingle();
-  let conn = connRow as Connection | null;
+  const loaded = await loadConnection(supabase, item.brand_id, platform);
+  if (!loaded.ok) return { ok: false as const, error: loaded.error };
+  let conn = loaded.conn;
   if (!conn?.access_token || !conn.author_urn) return { ok: false as const, error: `This brand has no connected ${platform} account.` };
   try {
     conn = await refreshIfNeeded(supabase, { brandId: item.brand_id, platform, conn });

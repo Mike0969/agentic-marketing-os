@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { exchangeCode, getMemberUrn } from "@/lib/social/linkedin";
+import { saveConnection } from "@/lib/social/connection-store";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -31,7 +32,8 @@ export async function GET(request: Request) {
       const supabase = createServiceClient() ?? (await createClient());
       if (supabase) {
         const expiresAt = new Date(Date.now() + (token.expires_in ?? 0) * 1000).toISOString();
-        await supabase.from("social_connections").upsert(
+        await saveConnection(
+          supabase,
           {
             brand_id: brandId,
             platform: "linkedin",
@@ -43,8 +45,7 @@ export async function GET(request: Request) {
             status: "connected",
             connected_by: "admin",
             updated_at: new Date().toISOString()
-          },
-          { onConflict: "brand_id,platform" }
+          }
         );
       }
     }
