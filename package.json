@@ -17,7 +17,7 @@
     "seed:supabase": "node scripts/seed-supabase.mjs",
     "preflight": "node --experimental-strip-types scripts/preflight.mts",
     "brain:graph": "node scripts/sync-brain-graph.mjs",
-    "test": "node --test --experimental-test-module-mocks --experimental-strip-types --import ./tests/helpers/register-alias.mjs \"tests/**/*.test.ts\" && node --test scripts/test-brain-sync.mjs",
+    "test": "node --test --experimental-test-module-mocks --experimental-strip-types --import ./tests/helpers/register-alias.mjs --import ./tests/helpers/block-network.mjs \"tests/**/*.test.ts\" && node --test scripts/test-brain-sync.mjs",
     "trading:install": "bash trading/scripts/trading-service.sh both install",
     "trading:uninstall": "bash trading/scripts/trading-service.sh both uninstall",
     "trading:status": "bash trading/scripts/trading-service.sh both status",

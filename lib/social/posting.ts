@@ -4,7 +4,7 @@ import { publishMemberPost, refreshToken as refreshLinkedInToken } from "@/lib/s
 import { publishPost as publishXPost, refreshToken as refreshXToken } from "@/lib/social/x";
 import { publishPost as publishFacebookPost } from "@/lib/social/facebook";
 import { publishPost as publishInstagramPost } from "@/lib/social/instagram";
-import { publishPost as publishTikTokPost } from "@/lib/social/tiktok";
+import { publishVideo as publishTikTokVideo, refreshToken as refreshTikTokToken } from "@/lib/social/tiktok";
 import { loadConnection, updateConnectionTokens, type Connection } from "@/lib/social/connection-store";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -58,6 +58,13 @@ async function refreshIfNeeded(
   return { ...args.conn, ...updated };
 }
 
+/** The URL of a generated video asset on the package, if any. */
+export function videoAssetUrl(item: Pick<ContentItem, "ready_package">): string | null {
+  const assets = item.ready_package?.assets ?? [];
+  const video = assets.find((a) => a.kind === "video_placeholder" && a.url && a.status === "generated");
+  return video?.url ?? null;
+}
+
 export async function publishApprovedPackage(contentItemId: string) {
   if (!socialPostingEnabled()) return { ok: false as const, error: "Live posting is off (set SOCIAL_POSTING_ENABLED=true)." };
   if (!isSupabaseConfigured()) return { ok: false as const, error: "Supabase not configured." };
@@ -70,6 +77,18 @@ export async function publishApprovedPackage(contentItemId: string) {
 
   const platform = normalizePlatform(item.platform || "");
   if (!platform) return { ok: false as const, error: `No connector yet for "${item.platform}".` };
+
+  // TikTok's Content Posting API is video-only. A text/image item is marked unsupported
+  // (once, with a clear reason) instead of failing on every scheduler run.
+  const videoUrl = videoAssetUrl(item);
+  if (platform === "tiktok" && !videoUrl) {
+    const error = "TikTok posts need a video asset; text/image items are not supported on TikTok.";
+    await supabase
+      .from("content_items")
+      .update({ ready_package: { ...(item.ready_package ?? {}), posting_error: error, posting_status: "unsupported" } })
+      .eq("id", contentItemId);
+    return { ok: false as const, error, unsupported: true as const };
+  }
 
   const loaded = await loadConnection(supabase, item.brand_id, platform);
   if (!loaded.ok) return { ok: false as const, error: loaded.error };
@@ -103,19 +122,25 @@ export async function publishApprovedPackage(contentItemId: string) {
   const imageUrl = item.visual_asset_url || (typeof pkg.image === "string" ? pkg.image : null);
 
   try {
-    const res =
-      platform === "linkedin"
-        ? await publishMemberPost(accessToken, authorUrn, message, imageUrl)
-        : platform === "x"
-          ? await publishXPost(accessToken, authorUrn, message, imageUrl)
-          : platform === "facebook"
-            ? await publishFacebookPost(accessToken, authorUrn, message, imageUrl)
-            : platform === "instagram"
-              ? await publishInstagramPost(accessToken, authorUrn, message, imageUrl)
-              : await publishTikTokPost(accessToken, authorUrn, message, imageUrl);
+    let res: { id: string | null; url: string | null };
+    let extra: Record<string, unknown> = { posting_status: "published" };
+    if (platform === "tiktok") {
+      const tiktok = await publishTikTokVideo(accessToken, videoUrl!, message);
+      res = tiktok;
+      extra = { posting_status: tiktok.status, tiktok_publish_id: tiktok.publishId };
+    } else {
+      res =
+        platform === "linkedin"
+          ? await publishMemberPost(accessToken, authorUrn, message, imageUrl)
+          : platform === "x"
+            ? await publishXPost(accessToken, authorUrn, message, imageUrl)
+            : platform === "facebook"
+              ? await publishFacebookPost(accessToken, authorUrn, message, imageUrl)
+              : await publishInstagramPost(accessToken, authorUrn, message, imageUrl);
+    }
     await supabase
       .from("content_items")
-      .update({ status: "published", published_at: new Date().toISOString(), ready_package: { ...pkg, posted_url: res.url, posted_platform: platform, posting_error: null } })
+      .update({ status: "published", published_at: new Date().toISOString(), ready_package: { ...pkg, posted_url: res.url, posted_platform: platform, posting_error: null, ...extra } })
       .eq("id", contentItemId);
     await recordAgentRun({
       agentName: "Publishing Agent",

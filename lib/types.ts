@@ -142,6 +142,9 @@ export type ReadyPackage = {
   posted_url?: string;
   posted_platform?: string;
   posting_error?: string | null;
+  /** unsupported = this platform cannot post this item type; processing = accepted, platform still processing. */
+  posting_status?: "published" | "processing" | "unsupported";
+  tiktok_publish_id?: string;
   asset_checklist?: string[];
   slides?: { headline: string; text: string }[];
   script?: string;

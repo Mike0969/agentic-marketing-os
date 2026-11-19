@@ -6,6 +6,12 @@ import { pathToFileURL } from "node:url";
 import type { FakeSupabase } from "./fake-supabase.ts";
 
 const holder: { db: FakeSupabase | null } = { db: null };
+
+/** Any network call a test did not explicitly fake fails loudly. Installed on import. */
+export const blockedFetch = (async (u: unknown) => {
+  throw new Error(`unexpected network call in test: ${String(u instanceof Request ? u.url : u)}`);
+}) as typeof fetch;
+globalThis.fetch = blockedFetch;
 let installed = false;
 
 /** Call once per test file BEFORE importing app modules. */
@@ -27,10 +33,7 @@ export async function withEnv<T>(vars: Record<string, string | undefined>, fn: (
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
-  // Default: any unexpected network call fails the test loudly.
-  globalThis.fetch = fetchImpl ?? ((async (u: unknown) => {
-    throw new Error(`unexpected network call in test: ${String(u)}`);
-  }) as typeof fetch);
+  globalThis.fetch = fetchImpl ?? blockedFetch;
   try {
     return await fn();
   } finally {

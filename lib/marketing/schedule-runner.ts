@@ -19,7 +19,7 @@ export async function runDuePosts(limit = 5) {
   const nowIso = new Date().toISOString();
   const { data: due } = await supabase
     .from("content_items")
-    .select("id,platform")
+    .select("id,platform,ready_package")
     .eq("status", "scheduled")
     .is("archived_at", null)
     .not("scheduled_at", "is", null)
@@ -27,11 +27,15 @@ export async function runDuePosts(limit = 5) {
     .order("scheduled_at", { ascending: true })
     .limit(Math.max(limit * 4, 10));
 
-  const items = ((due ?? []) as Array<{ id: string; platform: string | null }>).filter((item) => hasLiveSocialConnector(item.platform)).slice(0, limit);
+  // Items a platform cannot post (e.g. TikTok text/image) are skipped so they never block the queue.
+  const items = ((due ?? []) as Array<{ id: string; platform: string | null; ready_package?: { posting_status?: string } | null }>)
+    .filter((item) => hasLiveSocialConnector(item.platform) && item.ready_package?.posting_status !== "unsupported")
+    .slice(0, limit);
   let posted = 0;
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const item of items) {
-    const res = await publishApprovedPackage(item.id);
+    // One item's failure (even an unexpected throw) never stops the rest of the batch.
+    const res = await publishApprovedPackage(item.id).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "publish failed" }));
     if (res.ok) posted += 1;
     results.push({ id: item.id, ok: res.ok, error: res.ok ? undefined : res.error });
   }
