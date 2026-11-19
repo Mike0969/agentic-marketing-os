@@ -24,8 +24,8 @@ export async function resolve(specifier, context, nextResolve) {
     }
   }
   if (candidate) return nextResolve(pathToFileURL(candidate).href, context);
-  // "next/server" style bare subpaths without an exports map need ".js".
-  if (specifier === "next/server" || specifier === "next/headers") {
+  // Next's bare subpaths ("next/server", "next/cache", ...) have no exports map and need ".js".
+  if (/^next\/[a-z-]+$/.test(specifier)) {
     return nextResolve(`${specifier}.js`, context);
   }
   return nextResolve(specifier, context);

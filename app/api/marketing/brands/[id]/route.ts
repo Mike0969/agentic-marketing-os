@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { updateLocalBrand } from "@/lib/local-store";
+import { isOrganizationUrn } from "@/lib/social/linkedin";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand } from "@/lib/types";
 
@@ -19,7 +20,8 @@ const allowedFields = [
   "competitors",
   "seo_targets",
   "approval_rules",
-  "ctas"
+  "ctas",
+  "linkedin_organization_urn"
 ] as const;
 
 type BrandPatch = Pick<Brand, (typeof allowedFields)[number]>;
@@ -44,6 +46,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   const patch = cleanPatch(body);
+  if ("linkedin_organization_urn" in patch) {
+    const urn = patch.linkedin_organization_urn ?? "";
+    if (urn && !isOrganizationUrn(urn)) {
+      return NextResponse.json({ error: "linkedin_organization_urn must look like urn:li:organization:12345 (or be empty)." }, { status: 400 });
+    }
+    patch.linkedin_organization_urn = urn || null;
+  }
 
   if (!Object.keys(patch).length) {
     return NextResponse.json({ error: "No editable brand fields were provided." }, { status: 400 });

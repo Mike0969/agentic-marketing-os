@@ -11,6 +11,7 @@ export type ConnectionTokens = { access_token: string | null; refresh_token: str
 export type Connection = ConnectionTokens & {
   expires_at: string | null;
   author_urn: string | null;
+  scopes?: string | null;
   status: string;
 };
 
@@ -58,7 +59,7 @@ export async function loadConnection(
 ): Promise<{ ok: true; conn: Connection | null } | { ok: false; error: string }> {
   const { data, error } = await db
     .from("social_connections")
-    .select("access_token,refresh_token,expires_at,author_urn,status")
+    .select("access_token,refresh_token,expires_at,author_urn,scopes,status")
     .eq("brand_id", brandId)
     .eq("platform", platform)
     .eq("status", "connected")

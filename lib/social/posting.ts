@@ -1,6 +1,6 @@
 import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { notifyOperator } from "@/lib/marketing/notify";
-import { publishMemberPost, refreshToken as refreshLinkedInToken } from "@/lib/social/linkedin";
+import { linkedinAuthor, publishMemberPost, refreshToken as refreshLinkedInToken } from "@/lib/social/linkedin";
 import { publishPost as publishXPost, refreshToken as refreshXToken } from "@/lib/social/x";
 import { publishPost as publishFacebookPost } from "@/lib/social/facebook";
 import { publishPost as publishInstagramPost } from "@/lib/social/instagram";
@@ -121,6 +121,19 @@ export async function publishApprovedPackage(contentItemId: string) {
 
   const imageUrl = item.visual_asset_url || (typeof pkg.image === "string" ? pkg.image : null);
 
+  // LinkedIn: post as the brand's Company Page when configured, else as the connected member.
+  let linkedinPostAuthor: string | null = null;
+  if (platform === "linkedin") {
+    const { data: brandRow } = await supabase.from("brands").select("linkedin_organization_urn").eq("id", item.brand_id).maybeSingle();
+    const author = linkedinAuthor({
+      memberUrn: authorUrn,
+      organizationUrn: (brandRow as { linkedin_organization_urn?: string | null } | null)?.linkedin_organization_urn,
+      scopes: conn.scopes
+    });
+    if (!author.ok) return { ok: false as const, error: author.error };
+    linkedinPostAuthor = author.author;
+  }
+
   try {
     let res: { id: string | null; url: string | null };
     let extra: Record<string, unknown> = { posting_status: "published" };
@@ -131,7 +144,7 @@ export async function publishApprovedPackage(contentItemId: string) {
     } else {
       res =
         platform === "linkedin"
-          ? await publishMemberPost(accessToken, authorUrn, message, imageUrl)
+          ? await publishMemberPost(accessToken, linkedinPostAuthor!, message, imageUrl)
           : platform === "x"
             ? await publishXPost(accessToken, authorUrn, message, imageUrl)
             : platform === "facebook"

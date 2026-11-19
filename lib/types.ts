@@ -15,6 +15,8 @@ export type Brand = {
   approval_rules?: string | null;
   ctas?: string | null;
   reusable_ctas?: string | null;
+  /** urn:li:organization:<id> — LinkedIn posts go out as this Company Page; empty = as the member. */
+  linkedin_organization_urn?: string | null;
   active: boolean;
 };
 

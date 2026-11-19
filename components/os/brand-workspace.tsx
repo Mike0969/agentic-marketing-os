@@ -36,7 +36,13 @@ const editableFields: Array<{ key: keyof Brand; label: string; type: "input" | "
   { key: "proof_points", label: "Proof points", type: "textarea" },
   { key: "offers", label: "Offers", type: "textarea" },
   { key: "competitors", label: "Competitors", type: "textarea" },
-  { key: "approval_rules", label: "Approval rules", type: "textarea" }
+  { key: "approval_rules", label: "Approval rules", type: "textarea" },
+  {
+    key: "linkedin_organization_urn",
+    label: "LinkedIn Company Page",
+    type: "input",
+    hint: "urn:li:organization:12345 — LinkedIn posts go out as this page (reconnect LinkedIn after setting). Empty = post as the connected member."
+  }
 ];
 
 function asText(value: unknown) {
