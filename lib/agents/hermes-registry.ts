@@ -1,5 +1,6 @@
 import { existsSync } from "fs";
 import { appendFile, readFile, readdir, stat, writeFile } from "fs/promises";
+import os from "os";
 import path from "path";
 
 /**
@@ -66,9 +67,12 @@ export type HermesRegistrySnapshot = {
   error: string | null;
 };
 
-const DEFAULT_TEAM_PATH = "/Users/dubai/.hermes/profiles/buddy/agents/agentic-marketing-os/team.json";
+// Defaults follow the running user's home (Linux server or Mac); HERMES_HOME overrides the root.
+const HERMES_HOME = process.env.HERMES_HOME || path.join(os.homedir(), ".hermes");
+const DEFAULT_TEAM_PATH = path.join(HERMES_HOME, "profiles/buddy/agents/agentic-marketing-os/team.json");
 const REPO_BRAIN_PATH = path.join(process.cwd(), "hermes-brain");
-const DEFAULT_LOCAL_BRAIN_PATH = "/Users/dubai/.hermes/profiles/buddy/resources/agentic-marketing-os-brain";
+const DEFAULT_LOCAL_BRAIN_PATH =
+  process.env.HERMES_LOCAL_BRAIN_PATH || path.join(HERMES_HOME, "profiles/buddy/resources/agentic-marketing-os-brain");
 
 function resolveTeamPath() {
   return process.env.HERMES_TEAM_PATH || DEFAULT_TEAM_PATH;

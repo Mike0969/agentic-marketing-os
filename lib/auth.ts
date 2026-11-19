@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasValidBearer } from "@/lib/auth-token";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export type AdminCheck =
@@ -33,19 +34,14 @@ export async function requireAdmin(): Promise<AdminCheck> {
 }
 
 /**
- * Access check for machine-to-machine triggers (Hermes / n8n / Telegram).
- * Accepts a bearer token matching AGENT_TRIGGER_TOKEN, otherwise falls back to
- * the normal admin session check. If AGENT_TRIGGER_TOKEN is unset, only an admin
- * session is accepted (secure default).
+ * Access check for machine-to-machine triggers (Hermes / n8n / Telegram / Vercel cron).
+ * Accepts a bearer token matching AGENT_TRIGGER_TOKEN or CRON_SECRET (constant-time
+ * compare), otherwise falls back to the normal admin session check. Unset tokens
+ * never match, so with neither set only an admin session is accepted (secure default).
  */
 export async function requireAgentAccess(request: Request): Promise<AdminCheck> {
-  const token = process.env.AGENT_TRIGGER_TOKEN;
-  if (token) {
-    const header = request.headers.get("authorization") || "";
-    const provided = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-    if (provided && provided === token) {
-      return { ok: true, mode: "local", email: null };
-    }
+  if (hasValidBearer(request, ["AGENT_TRIGGER_TOKEN", "CRON_SECRET"])) {
+    return { ok: true, mode: "local", email: null };
   }
   return requireAdmin();
 }

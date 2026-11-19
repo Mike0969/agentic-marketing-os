@@ -1,5 +1,6 @@
 import { constants } from "fs";
 import { access, copyFile, mkdir, readdir, readFile, stat } from "fs/promises";
+import os from "os";
 import path from "path";
 import process from "process";
 
@@ -8,7 +9,7 @@ const sourceRoot = path.join(repoRoot, "hermes-brain");
 const targetRoot =
   process.env.HERMES_WRITABLE_BRAIN_PATH ||
   process.env.HERMES_LOCAL_BRAIN_PATH ||
-  "/Users/dubai/.hermes/profiles/buddy/resources/agentic-marketing-os-brain";
+  path.join(process.env.HERMES_HOME || path.join(os.homedir(), ".hermes"), "profiles/buddy/resources/agentic-marketing-os-brain");
 
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has("--check");
