@@ -21,7 +21,8 @@ type StartOptions = {
 type CallbackOptions<Token extends { access_token: string; refresh_token?: string; expires_in?: number; scope?: string }> = {
   platform: SocialPlatform;
   exchangeCode: (code: string, verifier: string) => Promise<Token>;
-  resolveAccount: (accessToken: string) => Promise<{ accountId: string; handle: string | null; accessToken?: string }>;
+  /** expiresAt, when returned, is the real expiry of the stored token (null = does not expire). */
+  resolveAccount: (accessToken: string) => Promise<{ accountId: string; handle: string | null; accessToken?: string; expiresAt?: string | null }>;
 };
 
 function stateCookie(platform: SocialPlatform) {
@@ -173,7 +174,8 @@ export async function handleSocialOAuthCallback<Token extends { access_token: st
       const supabase = createServiceClient() ?? (await createClient());
       if (supabase) {
         const accountAccessToken = account.accessToken ?? token.access_token;
-        const expiresAt = account.accessToken ? null : token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
+        const expiresAt =
+          account.expiresAt !== undefined ? account.expiresAt : token.expires_in ? new Date(Date.now() + token.expires_in * 1000).toISOString() : null;
         const { error } = await saveConnection(
           supabase,
           {

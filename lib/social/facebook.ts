@@ -1,6 +1,7 @@
+import { GRAPH_URL, exchangeForLongLivedUserToken, pageTokenExpiry, type MetaApp } from "@/lib/social/meta";
+
 const AUTH_URL = "https://www.facebook.com/v20.0/dialog/oauth";
-const TOKEN_URL = "https://graph.facebook.com/v20.0/oauth/access_token";
-const GRAPH_URL = "https://graph.facebook.com/v20.0";
+const TOKEN_URL = `${GRAPH_URL}/oauth/access_token`;
 export const FACEBOOK_SCOPES = "pages_show_list,pages_read_engagement,pages_manage_posts";
 
 export function facebookConfigured() {
@@ -24,26 +25,35 @@ export function getAuthorizeUrl(state: string) {
 
 export type FacebookToken = { access_token: string; expires_in?: number; scope?: string };
 
+function app(): MetaApp {
+  return { clientId: process.env.FACEBOOK_CLIENT_ID ?? "", clientSecret: process.env.FACEBOOK_CLIENT_SECRET ?? "" };
+}
+
+/** Code -> short-lived user token -> LONG-lived user token (fb_exchange_token). */
 export async function exchangeCode(code: string): Promise<FacebookToken> {
   const params = new URLSearchParams({
-    client_id: process.env.FACEBOOK_CLIENT_ID ?? "",
-    client_secret: process.env.FACEBOOK_CLIENT_SECRET ?? "",
+    client_id: app().clientId,
+    client_secret: app().clientSecret,
     redirect_uri: facebookRedirectUri(),
     code
   });
   const res = await fetch(`${TOKEN_URL}?${params.toString()}`);
   if (!res.ok) throw new Error(`Facebook token exchange failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
-  return (await res.json()) as FacebookToken;
+  const short = (await res.json()) as FacebookToken;
+  const long = await exchangeForLongLivedUserToken(short.access_token, app());
+  return { access_token: long.access_token, expires_in: long.expires_in, scope: short.scope };
 }
 
-export async function resolveAccount(accessToken: string): Promise<{ accountId: string; handle: string | null; accessToken: string }> {
+/** Resolves the Page with the LONG-lived user token; the Page token's real expiry is looked up. */
+export async function resolveAccount(accessToken: string): Promise<{ accountId: string; handle: string | null; accessToken: string; expiresAt: string | null }> {
   const params = new URLSearchParams({ access_token: accessToken, fields: "id,name,access_token" });
   const res = await fetch(`${GRAPH_URL}/me/accounts?${params.toString()}`);
   if (!res.ok) throw new Error(`Facebook Page lookup failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as { data?: Array<{ id?: string; name?: string; access_token?: string }> };
   const page = json.data?.find((p) => p.id && p.access_token);
   if (!page?.id || !page.access_token) throw new Error("No manageable Facebook Page found for this account.");
-  return { accountId: page.id, handle: page.name ?? null, accessToken: page.access_token };
+  const expiresAt = await pageTokenExpiry(page.access_token, { access_token: accessToken }, app());
+  return { accountId: page.id, handle: page.name ?? null, accessToken: page.access_token, expiresAt };
 }
 
 export async function publishPost(accessToken: string, pageId: string, text: string, imageUrl?: string | null): Promise<{ id: string | null; url: string | null }> {

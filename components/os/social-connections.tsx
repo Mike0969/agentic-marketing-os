@@ -1,10 +1,11 @@
 import { OSBadge, OSPanel } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
+import { connectionView, type ConnectionView } from "@/lib/social/connection-status";
 import { socialPostingEnabled } from "@/lib/social/posting";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
-type ConnRow = { brand_id: string; platform: string; status: string };
+type ConnRow = { brand_id: string; platform: string; status: string; expires_at: string | null; has_refresh_token: boolean };
 type OAuthStatus = Record<string, string | undefined>;
 
 const platforms = [
@@ -14,6 +15,14 @@ const platforms = [
   { key: "instagram", label: "Instagram" },
   { key: "tiktok", label: "TikTok" }
 ] as const;
+
+const VIEW_CLASS: Record<ConnectionView, string> = {
+  connected: "text-emerald-300",
+  expiring: "text-amber-300",
+  expired: "text-rose-300",
+  revoked: "text-rose-300",
+  "not connected": "text-neutral-500"
+};
 
 function messageFor(status?: string, detail?: string) {
   if (!status) return null;
@@ -46,8 +55,15 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
   if (isSupabaseConfigured()) {
     const supabase = createServiceClient() ?? (await createClient());
     if (supabase) {
-      const { data: rows } = await supabase.from("social_connections").select("brand_id,platform,status");
-      connections = (rows ?? []) as ConnRow[];
+      const { data: rows } = await supabase.from("social_connections").select("brand_id,platform,status,expires_at,refresh_token");
+      // Only whether a refresh token exists is kept; the token itself never leaves this function.
+      connections = ((rows ?? []) as Array<Omit<ConnRow, "has_refresh_token"> & { refresh_token: string | null }>).map((r) => ({
+        brand_id: r.brand_id,
+        platform: r.platform,
+        status: r.status,
+        expires_at: r.expires_at,
+        has_refresh_token: Boolean(r.refresh_token)
+      }));
     }
   }
   const posting = socialPostingEnabled();
@@ -76,11 +92,14 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
               {platforms.map((platform) => {
                 const conn = connections.find((c) => c.brand_id === brand.id && c.platform === platform.key);
+                const view = connectionView(conn);
                 return (
                   <div key={platform.key} className="flex items-center justify-between gap-2 rounded-md border border-neutral-800 bg-neutral-900/50 p-2.5">
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-neutral-100">{platform.label}</div>
-                      <div className={`text-xs ${conn ? "text-emerald-300" : "text-neutral-500"}`}>{conn ? "connected" : "not connected"}</div>
+                      <div className={`text-xs ${VIEW_CLASS[view]}`} title={conn?.expires_at ? `Token expires ${conn.expires_at}` : undefined}>
+                        {view}
+                      </div>
                     </div>
                     <a
                       href={`/api/auth/${platform.key}/start?brand_id=${brand.id}`}

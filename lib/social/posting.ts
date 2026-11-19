@@ -80,6 +80,15 @@ export async function publishApprovedPackage(contentItemId: string) {
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : `${platform} token refresh failed.` };
   }
+  // A token past its real expiry (and not refreshable) can never post: mark it so the UI says so.
+  if (conn.expires_at && new Date(conn.expires_at).getTime() <= Date.now()) {
+    await supabase
+      .from("social_connections")
+      .update({ status: "expired", updated_at: new Date().toISOString() })
+      .eq("brand_id", item.brand_id)
+      .eq("platform", platform);
+    return { ok: false as const, error: `The ${platform} connection expired on ${conn.expires_at}; reconnect it in Settings.` };
+  }
   const accessToken = conn.access_token;
   const authorUrn = conn.author_urn;
   if (!accessToken || !authorUrn) return { ok: false as const, error: `This brand has no connected ${platform} account.` };
