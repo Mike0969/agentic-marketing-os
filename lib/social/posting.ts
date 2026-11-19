@@ -235,46 +235,72 @@ export async function publishApprovedPackage(contentItemId: string) {
 /**
  * Cron step: re-check posts the platform accepted but was still processing (TikTok), and move
  * each to its final state: published, or failed with TikTok's reason. Still processing = left
- * as is for the next run. A lookup error never changes the item.
+ * as is. Fair: never-checked rows first, then the least recently checked; every visited row is
+ * stamped, and a row whose connection is unusable is marked with the reason, so such rows rotate
+ * to the back and can never starve the rest. At most `maxChecks` status calls per run.
  */
-export async function reconcileProcessingPosts(limit = 10) {
-  if (!isSupabaseConfigured()) return { checked: 0, published: 0, failed: 0 };
+export async function reconcileProcessingPosts(maxChecks = 25) {
+  const empty = { checked: 0, published: 0, failed: 0, blocked: 0 };
+  if (!isSupabaseConfigured()) return empty;
   const supabase = createServiceClient() ?? (await createClient());
-  if (!supabase) return { checked: 0, published: 0, failed: 0 };
+  if (!supabase) return empty;
 
-  const { data } = await supabase
-    .from("content_items")
-    .select("id,brand_id,platform,title,posting_ref,ready_package")
-    .eq("posting_status", "processing")
-    .limit(limit);
-  const rows = (data ?? []) as Array<Pick<ContentItem, "id" | "brand_id" | "platform" | "title" | "posting_ref" | "ready_package">>;
+  // Collect candidates first (pages of 50, bounded), then process: stamping rows while paging
+  // would shift the offsets.
+  type Row = Pick<ContentItem, "id" | "brand_id" | "platform" | "title" | "posting_ref" | "ready_package">;
+  const PAGE = 50;
+  const MAX_VISIT = 200;
+  const rows: Row[] = [];
+  for (let from = 0; rows.length < MAX_VISIT; from += PAGE) {
+    const { data, error } = await supabase
+      .from("content_items")
+      .select("id,brand_id,platform,title,posting_ref,ready_package")
+      .eq("posting_status", "processing")
+      .order("posting_last_attempt_at", { ascending: true, nullsFirst: true })
+      .order("scheduled_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) return empty;
+    const page = (data ?? []) as Row[];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+
+  const stamp = (id: string, extra: Record<string, unknown> = {}) =>
+    supabase.from("content_items").update({ posting_last_attempt_at: new Date().toISOString(), ...extra }).eq("id", id).eq("posting_status", "processing");
+
+  let checked = 0;
   let published = 0;
   let failed = 0;
+  let blocked = 0;
   for (const row of rows) {
-    if (normalizePlatform(row.platform || "") !== "tiktok" || !row.posting_ref) continue;
-    const usable = await usableConnection(supabase, row.brand_id, "tiktok");
-    if (!usable.ok) continue;
-    const st = await fetchTikTokStatus(usable.conn.access_token!, row.posting_ref).catch(() => null);
-    if (!st) continue;
+    if (checked >= maxChecks) break;
     const pkg = (row.ready_package ?? {}) as Record<string, unknown>;
-    if (st.status === "PUBLISH_COMPLETE") {
-      await supabase
-        .from("content_items")
-        .update({ status: "published", published_at: new Date().toISOString(), posting_status: "published", ready_package: { ...pkg, posting_error: null } })
-        .eq("id", row.id)
-        .eq("posting_status", "processing");
+    if (normalizePlatform(row.platform || "") !== "tiktok" || !row.posting_ref) {
+      blocked += 1;
+      await stamp(row.id, { ready_package: { ...pkg, posting_error: "Cannot re-check: not a TikTok post with a publish id." } });
+      continue;
+    }
+    const usable = await usableConnection(supabase, row.brand_id, "tiktok");
+    if (!usable.ok) {
+      blocked += 1;
+      await stamp(row.id, { ready_package: { ...pkg, posting_error: `Waiting to re-check TikTok status: ${usable.error}` } });
+      continue;
+    }
+    checked += 1;
+    const st = await fetchTikTokStatus(usable.conn.access_token!, row.posting_ref).catch(() => null);
+    if (st?.status === "PUBLISH_COMPLETE") {
+      await stamp(row.id, { status: "published", published_at: new Date().toISOString(), posting_status: "published", ready_package: { ...pkg, posting_error: null } });
       published += 1;
       void notifyOperator(`✅ Posted to tiktok (${row.title})`);
-    } else if (st.status === "FAILED") {
+    } else if (st?.status === "FAILED") {
       const error = `TikTok publish failed: ${st.failReason ?? "unknown reason"}`;
-      await supabase
-        .from("content_items")
-        .update({ posting_status: "failed", ready_package: { ...pkg, posting_error: error } })
-        .eq("id", row.id)
-        .eq("posting_status", "processing");
+      await stamp(row.id, { posting_status: "failed", ready_package: { ...pkg, posting_error: error } });
       failed += 1;
       void notifyOperator(`⚠️ tiktok post FAILED (${row.title}): ${error}`);
+    } else {
+      // Still processing, or the lookup failed: state unchanged, only rotated.
+      await stamp(row.id);
     }
   }
-  return { checked: rows.length, published, failed };
+  return { checked, published, failed, blocked };
 }

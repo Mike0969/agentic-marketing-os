@@ -213,3 +213,54 @@ test("schedule runner: unsupported/processed/non-social rows never starve the qu
   assert.equal(row("c-vid").status, "published");
   assert.equal(row("b-text").posting_status, "unsupported");
 });
+
+// ---- r2: fair rotation (Codex review-marketing-os-r2) ----
+const OTHER = "55555555-5555-4555-8555-555555555555";
+
+test("queue: five persistently failing posts cannot block a healthy sixth (rotation)", async () => {
+  const old = (n: number) => new Date(Date.now() - 86_400_000 + n * 1000).toISOString();
+  // Five older Facebook posts for a brand with NO connection, one newer healthy post.
+  const blocked = Array.from({ length: 5 }, (_, n) => item(`blocked-${n}`, {}, { platform: "Facebook", brand_id: OTHER, scheduled_at: old(n) }));
+  const healthy = item("healthy", {}, { platform: "Facebook", scheduled_at: old(10) });
+  holder.db = postingDb([...blocked, healthy]);
+  holder.db.tables.social_connections.push({ brand_id: BRAND, platform: "facebook", access_token: "PT", refresh_token: null, expires_at: null, author_urn: "page1", scopes: null, status: "connected" });
+  const fb = fakeFetch(() => jsonResponse({ id: "page1_1" }));
+  const run1 = await withEnv(POST_ENV, () => runDuePosts(5), fb.fn);
+  assert.equal(run1.posted, 0);
+  const run2 = await withEnv(POST_ENV, () => runDuePosts(5), fb.fn);
+  assert.equal(run2.posted, 1, JSON.stringify(run2.results));
+  assert.equal(row("healthy").status, "published");
+  assert.ok(row("blocked-0").posting_last_attempt_at, "failed attempts are stamped");
+});
+
+test("reconcile: ten processing rows with unusable connections never starve an eleventh", async () => {
+  const stuck = Array.from({ length: 10 }, (_, n) => processingItem(`stuck-${n}`)).map((r) => ({ ...r, brand_id: OTHER }));
+  holder.db = postingDb([...stuck, processingItem("good")]);
+  const f = statusOnly({ status: "PUBLISH_COMPLETE", publicaly_available_post_id: [1] });
+  const res = await withEnv(POST_ENV, () => reconcileProcessingPosts(), f.fn);
+  assert.equal(f.calls.length, 1, "the healthy row got its status call in the first run");
+  assert.equal(row("good").status, "published");
+  assert.equal(res.blocked, 10);
+  for (let n = 0; n < 10; n++) {
+    const r = row(`stuck-${n}`);
+    assert.equal(r.posting_status, "processing", "unusable rows keep their state");
+    assert.ok(r.posting_last_attempt_at, "and are stamped so they rotate");
+    assert.match(String((r.ready_package as Record<string, unknown>).posting_error), /Waiting to re-check/);
+  }
+});
+
+test("reconcile: the per-run check budget rotates through every processing row", async () => {
+  holder.db = postingDb(["r1", "r2", "r3"].map((id) => processingItem(id)));
+  const f = statusOnly({ status: "PROCESSING_UPLOAD" });
+  for (let i = 0; i < 3; i++) await withEnv(POST_ENV, () => reconcileProcessingPosts(1), f.fn);
+  const checkedIds = f.calls.map((c) => (c.body as { publish_id: string }).publish_id).sort();
+  assert.deepEqual(checkedIds, ["pub-r1", "pub-r2", "pub-r3"], "each row checked once across three runs");
+});
+
+test("reconcile pages past the first page of processing rows", async () => {
+  const many = Array.from({ length: 120 }, (_, n) => ({ ...processingItem(`s${n}`), brand_id: OTHER }));
+  holder.db = postingDb([...many, processingItem("late")]);
+  const f = statusOnly({ status: "PUBLISH_COMPLETE", publicaly_available_post_id: [2] });
+  await withEnv(POST_ENV, () => reconcileProcessingPosts(), f.fn);
+  assert.equal(row("late").status, "published");
+});

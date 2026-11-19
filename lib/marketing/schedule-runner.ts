@@ -19,10 +19,12 @@ export async function runDuePosts(limit = 5) {
   if (!supabase) return { posted: 0, attempted: 0, skipped: "no_supabase" as const };
 
   // First settle posts a platform was still processing (TikTok), so they reach a final state.
-  const reconciled = await reconcileProcessingPosts().catch(() => ({ checked: 0, published: 0, failed: 0 }));
+  const reconciled = await reconcileProcessingPosts().catch(() => ({ checked: 0, published: 0, failed: 0, blocked: 0 }));
 
   // Only items still pending are candidates (filtered in SQL, so processed/unsupported/failed rows
-  // can never fill the page). Pages continue past non-social platforms until `limit` are found.
+  // can never fill the page). Never-tried items come first, then the least recently tried, so
+  // items that keep failing rotate to the back. Pages continue past non-social platforms until
+  // `limit` are found; candidates are collected before any is stamped, so offsets stay stable.
   const nowIso = new Date().toISOString();
   const items: Array<{ id: string; platform: string | null }> = [];
   for (let from = 0; items.length < limit; from += PAGE) {
@@ -34,6 +36,7 @@ export async function runDuePosts(limit = 5) {
       .is("archived_at", null)
       .not("scheduled_at", "is", null)
       .lte("scheduled_at", nowIso)
+      .order("posting_last_attempt_at", { ascending: true, nullsFirst: true })
       .order("scheduled_at", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) return { posted: 0, attempted: 0, skipped: "query_error" as const, error: error.message, reconciled };
@@ -46,6 +49,8 @@ export async function runDuePosts(limit = 5) {
   let processing = 0;
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const item of items) {
+    // Stamp the attempt first: whatever happens next, this item goes behind untried ones.
+    await supabase.from("content_items").update({ posting_last_attempt_at: new Date().toISOString() }).eq("id", item.id);
     // One item's failure (even an unexpected throw) never stops the rest of the batch.
     const res = await publishApprovedPackage(item.id).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : "publish failed" }));
     if (res.ok && "processing" in res) processing += 1;

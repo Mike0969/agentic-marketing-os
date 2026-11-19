@@ -49,7 +49,7 @@ class Query implements PromiseLike<Result> {
   private mode: "many" | "single" | "maybeSingle" = "many";
   private limitN: number | null = null;
   private offsetN = 0;
-  private orderBy: { col: string; asc: boolean } | null = null;
+  private orderBy: Array<{ col: string; asc: boolean; nullsFirst: boolean }> = [];
   private countMode = false;
   private headOnly = false;
 
@@ -129,8 +129,10 @@ class Query implements PromiseLike<Result> {
     this.filters.push((r) => typeof r[col] === "string" && re.test(r[col] as string));
     return this;
   }
-  order(col: string, opts?: { ascending?: boolean }) {
-    this.orderBy = { col, asc: opts?.ascending !== false };
+  order(col: string, opts?: { ascending?: boolean; nullsFirst?: boolean }) {
+    const asc = opts?.ascending !== false;
+    // Postgres default: NULLS LAST for ascending, NULLS FIRST for descending.
+    this.orderBy.push({ col, asc, nullsFirst: opts?.nullsFirst ?? !asc });
     return this;
   }
   limit(n: number) {
@@ -185,9 +187,19 @@ class Query implements PromiseLike<Result> {
 
     if (this.op === "select") {
       let rows = this.matches();
-      if (this.orderBy) {
-        const { col, asc } = this.orderBy;
-        rows = [...rows].sort((a, b) => ((a[col] as string) < (b[col] as string) ? -1 : (a[col] as string) > (b[col] as string) ? 1 : 0) * (asc ? 1 : -1));
+      if (this.orderBy.length) {
+        const keys = this.orderBy;
+        rows = [...rows].sort((a, b) => {
+          for (const { col, asc, nullsFirst } of keys) {
+            const x = a[col] ?? null;
+            const y = b[col] ?? null;
+            if (x === y) continue;
+            if (x === null) return nullsFirst ? -1 : 1;
+            if (y === null) return nullsFirst ? 1 : -1;
+            return ((x as string) < (y as string) ? -1 : 1) * (asc ? 1 : -1);
+          }
+          return 0;
+        });
       }
       if (this.limitN != null || this.offsetN) rows = rows.slice(this.offsetN, this.limitN != null ? this.offsetN + this.limitN : undefined);
       return this.shape(rows);

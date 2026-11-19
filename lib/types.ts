@@ -123,6 +123,8 @@ export type ContentItem = {
   posting_status?: "pending" | "processing" | "published" | "failed" | "unsupported";
   /** Platform reference for a post in flight (TikTok publish_id). */
   posting_ref?: string | null;
+  /** Last publish attempt / status re-check (migration 0034); drives fair rotation. */
+  posting_last_attempt_at?: string | null;
 };
 
 export type ReadyPackageAsset = {
