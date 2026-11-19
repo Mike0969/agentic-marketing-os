@@ -18,6 +18,11 @@ export class FakeSupabase {
   unique: Record<string, string[][]>;
   failOn: Record<string, string>;
   log: Array<{ table: string; op: string; payload?: unknown }> = [];
+  /** The signed-in user seen by auth.getUser() (cookie client); null = no session. */
+  user: { email: string } | null = null;
+  auth = {
+    getUser: async () => ({ data: { user: this.user }, error: null })
+  };
 
   constructor(opts: FakeDbOptions = {}) {
     this.tables = structuredClone(opts.tables ?? {});

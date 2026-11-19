@@ -14,12 +14,24 @@ export const blockedFetch = (async (u: unknown) => {
 globalThis.fetch = blockedFetch;
 let installed = false;
 
-/** Call once per test file BEFORE importing app modules. */
+/**
+ * Call once per test file BEFORE importing app modules. Both the service-role client and the
+ * cookie-based server client resolve to holder.db; "configured" still follows the env vars.
+ */
 export function mockServiceClient() {
   if (installed) return holder;
   installed = true;
   mock.module(pathToFileURL(path.resolve("lib/supabase/service.ts")).href, {
     namedExports: { createServiceClient: () => holder.db, isServiceConfigured: () => holder.db !== null }
+  });
+  const configured = () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY));
+  mock.module(pathToFileURL(path.resolve("lib/supabase/server.ts")).href, {
+    namedExports: { createClient: async () => (configured() ? holder.db : null), isSupabaseConfigured: configured }
+  });
+  // Cache revalidation needs a Next request store; outside Next it is a no-op here.
+  const noop = () => {};
+  mock.module(pathToFileURL(path.resolve("node_modules/next/cache.js")).href, {
+    namedExports: { revalidatePath: noop, revalidateTag: noop, unstable_noStore: noop, unstable_cache: <T>(fn: T) => fn }
   });
   return holder;
 }
