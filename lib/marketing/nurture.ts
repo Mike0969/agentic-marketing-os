@@ -1,4 +1,5 @@
 import { emailConfigured, sendEmail } from "@/lib/email/resend";
+import { escapeHtml, isSuppressed, safeHref, unsubscribeHeaders, unsubscribeUrl } from "@/lib/email/unsubscribe";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -6,6 +7,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 // (Claude's lane); the real per-brand copy is Codex's lane (hermes-brain/nurture-sequences.md). The
 // inline fallback copy below keeps the funnel functional today and is replaced by Codex's sequences.
 
+// Every ctx value is ALREADY HTML-escaped by renderNurtureEmail (name/brand are user-controlled).
 type Step = { delayDays: number; subject: string; html: (ctx: { name: string; brand: string; subscribeUrl: string }) => string };
 
 const DEFAULT_SEQUENCE: Step[] = [
@@ -31,6 +33,21 @@ async function db() {
   return createServiceClient() ?? (await createClient());
 }
 
+/** Renders one step with escaped values and the unsubscribe footer. */
+export function renderNurtureEmail(step: number, raw: { name: string; brand: string; subscribeUrl: string; unsubscribeUrl: string }) {
+  const def = DEFAULT_SEQUENCE[step];
+  if (!def) return null;
+  const ctx = { name: escapeHtml(raw.name), brand: escapeHtml(raw.brand), subscribeUrl: safeHref(raw.subscribeUrl) };
+  const footer = `<p style="font-size:12px;color:#666">You received this because you asked about ${ctx.brand}. <a href="${safeHref(raw.unsubscribeUrl)}">Unsubscribe</a></p>`;
+  return { subject: def.subject, html: def.html(ctx) + footer };
+}
+
+type DripDeps = {
+  db?: Awaited<ReturnType<typeof db>>;
+  send?: typeof sendEmail;
+  env?: Record<string, string | undefined>;
+};
+
 /** Enroll a freshly captured lead into the nurture drip (first email due immediately). */
 export async function enrollLead(leadId: string, brandId: string) {
   const supabase = await db();
@@ -42,20 +59,24 @@ export async function enrollLead(leadId: string, brandId: string) {
 }
 
 /** Cron drip: send the due email for each active lead, log it, and advance the step. */
-export async function runNurtureDrip(limit = 25) {
-  const supabase = await db();
+export async function runNurtureDrip(limit = 25, deps: DripDeps = {}) {
+  const env = deps.env ?? process.env;
+  const send = deps.send ?? sendEmail;
+  const supabase = deps.db !== undefined ? deps.db : await db();
   if (!supabase) return { sent: 0, skipped: "no-db" as const };
-  if (!emailConfigured()) return { sent: 0, skipped: "no-resend-key" as const };
+  if (!(deps.send ? true : emailConfigured())) return { sent: 0, skipped: "no-resend-key" as const };
+  // Never send marketing email without a working unsubscribe link.
+  const subscribeBase = env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/+$/, "") || "";
+  if (!subscribeBase || !env.EMAIL_UNSUBSCRIBE_SECRET?.trim()) return { sent: 0, skipped: "no-unsubscribe-config" as const };
 
   const nowIso = new Date().toISOString();
   const { data: due } = await supabase.from("lead_nurture").select("*").eq("status", "active").lte("next_send_at", nowIso).limit(limit);
   const rows = (due ?? []) as Array<{ id: string; lead_id: string; brand_id: string; sequence_key: string; step: number }>;
-  const subscribeBase = process.env.NEXT_PUBLIC_SITE_URL || "";
   let sent = 0;
+  let suppressed = 0;
 
   for (const row of rows) {
-    const stepDef = DEFAULT_SEQUENCE[row.step];
-    if (!stepDef) {
+    if (!DEFAULT_SEQUENCE[row.step]) {
       await supabase.from("lead_nurture").update({ status: "completed", updated_at: nowIso }).eq("id", row.id);
       continue;
     }
@@ -65,13 +86,31 @@ export async function runNurtureDrip(limit = 25) {
       await supabase.from("lead_nurture").update({ status: "error", updated_at: nowIso }).eq("id", row.id);
       continue;
     }
-    const ctx = { name: lead.name || "there", brand: brand?.name || "us", subscribeUrl: `${subscribeBase}/lead/${row.brand_id}` };
-    const res = await sendEmail({ to: lead.email, subject: stepDef.subject, html: stepDef.html(ctx) });
+    const subject = DEFAULT_SEQUENCE[row.step].subject;
+    if (await isSuppressed(supabase, lead.email)) {
+      await supabase.from("email_sends").insert({
+        lead_id: row.lead_id,
+        brand_id: row.brand_id,
+        to_email: lead.email,
+        subject,
+        sequence_key: row.sequence_key,
+        step: row.step,
+        provider_id: null,
+        status: "suppressed",
+        error: null
+      });
+      await supabase.from("lead_nurture").update({ status: "stopped", updated_at: nowIso }).eq("id", row.id);
+      suppressed += 1;
+      continue;
+    }
+    const unsub = unsubscribeUrl(lead.email, env)!;
+    const email = renderNurtureEmail(row.step, { name: lead.name || "there", brand: brand?.name || "us", subscribeUrl: `${subscribeBase}/lead/${row.brand_id}`, unsubscribeUrl: unsub })!;
+    const res = await send({ to: lead.email, subject: email.subject, html: email.html, headers: unsubscribeHeaders(unsub) });
     await supabase.from("email_sends").insert({
       lead_id: row.lead_id,
       brand_id: row.brand_id,
       to_email: lead.email,
-      subject: stepDef.subject,
+      subject: email.subject,
       sequence_key: row.sequence_key,
       step: row.step,
       provider_id: res.id ?? null,
@@ -92,5 +131,5 @@ export async function runNurtureDrip(limit = 25) {
       .eq("id", row.id);
   }
 
-  return { sent, due: rows.length };
+  return { sent, suppressed, due: rows.length };
 }

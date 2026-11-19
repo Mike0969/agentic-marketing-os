@@ -5,7 +5,7 @@ export function emailConfigured() {
   return Boolean(process.env.RESEND_API_KEY);
 }
 
-export async function sendEmail(args: { to: string; subject: string; html: string; from?: string }): Promise<{ ok: boolean; id?: string; error?: string }> {
+export async function sendEmail(args: { to: string; subject: string; html: string; from?: string; headers?: Record<string, string> }): Promise<{ ok: boolean; id?: string; error?: string }> {
   const key = process.env.RESEND_API_KEY;
   if (!key) return { ok: false, error: "RESEND_API_KEY not set" };
   const from = args.from ?? process.env.EMAIL_FROM ?? "onboarding@resend.dev";
@@ -13,7 +13,7 @@ export async function sendEmail(args: { to: string; subject: string; html: strin
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from, to: args.to, subject: args.subject, html: args.html }),
+      body: JSON.stringify({ from, to: args.to, subject: args.subject, html: args.html, ...(args.headers ? { headers: args.headers } : {}) }),
       signal: AbortSignal.timeout(15000)
     });
     const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string };

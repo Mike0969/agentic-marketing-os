@@ -172,8 +172,11 @@ export function computeReadiness(env: Env = process.env as Env): ReadinessReport
     )
   );
 
-  // 7. Nurture email (Resend) — the funnel drip. Optional.
-  const emailReady = has(env, "RESEND_API_KEY");
+  // 7. Nurture email (Resend) — the funnel drip. Optional. Sending also needs a working
+  // unsubscribe link (signing secret + public site URL); without them the drip sends nothing.
+  const emailEnv = ["RESEND_API_KEY", "EMAIL_UNSUBSCRIBE_SECRET", "NEXT_PUBLIC_SITE_URL"];
+  const emailMissing = emailEnv.filter((k) => !has(env, k));
+  const emailReady = emailMissing.length === 0;
   capabilities.push(
     cap(
       "email-nurture",
@@ -181,9 +184,9 @@ export function computeReadiness(env: Env = process.env as Env): ReadinessReport
       "optional",
       emailReady,
       emailReady
-        ? "Connected: due nurture emails are sent on the cron."
-        : "Not configured — the nurture drip is a no-op until an email key is set.",
-      ["RESEND_API_KEY"]
+        ? "Connected: due nurture emails are sent on the cron, each with an unsubscribe link."
+        : "Not configured — the nurture drip sends nothing until the email key and the unsubscribe settings are set.",
+      emailMissing
     )
   );
 
