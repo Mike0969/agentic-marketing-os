@@ -4,7 +4,7 @@ import { linkedinAuthor, publishMemberPost, refreshToken as refreshLinkedInToken
 import { publishPost as publishXPost, refreshToken as refreshXToken } from "@/lib/social/x";
 import { publishPost as publishFacebookPost } from "@/lib/social/facebook";
 import { publishPost as publishInstagramPost } from "@/lib/social/instagram";
-import { publishVideo as publishTikTokVideo, refreshToken as refreshTikTokToken } from "@/lib/social/tiktok";
+import { fetchPublishStatus as fetchTikTokStatus, publishVideo as publishTikTokVideo, refreshToken as refreshTikTokToken } from "@/lib/social/tiktok";
 import { loadConnection, updateConnectionTokens, type Connection } from "@/lib/social/connection-store";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -46,7 +46,9 @@ async function refreshIfNeeded(
       ? await refreshXToken(args.conn.refresh_token)
       : args.platform === "linkedin"
         ? await refreshLinkedInToken(args.conn.refresh_token)
-        : null;
+        : args.platform === "tiktok"
+          ? await refreshTikTokToken(args.conn.refresh_token)
+          : null;
   if (!token?.access_token) return args.conn;
 
   const updated: Partial<Connection> = {
@@ -56,6 +58,28 @@ async function refreshIfNeeded(
   };
   await updateConnectionTokens(supabase, args.brandId, args.platform, updated);
   return { ...args.conn, ...updated };
+}
+
+type Db = NonNullable<ReturnType<typeof createServiceClient>>;
+
+/** Loads, refreshes and expiry-checks the brand's connection; marks it expired when it can never post. */
+async function usableConnection(supabase: Db, brandId: string, platform: SocialPlatform): Promise<{ ok: true; conn: Connection } | { ok: false; error: string }> {
+  const loaded = await loadConnection(supabase, brandId, platform);
+  if (!loaded.ok) return loaded;
+  let conn = loaded.conn;
+  if (!conn?.access_token || !conn.author_urn) return { ok: false, error: `This brand has no connected ${platform} account.` };
+  try {
+    conn = await refreshIfNeeded(supabase, { brandId, platform, conn });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : `${platform} token refresh failed.` };
+  }
+  // A token past its real expiry (and not refreshable) can never post: mark it so the UI says so.
+  if (conn.expires_at && new Date(conn.expires_at).getTime() <= Date.now()) {
+    await supabase.from("social_connections").update({ status: "expired", updated_at: new Date().toISOString() }).eq("brand_id", brandId).eq("platform", platform);
+    return { ok: false, error: `The ${platform} connection expired on ${conn.expires_at}; reconnect it in Settings.` };
+  }
+  if (!conn.access_token || !conn.author_urn) return { ok: false, error: `This brand has no connected ${platform} account.` };
+  return { ok: true, conn };
 }
 
 /** The URL of a generated video asset on the package, if any. */
@@ -77,6 +101,10 @@ export async function publishApprovedPackage(contentItemId: string) {
 
   const platform = normalizePlatform(item.platform || "");
   if (!platform) return { ok: false as const, error: `No connector yet for "${item.platform}".` };
+  // Never post twice: only items still pending may be published (absent column = pending).
+  if (item.posting_status && item.posting_status !== "pending") {
+    return { ok: false as const, error: `This item is already ${item.posting_status}.` };
+  }
 
   // TikTok's Content Posting API is video-only. A text/image item is marked unsupported
   // (once, with a clear reason) instead of failing on every scheduler run.
@@ -85,32 +113,16 @@ export async function publishApprovedPackage(contentItemId: string) {
     const error = "TikTok posts need a video asset; text/image items are not supported on TikTok.";
     await supabase
       .from("content_items")
-      .update({ ready_package: { ...(item.ready_package ?? {}), posting_error: error, posting_status: "unsupported" } })
+      .update({ posting_status: "unsupported", ready_package: { ...(item.ready_package ?? {}), posting_error: error } })
       .eq("id", contentItemId);
     return { ok: false as const, error, unsupported: true as const };
   }
 
-  const loaded = await loadConnection(supabase, item.brand_id, platform);
-  if (!loaded.ok) return { ok: false as const, error: loaded.error };
-  let conn = loaded.conn;
-  if (!conn?.access_token || !conn.author_urn) return { ok: false as const, error: `This brand has no connected ${platform} account.` };
-  try {
-    conn = await refreshIfNeeded(supabase, { brandId: item.brand_id, platform, conn });
-  } catch (e) {
-    return { ok: false as const, error: e instanceof Error ? e.message : `${platform} token refresh failed.` };
-  }
-  // A token past its real expiry (and not refreshable) can never post: mark it so the UI says so.
-  if (conn.expires_at && new Date(conn.expires_at).getTime() <= Date.now()) {
-    await supabase
-      .from("social_connections")
-      .update({ status: "expired", updated_at: new Date().toISOString() })
-      .eq("brand_id", item.brand_id)
-      .eq("platform", platform);
-    return { ok: false as const, error: `The ${platform} connection expired on ${conn.expires_at}; reconnect it in Settings.` };
-  }
-  const accessToken = conn.access_token;
-  const authorUrn = conn.author_urn;
-  if (!accessToken || !authorUrn) return { ok: false as const, error: `This brand has no connected ${platform} account.` };
+  const usable = await usableConnection(supabase, item.brand_id, platform);
+  if (!usable.ok) return { ok: false as const, error: usable.error };
+  const conn = usable.conn;
+  const accessToken = conn.access_token!;
+  const authorUrn = conn.author_urn!;
 
   const pkg = (item.ready_package ?? {}) as Record<string, unknown>;
   const title = typeof pkg.title === "string" ? pkg.title : "";
@@ -124,7 +136,11 @@ export async function publishApprovedPackage(contentItemId: string) {
   // LinkedIn: post as the brand's Company Page when configured, else as the connected member.
   let linkedinPostAuthor: string | null = null;
   if (platform === "linkedin") {
-    const { data: brandRow } = await supabase.from("brands").select("linkedin_organization_urn").eq("id", item.brand_id).maybeSingle();
+    const { data: brandRow, error: brandError } = await supabase.from("brands").select("linkedin_organization_urn").eq("id", item.brand_id).maybeSingle();
+    // Never guess the identity: if the brand's setting cannot be read, do not post at all.
+    if (brandError || !brandRow) {
+      return { ok: false as const, error: `Could not read the brand's LinkedIn identity setting${brandError ? `: ${brandError.message}` : " (brand not found)"}; not posting.` };
+    }
     const author = linkedinAuthor({
       memberUrn: authorUrn,
       organizationUrn: (brandRow as { linkedin_organization_urn?: string | null } | null)?.linkedin_organization_urn,
@@ -136,11 +152,20 @@ export async function publishApprovedPackage(contentItemId: string) {
 
   try {
     let res: { id: string | null; url: string | null };
-    let extra: Record<string, unknown> = { posting_status: "published" };
+    let postingRef: string | null = null;
     if (platform === "tiktok") {
       const tiktok = await publishTikTokVideo(accessToken, videoUrl!, message);
       res = tiktok;
-      extra = { posting_status: tiktok.status, tiktok_publish_id: tiktok.publishId };
+      postingRef = tiktok.publishId;
+      if (tiktok.status === "processing") {
+        // Uploaded, TikTok still processing: NOT published yet. The cron re-checks it
+        // (reconcileProcessingPosts) until TikTok reports published or failed.
+        await supabase
+          .from("content_items")
+          .update({ posting_status: "processing", posting_ref: postingRef, ready_package: { ...pkg, posted_platform: platform, posting_error: null } })
+          .eq("id", contentItemId);
+        return { ok: true as const, url: null, processing: true as const };
+      }
     } else {
       res =
         platform === "linkedin"
@@ -153,7 +178,13 @@ export async function publishApprovedPackage(contentItemId: string) {
     }
     await supabase
       .from("content_items")
-      .update({ status: "published", published_at: new Date().toISOString(), ready_package: { ...pkg, posted_url: res.url, posted_platform: platform, posting_error: null, ...extra } })
+      .update({
+        status: "published",
+        published_at: new Date().toISOString(),
+        posting_status: "published",
+        posting_ref: postingRef,
+        ready_package: { ...pkg, posted_url: res.url, posted_platform: platform, posting_error: null }
+      })
       .eq("id", contentItemId);
     await recordAgentRun({
       agentName: "Publishing Agent",
@@ -199,4 +230,51 @@ export async function publishApprovedPackage(contentItemId: string) {
     void notifyOperator(`⚠️ ${platform} post FAILED (${item.title}): ${error}`);
     return { ok: false as const, error };
   }
+}
+
+/**
+ * Cron step: re-check posts the platform accepted but was still processing (TikTok), and move
+ * each to its final state: published, or failed with TikTok's reason. Still processing = left
+ * as is for the next run. A lookup error never changes the item.
+ */
+export async function reconcileProcessingPosts(limit = 10) {
+  if (!isSupabaseConfigured()) return { checked: 0, published: 0, failed: 0 };
+  const supabase = createServiceClient() ?? (await createClient());
+  if (!supabase) return { checked: 0, published: 0, failed: 0 };
+
+  const { data } = await supabase
+    .from("content_items")
+    .select("id,brand_id,platform,title,posting_ref,ready_package")
+    .eq("posting_status", "processing")
+    .limit(limit);
+  const rows = (data ?? []) as Array<Pick<ContentItem, "id" | "brand_id" | "platform" | "title" | "posting_ref" | "ready_package">>;
+  let published = 0;
+  let failed = 0;
+  for (const row of rows) {
+    if (normalizePlatform(row.platform || "") !== "tiktok" || !row.posting_ref) continue;
+    const usable = await usableConnection(supabase, row.brand_id, "tiktok");
+    if (!usable.ok) continue;
+    const st = await fetchTikTokStatus(usable.conn.access_token!, row.posting_ref).catch(() => null);
+    if (!st) continue;
+    const pkg = (row.ready_package ?? {}) as Record<string, unknown>;
+    if (st.status === "PUBLISH_COMPLETE") {
+      await supabase
+        .from("content_items")
+        .update({ status: "published", published_at: new Date().toISOString(), posting_status: "published", ready_package: { ...pkg, posting_error: null } })
+        .eq("id", row.id)
+        .eq("posting_status", "processing");
+      published += 1;
+      void notifyOperator(`✅ Posted to tiktok (${row.title})`);
+    } else if (st.status === "FAILED") {
+      const error = `TikTok publish failed: ${st.failReason ?? "unknown reason"}`;
+      await supabase
+        .from("content_items")
+        .update({ posting_status: "failed", ready_package: { ...pkg, posting_error: error } })
+        .eq("id", row.id)
+        .eq("posting_status", "processing");
+      failed += 1;
+      void notifyOperator(`⚠️ tiktok post FAILED (${row.title}): ${error}`);
+    }
+  }
+  return { checked: rows.length, published, failed };
 }

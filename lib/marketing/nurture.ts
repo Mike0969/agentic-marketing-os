@@ -1,5 +1,5 @@
 import { emailConfigured, sendEmail } from "@/lib/email/resend";
-import { escapeHtml, isSuppressed, safeHref, unsubscribeHeaders, unsubscribeUrl } from "@/lib/email/unsubscribe";
+import { escapeHtml, safeHref, suppressionStatus, unsubscribeHeaders, unsubscribeUrl } from "@/lib/email/unsubscribe";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -74,6 +74,7 @@ export async function runNurtureDrip(limit = 25, deps: DripDeps = {}) {
   const rows = (due ?? []) as Array<{ id: string; lead_id: string; brand_id: string; sequence_key: string; step: number }>;
   let sent = 0;
   let suppressed = 0;
+  let deferred = 0;
 
   for (const row of rows) {
     if (!DEFAULT_SEQUENCE[row.step]) {
@@ -87,7 +88,13 @@ export async function runNurtureDrip(limit = 25, deps: DripDeps = {}) {
       continue;
     }
     const subject = DEFAULT_SEQUENCE[row.step].subject;
-    if (await isSuppressed(supabase, lead.email)) {
+    const suppression = await suppressionStatus(supabase, lead.email);
+    if (suppression === "unknown") {
+      // Cannot tell: send nothing now, keep the step and status so a later run retries.
+      deferred += 1;
+      continue;
+    }
+    if (suppression === "suppressed") {
       await supabase.from("email_sends").insert({
         lead_id: row.lead_id,
         brand_id: row.brand_id,
@@ -131,5 +138,5 @@ export async function runNurtureDrip(limit = 25, deps: DripDeps = {}) {
       .eq("id", row.id);
   }
 
-  return { sent, suppressed, due: rows.length };
+  return { sent, suppressed, deferred, due: rows.length };
 }

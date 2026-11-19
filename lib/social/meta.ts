@@ -6,6 +6,9 @@ export const GRAPH_VERSION = "v20.0";
 export const GRAPH_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 export type MetaApp = { clientId: string; clientSecret: string };
+
+/** Meta explicitly reported the token as invalid: never store it. */
+export class MetaInvalidTokenError extends Error {}
 export type LongLivedToken = { access_token: string; expires_in?: number; token_type?: string };
 
 export async function exchangeForLongLivedUserToken(shortLived: string, app: MetaApp): Promise<LongLivedToken> {
@@ -32,7 +35,8 @@ export async function tokenExpiry(token: string, app: MetaApp): Promise<string |
   const res = await fetch(`${GRAPH_URL}/debug_token?${params.toString()}`);
   if (!res.ok) throw new Error(`Meta debug_token failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as { data?: { is_valid?: boolean; expires_at?: number } };
-  if (!json.data || json.data.is_valid === false) throw new Error("Meta reports the token as invalid.");
+  if (!json.data) throw new Error("Meta debug_token returned no data.");
+  if (json.data.is_valid === false) throw new MetaInvalidTokenError("Meta reports the Page token as invalid.");
   const exp = Number(json.data.expires_at ?? 0);
   return exp > 0 ? new Date(exp * 1000).toISOString() : null;
 }
@@ -41,14 +45,19 @@ export function isoIn(seconds: number | undefined, now = Date.now()): string | n
   return seconds && seconds > 0 ? new Date(now + seconds * 1000).toISOString() : null;
 }
 
+/** Meta's documented lifetime of a long-lived user token, used only when the real value is unknown. */
+const LONG_LIVED_DEFAULT_S = 60 * 24 * 60 * 60;
+
 /**
- * Expiry to store for a Page token derived from `user`. Prefer Meta's own answer; if the
- * lookup fails, fall back to the long-lived user token's expiry (never later than reality).
+ * Expiry to store for a Page token derived from a long-lived user token. Prefer Meta's own answer.
+ * An explicitly invalid token is an error (never stored). If only the lookup fails, fall back to
+ * the user token's known lifetime (never later than reality), or Meta's documented 60 days.
  */
-export async function pageTokenExpiry(pageToken: string, user: LongLivedToken, app: MetaApp): Promise<string | null> {
+export async function pageTokenExpiry(pageToken: string, user: Pick<LongLivedToken, "expires_in">, app: MetaApp): Promise<string | null> {
   try {
     return await tokenExpiry(pageToken, app);
-  } catch {
-    return isoIn(user.expires_in) ?? isoIn(60 * 24 * 60 * 60);
+  } catch (e) {
+    if (e instanceof MetaInvalidTokenError) throw e;
+    return isoIn(user.expires_in) ?? isoIn(LONG_LIVED_DEFAULT_S);
   }
 }

@@ -80,7 +80,7 @@ test("drip: sends with one-click headers, skips + stops suppressed addresses, lo
       return { ok: true, id: "prov-1" };
     }
   });
-  assert.deepEqual(res, { sent: 1, suppressed: 1, due: 2 });
+  assert.deepEqual(res, { sent: 1, suppressed: 1, deferred: 0, due: 2 });
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, "ok@example.com");
   assert.ok(sent[0].headers?.["List-Unsubscribe"]?.startsWith("<https://os.example/api/email/unsubscribe?t="));
@@ -99,13 +99,40 @@ test("drip: refuses to send without unsubscribe config", async () => {
   assert.equal(calls, 0);
 });
 
-test("drip: a suppression lookup error fails closed (no send)", async () => {
+test("drip: a suppression lookup error sends nothing but keeps the sequence for a retry", async () => {
   const db = dripDb();
-  db.failOn["email_suppressions:select"] = "db down";
+  db.failOn["email_suppressions:select"] = "relation email_suppressions does not exist";
   let calls = 0;
   const res = await runNurtureDrip(25, { db: db as never, env: ENV, send: async () => (calls++, { ok: true }) });
   assert.equal(calls, 0);
   assert.equal(res.sent, 0);
+  assert.equal(res.deferred, 2);
+  for (const n of db.rows("lead_nurture")) {
+    assert.equal(n.status, "active", "not stopped");
+    assert.equal(n.step, 0, "not advanced");
+  }
+  assert.equal(db.rows("email_sends").length, 0);
+  // Once the list is readable again, the same rows are sent.
+  delete db.failOn["email_suppressions:select"];
+  db.tables.email_suppressions = [];
+  const again = await runNurtureDrip(25, { db: db as never, env: ENV, send: async () => (calls++, { ok: true }) });
+  assert.equal(again.sent, 2);
+});
+
+test("unsubscribe: % and _ in a signed address never match other people (exact match)", async () => {
+  const db = dripDb();
+  db.tables.email_suppressions = [];
+  db.tables.leads.push({ id: "l3", email: "a%@example.com", name: "Pct" });
+  db.tables.lead_nurture.push({ id: "n3", lead_id: "l3", brand_id: "b1", sequence_key: "default", step: 0, status: "active", next_send_at: null });
+  db.tables.leads.push({ id: "l4", email: "alice@example.com", name: "Alice" });
+  db.tables.lead_nurture.push({ id: "n4", lead_id: "l4", brand_id: "b1", sequence_key: "default", step: 0, status: "active", next_send_at: null });
+  const t = signUnsubscribeToken("a%@example.com", ENV)!;
+  const res = await handleUnsubscribe(new Request(`https://os.example/api/email/unsubscribe?t=${encodeURIComponent(t)}`, { method: "POST" }), { db: db as never, env: ENV });
+  assert.equal(res.status, 200);
+  const status = Object.fromEntries(db.rows("lead_nurture").map((r) => [r.id, r.status]));
+  assert.equal(status.n3, "stopped");
+  assert.equal(status.n4, "active");
+  assert.equal(status.n1, "active");
 });
 
 test("unsubscribe handler: GET changes nothing, POST suppresses and stops the drip, bad token 400", async () => {

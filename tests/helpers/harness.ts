@@ -5,7 +5,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FakeSupabase } from "./fake-supabase.ts";
 
-const holder: { db: FakeSupabase | null } = { db: null };
+/** db backs both clients; noService simulates a deployment without SUPABASE_SERVICE_ROLE_KEY. */
+const holder: { db: FakeSupabase | null; noService: boolean } = { db: null, noService: false };
 
 /** Any network call a test did not explicitly fake fails loudly. Installed on import. */
 export const blockedFetch = (async (u: unknown) => {
@@ -22,7 +23,7 @@ export function mockServiceClient() {
   if (installed) return holder;
   installed = true;
   mock.module(pathToFileURL(path.resolve("lib/supabase/service.ts")).href, {
-    namedExports: { createServiceClient: () => holder.db, isServiceConfigured: () => holder.db !== null }
+    namedExports: { createServiceClient: () => (holder.noService ? null : holder.db), isServiceConfigured: () => !holder.noService && holder.db !== null }
   });
   const configured = () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY));
   mock.module(pathToFileURL(path.resolve("lib/supabase/server.ts")).href, {

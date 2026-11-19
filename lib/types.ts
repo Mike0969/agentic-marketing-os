@@ -116,6 +116,13 @@ export type ContentItem = {
   loop_iteration?: number | null;
   ready_package?: ReadyPackage | null;
   archived_at?: string | null;
+  /**
+   * Live-posting state (migration 0033). pending = may be posted; processing = accepted by the
+   * platform, re-checked by the cron; published/failed = final; unsupported = platform cannot post it.
+   */
+  posting_status?: "pending" | "processing" | "published" | "failed" | "unsupported";
+  /** Platform reference for a post in flight (TikTok publish_id). */
+  posting_ref?: string | null;
 };
 
 export type ReadyPackageAsset = {
@@ -144,9 +151,6 @@ export type ReadyPackage = {
   posted_url?: string;
   posted_platform?: string;
   posting_error?: string | null;
-  /** unsupported = this platform cannot post this item type; processing = accepted, platform still processing. */
-  posting_status?: "published" | "processing" | "unsupported";
-  tiktok_publish_id?: string;
   asset_checklist?: string[];
   slides?: { headline: string; text: string }[];
   script?: string;

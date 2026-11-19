@@ -1,14 +1,20 @@
 import { NextResponse } from "next/server";
 import { hasValidBearer } from "@/lib/auth-token";
+import { isLocalModeAllowed } from "@/lib/supabase/config";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export type AdminCheck =
   | { ok: true; mode: "local" | "supabase"; email: string | null }
-  | { ok: false; response: NextResponse; status: 401 | 403 };
+  | { ok: false; response: NextResponse; status: 401 | 403 | 503 };
 
 export async function requireAdmin(): Promise<AdminCheck> {
   if (!isSupabaseConfigured()) {
-    return { ok: true, mode: "local", email: null };
+    if (isLocalModeAllowed()) return { ok: true, mode: "local", email: null };
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Authentication is not configured (Supabase env missing)." }, { status: 503 }),
+      status: 503
+    };
   }
 
   const supabase = await createClient();
@@ -64,7 +70,8 @@ export async function requireAgentAccessOrLocalhost(request: Request): Promise<A
 
 export async function getShellAuthStatus() {
   if (!isSupabaseConfigured()) {
-    return { supabaseConfigured: false, isAuthenticated: true, isAdmin: true, email: null };
+    const local = isLocalModeAllowed();
+    return { supabaseConfigured: false, isAuthenticated: local, isAdmin: local, email: null };
   }
 
   const supabase = await createClient();

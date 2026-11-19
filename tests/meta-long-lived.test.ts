@@ -12,7 +12,7 @@ const { connectionView } = await import("../lib/social/connection-status.ts");
 const FB_ENV = { FACEBOOK_CLIENT_ID: "app1", FACEBOOK_CLIENT_SECRET: "sec1", INSTAGRAM_CLIENT_ID: "app2", INSTAGRAM_CLIENT_SECRET: "sec2" };
 const EXP = 1_900_000_000; // 2030-03-17
 
-function meta(opts: { debugExpiresAt?: number; debugFails?: boolean; ig?: boolean } = {}) {
+function meta(opts: { debugExpiresAt?: number; debugFails?: boolean; debugInvalid?: boolean; ig?: boolean } = {}) {
   return fakeFetch((url) => {
     const u = new URL(url);
     if (u.pathname.endsWith("/oauth/access_token") && u.searchParams.get("code")) return jsonResponse({ access_token: "SHORT", expires_in: 3600, scope: "pages_manage_posts" });
@@ -26,6 +26,7 @@ function meta(opts: { debugExpiresAt?: number; debugFails?: boolean; ig?: boolea
     }
     if (u.pathname.endsWith("/debug_token")) {
       if (opts.debugFails) return jsonResponse({ error: { message: "nope" } }, 500);
+      if (opts.debugInvalid) return jsonResponse({ data: { is_valid: false, expires_at: 0 } });
       assert.equal(u.searchParams.get("input_token"), "PAGE_TOKEN");
       return jsonResponse({ data: { is_valid: true, expires_at: opts.debugExpiresAt ?? 0 } });
     }
@@ -49,10 +50,43 @@ test("facebook page token: never-expiring -> expiresAt null; dated -> real ISO e
   assert.equal(dated.expiresAt, new Date(EXP * 1000).toISOString());
 });
 
-test("debug_token failure falls back to a conservative ~60 day expiry (never 'forever')", async () => {
-  const r = await withEnv(FB_ENV, () => fb.resolveAccount("LONG_USER"), meta({ debugFails: true }).fn);
-  const days = (new Date(r.expiresAt!).getTime() - Date.now()) / 86_400_000;
+test("debug_token lookup failure falls back to the user token's KNOWN lifetime, else 60 days", async () => {
+  const known = await withEnv(FB_ENV, () => fb.resolveAccount("LONG_USER", { expires_in: 30 * 86_400 }), meta({ debugFails: true }).fn);
+  const knownDays = (new Date(known.expiresAt!).getTime() - Date.now()) / 86_400_000;
+  assert.ok(knownDays > 29.9 && knownDays < 30.1, String(knownDays));
+  const unknown = await withEnv(FB_ENV, () => fb.resolveAccount("LONG_USER"), meta({ debugFails: true }).fn);
+  const days = (new Date(unknown.expiresAt!).getTime() - Date.now()) / 86_400_000;
   assert.ok(days > 59 && days < 61, String(days));
+});
+
+test("a Page token Meta reports as invalid is rejected, never stored", async () => {
+  await assert.rejects(withEnv(FB_ENV, () => fb.resolveAccount("LONG_USER", { expires_in: 5_000_000 }), meta({ debugInvalid: true }).fn), /invalid/);
+  const db = new FakeSupabase();
+  holder.db = db;
+  const brand = "11111111-1111-4111-8111-111111111111";
+  const state = `v1.${brand}.${Date.now()}.nonce.sig`;
+  const req = new Request(`https://os.example/api/auth/facebook/callback?code=CODE&state=${encodeURIComponent(state)}`, {
+    headers: { cookie: `facebook_oauth_state=${encodeURIComponent(state)}` }
+  });
+  const res = await withEnv({ ...SUPABASE_ENV, ...FB_ENV }, () =>
+    handleSocialOAuthCallback(req, { platform: "facebook", exchangeCode: fb.exchangeCode, resolveAccount: fb.resolveAccount }), meta({ debugInvalid: true }).fn);
+  assert.match(res.headers.get("location") ?? "", /facebook=error/);
+  assert.equal(db.rows("social_connections").length, 0);
+});
+
+test("the OAuth callback passes the exchanged token's lifetime to the connector", async () => {
+  const db = new FakeSupabase();
+  holder.db = db;
+  const brand = "11111111-1111-4111-8111-111111111111";
+  const state = `v1.${brand}.${Date.now()}.nonce.sig`;
+  const req = new Request(`https://os.example/api/auth/facebook/callback?code=CODE&state=${encodeURIComponent(state)}`, {
+    headers: { cookie: `facebook_oauth_state=${encodeURIComponent(state)}` }
+  });
+  await withEnv({ ...SUPABASE_ENV, ...FB_ENV, SOCIAL_TOKEN_ENCRYPTION_KEY: undefined }, () =>
+    handleSocialOAuthCallback(req, { platform: "facebook", exchangeCode: fb.exchangeCode, resolveAccount: fb.resolveAccount }), meta({ debugFails: true }).fn);
+  // exchange returned expires_in 5_183_944 s (~60.0 d): stored expiry follows it, not a guess.
+  const days = (Date.parse(String(db.rows("social_connections")[0].expires_at)) - Date.now()) / 86_400_000;
+  assert.ok(Math.abs(days - 5_183_944 / 86_400) < 0.01, String(days));
 });
 
 test("instagram uses the same long-lived flow", async () => {

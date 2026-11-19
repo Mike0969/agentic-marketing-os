@@ -45,7 +45,7 @@ export async function exchangeCode(code: string): Promise<InstagramToken> {
 }
 
 /** Resolves the Page (and IG account) with the LONG-lived user token; the Page token's real expiry is looked up. */
-export async function resolveAccount(accessToken: string): Promise<{ accountId: string; handle: string | null; accessToken: string; expiresAt: string | null }> {
+export async function resolveAccount(accessToken: string, userToken?: { expires_in?: number }): Promise<{ accountId: string; handle: string | null; accessToken: string; expiresAt: string | null }> {
   const params = new URLSearchParams({
     access_token: accessToken,
     fields: "id,name,access_token,instagram_business_account{id,username}"
@@ -56,7 +56,7 @@ export async function resolveAccount(accessToken: string): Promise<{ accountId: 
   const page = json.data?.find((p) => p.access_token && p.instagram_business_account?.id);
   const ig = page?.instagram_business_account;
   if (!page?.access_token || !ig?.id) throw new Error("No Instagram Business/Creator account connected to a manageable Facebook Page.");
-  const expiresAt = await pageTokenExpiry(page.access_token, { access_token: accessToken }, app());
+  const expiresAt = await pageTokenExpiry(page.access_token, { expires_in: userToken?.expires_in }, app());
   return { accountId: ig.id, handle: ig.username ?? null, accessToken: page.access_token, expiresAt };
 }
 

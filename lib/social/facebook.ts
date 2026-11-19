@@ -45,14 +45,14 @@ export async function exchangeCode(code: string): Promise<FacebookToken> {
 }
 
 /** Resolves the Page with the LONG-lived user token; the Page token's real expiry is looked up. */
-export async function resolveAccount(accessToken: string): Promise<{ accountId: string; handle: string | null; accessToken: string; expiresAt: string | null }> {
+export async function resolveAccount(accessToken: string, userToken?: { expires_in?: number }): Promise<{ accountId: string; handle: string | null; accessToken: string; expiresAt: string | null }> {
   const params = new URLSearchParams({ access_token: accessToken, fields: "id,name,access_token" });
   const res = await fetch(`${GRAPH_URL}/me/accounts?${params.toString()}`);
   if (!res.ok) throw new Error(`Facebook Page lookup failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   const json = (await res.json()) as { data?: Array<{ id?: string; name?: string; access_token?: string }> };
   const page = json.data?.find((p) => p.id && p.access_token);
   if (!page?.id || !page.access_token) throw new Error("No manageable Facebook Page found for this account.");
-  const expiresAt = await pageTokenExpiry(page.access_token, { access_token: accessToken }, app());
+  const expiresAt = await pageTokenExpiry(page.access_token, { expires_in: userToken?.expires_in }, app());
   return { accountId: page.id, handle: page.name ?? null, accessToken: page.access_token, expiresAt };
 }
 

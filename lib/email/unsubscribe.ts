@@ -75,11 +75,14 @@ export function unsubscribeHeaders(url: string): Record<string, string> {
   return { "List-Unsubscribe": `<${url}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" };
 }
 
-export async function isSuppressed(db: Db, email: string): Promise<boolean> {
+/**
+ * "unknown" when the list cannot be read (outage, or migration 0030 not applied yet): the
+ * caller must not send, but must also not treat the address as unsubscribed.
+ */
+export async function suppressionStatus(db: Db, email: string): Promise<"suppressed" | "clear" | "unknown"> {
   const { data, error } = await db.from("email_suppressions").select("email").eq("email", normalizeEmail(email)).maybeSingle();
-  // Fail closed: if we cannot tell, treat as suppressed and do not send.
-  if (error) return true;
-  return Boolean(data);
+  if (error) return "unknown";
+  return data ? "suppressed" : "clear";
 }
 
 export async function suppressEmail(db: Db, email: string, reason: SuppressionReason, source: string) {
@@ -88,8 +91,9 @@ export async function suppressEmail(db: Db, email: string, reason: SuppressionRe
     .from("email_suppressions")
     .upsert({ email: address, reason, source, created_at: new Date().toISOString() }, { onConflict: "email" });
   if (error) return { ok: false as const, error: error.message as string };
-  // Stop any active drip for this address.
-  const { data: leads } = await db.from("leads").select("id").ilike("email", address);
+  // Stop any active drip for this exact address (lead emails are stored lowercased). Never a
+  // LIKE pattern: "%" or "_" in the signed address must not match other people.
+  const { data: leads } = await db.from("leads").select("id").eq("email", address);
   const ids = ((leads ?? []) as Array<{ id: string }>).map((l) => l.id);
   if (ids.length) {
     await db.from("lead_nurture").update({ status: "stopped", updated_at: new Date().toISOString() }).in("lead_id", ids).eq("status", "active");

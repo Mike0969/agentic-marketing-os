@@ -99,6 +99,17 @@ export function choosePrivacy(options: string[], wanted = process.env.TIKTOK_PRI
   return options[0];
 }
 
+/** One status/fetch call for a publish_id. */
+export async function fetchPublishStatus(accessToken: string, publishId: string) {
+  const st = await tiktokApi<{ status?: string; fail_reason?: string; publicaly_available_post_id?: Array<string | number> }>(
+    accessToken,
+    "/status/fetch/",
+    { publish_id: publishId }
+  );
+  const postId = st.publicaly_available_post_id?.[0];
+  return { status: st.status ?? "UNKNOWN", failReason: st.fail_reason ?? null, postId: postId != null ? String(postId) : null };
+}
+
 export type TikTokPublishResult = { id: string | null; url: string | null; status: "published" | "processing"; publishId: string };
 
 export async function publishVideo(
@@ -136,15 +147,10 @@ export async function publishVideo(
 
   const attempts = opts.pollAttempts ?? 5;
   for (let i = 0; i < attempts; i++) {
-    const st = await tiktokApi<{ status?: string; fail_reason?: string; publicaly_available_post_id?: Array<string | number> }>(
-      accessToken,
-      "/status/fetch/",
-      { publish_id: init.publish_id }
-    );
-    if (st.status === "FAILED") throw new Error(`TikTok publish failed: ${st.fail_reason ?? "unknown reason"}`);
+    const st = await fetchPublishStatus(accessToken, init.publish_id);
+    if (st.status === "FAILED") throw new Error(`TikTok publish failed: ${st.failReason ?? "unknown reason"}`);
     if (st.status === "PUBLISH_COMPLETE") {
-      const postId = st.publicaly_available_post_id?.[0];
-      const id = postId != null ? String(postId) : null;
+      const id = st.postId;
       const url = id && creator.creator_username ? `https://www.tiktok.com/@${creator.creator_username}/video/${id}` : null;
       return { id, url, status: "published", publishId: init.publish_id };
     }

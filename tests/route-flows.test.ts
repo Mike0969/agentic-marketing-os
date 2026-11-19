@@ -127,7 +127,7 @@ test("run-due route: admin only; with posting off nothing is posted", async () =
 function dueFacebookPost() {
   return seed({
     content_items: [
-      { id: "fb1", brand_id: BRAND, title: "FB", body: "Body", platform: "Facebook", status: "scheduled", approval_status: "approved", scheduled_at: new Date(Date.now() - 60_000).toISOString(), archived_at: null, ready_package: { text: "Hello page" } }
+      { id: "fb1", brand_id: BRAND, title: "FB", body: "Body", platform: "Facebook", status: "scheduled", posting_status: "pending", approval_status: "approved", scheduled_at: new Date(Date.now() - 60_000).toISOString(), archived_at: null, ready_package: { text: "Hello page" } }
     ],
     social_connections: [{ brand_id: BRAND, platform: "facebook", access_token: "PAGE_TOKEN", refresh_token: null, expires_at: null, author_urn: "page1", scopes: null, status: "connected" }]
   });
@@ -155,6 +155,7 @@ test("cron: Vercel's CRON_SECRET runs the cycle and fires a due, approved post",
   assert.equal(fb.calls.length, 1);
   const item = db.rows("content_items")[0];
   assert.equal(item.status, "published");
+  assert.equal(item.posting_status, "published");
   assert.equal((item.ready_package as Record<string, unknown>).posted_url, "https://www.facebook.com/page1_77");
 });
 

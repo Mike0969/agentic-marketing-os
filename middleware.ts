@@ -1,13 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { CookieOptions } from "@supabase/ssr";
-import { getSupabasePublicKey, getSupabaseUrl, isSupabaseConfigured } from "@/lib/supabase/config";
+import { getSupabasePublicKey, getSupabaseUrl, isLocalModeAllowed, isSupabaseConfigured } from "@/lib/supabase/config";
 
 const publicPaths = ["/login", "/forgot-password", "/reset-password", "/auth/callback"];
 
 export async function middleware(request: NextRequest) {
-  if (!isSupabaseConfigured() || isPublicPath(request.nextUrl.pathname)) {
+  if (isPublicPath(request.nextUrl.pathname)) {
     return NextResponse.next();
+  }
+  if (!isSupabaseConfigured()) {
+    // Fail closed: no Supabase means no login, so only an explicit local (non-production) run is open.
+    if (isLocalModeAllowed()) return NextResponse.next();
+    return new NextResponse("Authentication is not configured.", { status: 503 });
   }
 
   let response = NextResponse.next({ request });
