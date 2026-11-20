@@ -4,10 +4,23 @@ import { jevCheck } from "@/lib/jev/jev";
  * Jev readiness for Settings: one smoke check on a claim Jev must reject ("3x more than Uber"),
  * cached for 6 hours so viewing Settings does not spend Jev calls.
  */
-export type JevStatus = { state: "ready" | "not_configured" | "error"; detail: string; checkedAt: string | null; score: number | null };
+export type JevStatus = { state: "ready" | "not_configured" | "error" | "checking"; detail: string; checkedAt: string | null; score: number | null };
 
 const TTL_MS = 6 * 60 * 60 * 1000;
 let cached: { at: number; status: JevStatus } | null = null;
+
+let inflight: Promise<JevStatus> | null = null;
+
+/** Non-blocking for page renders: the cached status (even if stale) or "checking", refreshed in the background. */
+export function peekJevStatus(): JevStatus {
+  if (!process.env.TYPESAFE_API_KEY) return { state: "not_configured", detail: "TYPESAFE_API_KEY is not set.", checkedAt: null, score: null };
+  const stale = !cached || Date.now() - cached.at >= TTL_MS;
+  if (stale && !inflight) {
+    inflight = getJevStatus(true).finally(() => { inflight = null; });
+    inflight.catch(() => {});
+  }
+  return cached?.status ?? { state: "checking", detail: "Smoke check running; reload in a few seconds.", checkedAt: null, score: null };
+}
 
 export async function getJevStatus(force = false): Promise<JevStatus> {
   if (!process.env.TYPESAFE_API_KEY) return { state: "not_configured", detail: "TYPESAFE_API_KEY is not set.", checkedAt: null, score: null };

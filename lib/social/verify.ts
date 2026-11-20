@@ -83,6 +83,24 @@ export async function verifyConnection(db: Db, brandId: string, platform: string
   return out;
 }
 
+const inflight = new Map<string, Promise<VerifyResult>>();
+
+/**
+ * Non-blocking read for page renders: returns the last result (even if older than 10 min) or null,
+ * and refreshes stale/missing entries in the background. The page never waits on a provider.
+ */
+export function peekVerification(db: Db, brandId: string, platform: string, authorUrn: string | null): VerifyResult | null {
+  const key = `${brandId}:${platform}`;
+  const hit = cache.get(key);
+  const stale = !hit || Date.now() - hit.at >= TTL_MS;
+  if (stale && !inflight.has(key)) {
+    const p = verifyConnection(db, brandId, platform, authorUrn).finally(() => inflight.delete(key));
+    inflight.set(key, p);
+    p.catch(() => {});
+  }
+  return hit?.result ?? null;
+}
+
 export function verifyLabel(v: VerifyResult | null | undefined): { text: string; tone: "ok" | "warn" | "danger" } | null {
   if (!v) return null;
   const at = new Date(v.checkedAt).toISOString().slice(11, 16);

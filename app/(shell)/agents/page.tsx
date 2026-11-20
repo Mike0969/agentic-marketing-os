@@ -3,8 +3,9 @@ import { OSBadge, OSMetric, OSPanel, PageHeading } from "@/components/os/ui";
 import { listAgentConfigs, resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { readHermesRegistry } from "@/lib/agents/hermes-registry";
 import { registeredAgents } from "@/lib/agents/registry";
+import { summarizeRunOutput } from "@/lib/agents/run-summary";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
-import { getProvider, isConfigured, PROVIDERS } from "@/lib/providers";
+import { getProvider, isConfigured, PROVIDERS, type ProviderKey } from "@/lib/providers";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Agent, AgentRun, AgentRunStatus } from "@/lib/types";
@@ -66,11 +67,8 @@ function registryIdFor(agent: Agent, registryIds: string[], namesById: Map<strin
 function summaryFromRun(run: AgentRun | null) {
   if (!run) return null;
   if (run.status === "blocked" && typeof run.output?.summary === "string") return run.output.summary.slice(0, 200);
-  if (run.error) return run.error.slice(0, 100);
-  const output = run.output;
-  if (!output) return null;
-  const candidate = output.summary ?? output.statusSummary ?? output.response ?? output.nextAction ?? output.summary ?? JSON.stringify(output);
-  return String(candidate).slice(0, 100);
+  // A plain sentence, never raw JSON.
+  return summarizeRunOutput(run.output, run.error)?.slice(0, 160) ?? null;
 }
 
 function columnFromRun(status: AgentRunStatus | null): AgentKanbanCard["column"] {
@@ -96,7 +94,24 @@ function runLog(run: AgentRun): AgentKanbanRun {
   };
 }
 
-async function getModelOptions() {
+// Provider model lists change rarely: cache 6 h and refresh in the background, so the page
+// does not call every provider's /models on each load.
+type ModelOption = { provider: ProviderKey; providerLabel: string; model: string; label: string };
+let modelOptionsCache: { at: number; options: ModelOption[] } | null = null;
+let modelOptionsInflight: Promise<ModelOption[]> | null = null;
+async function getModelOptions(): Promise<ModelOption[]> {
+  const fresh = modelOptionsCache && Date.now() - modelOptionsCache.at < 6 * 60 * 60 * 1000;
+  if (modelOptionsCache && !fresh && !modelOptionsInflight) {
+    modelOptionsInflight = loadModelOptions().then((options) => { modelOptionsCache = { at: Date.now(), options }; return options; }).finally(() => { modelOptionsInflight = null; });
+    modelOptionsInflight.catch(() => {});
+  }
+  if (modelOptionsCache) return modelOptionsCache.options;
+  const options = await loadModelOptions(); // only the very first load after a restart waits
+  modelOptionsCache = { at: Date.now(), options };
+  return options;
+}
+
+async function loadModelOptions(): Promise<ModelOption[]> {
   const providers = PROVIDERS.filter((provider) => provider.kind === "model" && isConfigured(provider.key));
   const results = await Promise.all(
     providers.map(async (provider) => {
@@ -186,38 +201,64 @@ export default async function AgentsKanbanPage() {
         <h2 className="text-lg font-semibold text-neutral-50">Recent loop receipts</h2>
         <p className="mb-3 mt-1 text-sm text-neutral-500">Read-only evidence trail — each judged loop round: the maker, Crina&apos;s rubric score, the decision, and why the loop stopped.</p>
         {receipts.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-800 text-left text-xs uppercase tracking-wider text-neutral-500">
-                  <th className="py-2 pr-3">Loop</th>
-                  <th className="px-3">Maker</th>
-                  <th className="px-3 text-right">Round</th>
-                  <th className="px-3 text-right">Score</th>
-                  <th className="px-3">Decision</th>
-                  <th className="px-3">Stop</th>
-                  <th className="pl-3">Output</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-800">
-                {receipts.map((r) => (
-                  <tr key={r.id} className="text-neutral-300">
-                    <td className="py-2 pr-3 capitalize">{r.loop_type}</td>
-                    <td className="px-3 text-neutral-400">{r.agent_id}</td>
-                    <td className="px-3 text-right">{r.round_number + 1}</td>
-                    <td className="px-3 text-right">{r.score_after ?? "—"}</td>
-                    <td className="px-3"><OSBadge tone={r.decision === "pass" ? "ok" : r.decision === "fail" ? "warn" : "off"}>{r.decision ?? "—"}</OSBadge></td>
-                    <td className="px-3 text-neutral-400">{r.stop_reason ?? "—"}</td>
-                    <td className="max-w-xs truncate pl-3 text-neutral-400">{r.output_summary ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          (() => {
+            // Rows older than 7 days sit behind "Show older" so old failures don't look current.
+            const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const recent = receipts.filter((r) => new Date(r.created_at).getTime() >= cutoff);
+            const older = receipts.filter((r) => new Date(r.created_at).getTime() < cutoff);
+            return (
+              <>
+                {recent.length ? <ReceiptTable rows={recent} /> : <p className="text-sm text-neutral-500">No loop rounds in the last 7 days.</p>}
+                {older.length ? (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm text-neutral-400 hover:text-neutral-200">Show older ({older.length})</summary>
+                    <div className="mt-2 opacity-70">
+                      <ReceiptTable rows={older} />
+                    </div>
+                  </details>
+                ) : null}
+              </>
+            );
+          })()
         ) : (
           <p className="text-sm text-neutral-500">No loop receipts yet. Run a campaign to populate the loop evidence trail.</p>
         )}
       </OSPanel>
     </>
+  );
+}
+
+function ReceiptTable({ rows }: { rows: LoopReceiptRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-neutral-800 text-left text-xs uppercase tracking-wider text-neutral-500">
+            <th className="py-2 pr-3">When</th>
+            <th className="px-3">Loop</th>
+            <th className="px-3">Maker</th>
+            <th className="px-3 text-right">Round</th>
+            <th className="px-3 text-right">Score</th>
+            <th className="px-3">Decision</th>
+            <th className="px-3">Stop</th>
+            <th className="pl-3">Output</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-neutral-800">
+          {rows.map((r) => (
+            <tr key={r.id} className="text-neutral-300">
+              <td className="whitespace-nowrap py-2 pr-3 text-neutral-500">{new Date(r.created_at).toISOString().slice(0, 10)}</td>
+              <td className="px-3 capitalize">{r.loop_type}</td>
+              <td className="px-3 text-neutral-400">{r.agent_id}</td>
+              <td className="px-3 text-right">{r.round_number + 1}</td>
+              <td className="px-3 text-right">{r.score_after ?? "—"}</td>
+              <td className="px-3"><OSBadge tone={r.decision === "pass" ? "ok" : r.decision === "fail" ? "warn" : "off"}>{r.decision ?? "—"}</OSBadge></td>
+              <td className="px-3 text-neutral-400">{r.stop_reason ?? "—"}</td>
+              <td className="max-w-xs truncate pl-3 text-neutral-400">{r.output_summary ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

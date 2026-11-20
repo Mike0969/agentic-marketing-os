@@ -2,7 +2,7 @@ import { OSBadge, OSPanel } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
 import { connectionView, type ConnectionView } from "@/lib/social/connection-status";
 import { socialPostingEnabled } from "@/lib/social/posting";
-import { verifyConnection, verifyLabel, type VerifyResult } from "@/lib/social/verify";
+import { peekVerification, verifyLabel, type VerifyResult } from "@/lib/social/verify";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -54,6 +54,7 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
   const data = await getDashboardData();
   let connections: ConnRow[] = [];
   const verified = new Map<string, VerifyResult>();
+  const checking = new Set<string>();
   if (isSupabaseConfigured()) {
     const supabase = createServiceClient() ?? (await createClient());
     if (supabase) {
@@ -62,8 +63,12 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
       const service = createServiceClient();
       if (service) {
         const live = ((rows ?? []) as Array<{ brand_id: string; platform: string; status: string; author_urn: string | null }>).filter((r) => r.status === "connected");
-        const results = await Promise.all(live.map((r) => verifyConnection(service, r.brand_id, r.platform, r.author_urn)));
-        live.forEach((r, i) => verified.set(`${r.brand_id}:${r.platform}`, results[i]));
+        // Never blocks the render: last known result now, fresh check in the background.
+        for (const r of live) {
+          const v = peekVerification(service, r.brand_id, r.platform, r.author_urn);
+          if (v) verified.set(`${r.brand_id}:${r.platform}`, v);
+          else checking.add(`${r.brand_id}:${r.platform}`);
+        }
       }
       // Only whether a refresh token exists is kept; the token itself never leaves this function.
       connections = ((rows ?? []) as Array<Omit<ConnRow, "has_refresh_token"> & { refresh_token: string | null }>).map((r) => ({
@@ -108,6 +113,9 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
                       <div className="text-sm font-medium text-neutral-100">{platform.label}</div>
                       {(() => {
                         const label = verifyLabel(verified.get(`${brand.id}:${platform.key}`));
+                        if (!label && checking.has(`${brand.id}:${platform.key}`)) {
+                          return <div className="text-xs text-neutral-500">checking… (reload in a few seconds)</div>;
+                        }
                         if (!label) {
                           return (
                             <div className={`text-xs ${VIEW_CLASS[view]}`} title={conn?.expires_at ? `Token expires ${conn.expires_at}` : undefined}>

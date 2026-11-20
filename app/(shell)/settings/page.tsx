@@ -1,7 +1,7 @@
 import { ModelBudgetPanel } from "@/components/os/model-budget-panel";
 import { ModelsControlCenter } from "@/components/os/models-control-center";
 import { CALL_ESTIMATE, getBudgetStatus } from "@/lib/budget/model-budget";
-import { getJevStatus } from "@/lib/jev/status";
+import { peekJevStatus } from "@/lib/jev/status";
 import { OSBadge, OSPanel } from "@/components/os/ui";
 import { SocialConnections } from "@/components/os/social-connections";
 import { PageHeading } from "@/components/os/ui";
@@ -36,13 +36,13 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         subtitle="Provider control center. Status, model lists, and test calls are live server-side checks; secrets remain in environment variables only."
       />
       {await (async () => {
-        const jev = await getJevStatus();
+        const jev = peekJevStatus(); // never blocks the page
         const at = jev.checkedAt ? new Date(jev.checkedAt).toISOString().slice(11, 16) + " UTC" : null;
         return (
           <OSPanel className="mb-6 flex flex-wrap items-center gap-3">
             <h2 className="text-lg font-semibold text-neutral-50">Jev</h2>
-            <OSBadge tone={jev.state === "ready" ? "ok" : jev.state === "not_configured" ? "off" : "danger"}>
-              {jev.state === "ready" ? "Jev: ready" : jev.state === "not_configured" ? "Jev: not configured" : "Jev: error"}
+            <OSBadge tone={jev.state === "ready" ? "ok" : jev.state === "not_configured" || jev.state === "checking" ? "off" : "danger"}>
+              {jev.state === "ready" ? "Jev: ready" : jev.state === "not_configured" ? "Jev: not configured" : jev.state === "checking" ? "Jev: checking…" : "Jev: error"}
             </OSBadge>
             <span className="text-sm text-neutral-400">
               {jev.state === "ready" ? `Smoke check ${at}: ${jev.detail}.` : jev.detail}
@@ -54,7 +54,8 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         initial={await getBudgetStatus()}
         campaignEstimate={CALL_ESTIMATE.plan + CALL_ESTIMATE.prepare + CALL_ESTIMATE.perPlatform + CALL_ESTIMATE.runOverhead + 2 * CALL_ESTIMATE.rework}
       />
-      <ModelsControlCenter providers={PROVIDERS} />
+      {/* Hermes (the "brain" card) is not a provider Mihai adds keys for: hidden here, still an agent option. */}
+      <ModelsControlCenter providers={PROVIDERS.filter((provider) => provider.key !== "hermes")} />
       <SocialConnections oauthStatus={oauthStatus} />
     </>
   );
