@@ -31,7 +31,9 @@ export const CALL_ESTIMATE = {
   // + visual loop (2 rounds) + Jev on visual (3 + 2)
   perPlatform: MAX_ROUNDS * 2 + 5 + 2 * 2 + 5,
   runOverhead: 1, // conversion analysis after a run
-  rework: 3
+  rework: 3,
+  // "Edit and approve": Mihai's text is used as is (no content loop, no Jev on text): visual loop + Jev on visual.
+  approvedTextPlatform: 2 * 2 + 5
 };
 
 const scope = new AsyncLocalStorage<{ campaignId: string | null }>();

@@ -139,8 +139,17 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     .gte("scheduled_at", new Date().toISOString());
 
   // Refuse up front if this run could go over the model-call budget or a provider limit is active.
-  const refusedRun = await preflight(id, CALL_ESTIMATE.perPlatform * platforms.length + CALL_ESTIMATE.runOverhead);
-  if (refusedRun) return NextResponse.json({ error: refusedRun }, { status: 429 });
+  // Keep Mihai's rework note on the campaign before any refusal, so a budget stop never loses it.
+  if (ownerNote) {
+    await supabase.from("campaigns").update({ idea_brief: { ...idea, last_rework_note: { note: ownerNote, platform: requestedPlatform, at: new Date().toISOString() } } }).eq("id", id);
+    idea.last_rework_note = { note: ownerNote, platform: requestedPlatform, at: new Date().toISOString() };
+  }
+  const estimate = approvedDraft ? CALL_ESTIMATE.approvedTextPlatform + CALL_ESTIMATE.runOverhead : CALL_ESTIMATE.perPlatform * platforms.length + CALL_ESTIMATE.runOverhead;
+  const refusedRun = await preflight(id, estimate);
+  if (refusedRun) {
+    const hint = approvedDraft ? "" : ` Or use "Edit and approve" (it needs only about ${CALL_ESTIMATE.approvedTextPlatform + CALL_ESTIMATE.runOverhead} calls).`;
+    return NextResponse.json({ error: `${refusedRun}${hint}${ownerNote ? " Your note is saved." : ""}`, budget: true }, { status: 429 });
+  }
 
   await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running", ...(idea.flow === "simple" ? { idea_brief: { ...idea, blocked: null } } : {}) }).eq("id", id);
   // Simple flow: a safety stop is shown to Mihai on Review (with the reason), not left looking like "agents working".

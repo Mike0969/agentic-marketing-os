@@ -12,6 +12,20 @@ type Plan = { title: string; summary: string; objective: string; key_message: st
 type Jev = { ran: boolean; score: number | null; doubts: string | null; note: string | null } | null;
 type Choice = { decision: "yes" | "rework" | null; reason: string };
 type Draft = { title?: string; hook?: string; body?: string; cta?: string; hashtags?: string[]; slides?: Array<{ headline: string; text: string }>; script?: string; storyboard?: string[] };
+type PanelStatus = { tone: "busy" | "ok" | "error"; text: string; settings?: boolean };
+
+function StatusLine({ status }: { status: PanelStatus | null }) {
+  if (!status) return null;
+  const tone = status.tone === "busy" ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-100" : status.tone === "ok" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100" : "border-red-500/40 bg-red-500/10 text-red-100";
+  return (
+    <div role="status" aria-live="polite" className={`mt-3 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 text-sm ${tone}`}>
+      {status.tone === "busy" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+      <span>{status.text}</span>
+      {status.settings ? <Link href="/settings" className="underline">Open Settings → Model budget</Link> : null}
+    </div>
+  );
+}
+
 type BlockedInfo = { reason?: string; kind?: string; platform?: string; draft?: Draft | null; flagged?: string[]; judge_notes?: string; score?: number };
 
 export function CampaignReview(props: {
@@ -32,6 +46,7 @@ export function CampaignReview(props: {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [planChoice, setPlanChoice] = useState<Choice>({ decision: null, reason: "" });
+  const [panelStatus, setPanelStatus] = useState<PanelStatus | null>(null);
 
   async function decidePlan() {
     if (!planChoice.decision) return;
@@ -52,14 +67,7 @@ export function CampaignReview(props: {
   }
 
   async function runAgainAfterBlock() {
-    setBusy("agents");
-    setMessage("Content and visual agents are running again (a few minutes).");
-    const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST" });
-    const body = (await res.json().catch(() => ({}))) as { error?: string; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
-    setBusy(null);
-    if (!res.ok) return setMessage(body.error ?? "The run failed.");
-    setMessage((body.posts ?? []).map((p) => `${p.platform}: ${p.blocked ? "blocked again by the safety check" : `ready: ${p.title}`}`).join(" · ") || "No posts came back.");
-    router.refresh();
+    await runWith({}, "Sending to the agents… Crina and the agents are making the posts again (about 2 minutes). Keep this page open.");
   }
 
   async function runAgents() {
@@ -84,15 +92,30 @@ export function CampaignReview(props: {
     router.refresh();
   }
 
+  // Every button answers right where it was pressed: busy line, then the result or a plain error.
   async function runWith(payload: Record<string, unknown>, label: string) {
     setBusy("agents");
-    setMessage(label);
-    const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const body = (await res.json().catch(() => ({}))) as { error?: string; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
-    setBusy(null);
-    if (!res.ok) return setMessage(body.error ?? "The run failed.");
-    setMessage((body.posts ?? []).map((p) => `${p.platform}: ${p.blocked ? "blocked again by the safety check" : `ready for your review: ${p.title}`}`).join(" · ") || "No posts came back.");
-    router.refresh();
+    setMessage(null);
+    setPanelStatus({ tone: "busy", text: label });
+    try {
+      const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; budget?: boolean; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
+      if (!res.ok) {
+        setPanelStatus({ tone: "error", text: body.error ?? `The agents could not start (HTTP ${res.status}). Try again in a minute.`, settings: Boolean(body.budget) });
+        return;
+      }
+      const posts = body.posts ?? [];
+      const ok = posts.some((p) => !p.blocked);
+      setPanelStatus({
+        tone: ok ? "ok" : "error",
+        text: posts.map((p) => `${p.platform}: ${p.blocked ? "blocked again by the safety check (see below)" : `ready for your review: ${p.title}`}`).join(" · ") || "No posts came back."
+      });
+      router.refresh();
+    } catch {
+      setPanelStatus({ tone: "error", text: "Lost the connection while the agents were working. Reload the page in a minute to see the result." });
+    } finally {
+      setBusy(null);
+    }
   }
 
   const allDone = !props.pending.length && props.others.length > 0 && props.others.every((item) => item.approval_status === "approved");
@@ -163,7 +186,7 @@ export function CampaignReview(props: {
 
       {props.blocked && !props.pending.length ? (
         props.blockedKind === "safety" && props.blockedInfo?.draft ? (
-          <SafetyBlock info={props.blockedInfo} busy={busy !== null} running={busy === "agents"} onRework={(note) => runWith({ platform: props.blockedInfo?.platform, note }, "Crina's team is reworking the post with your note (a few minutes).")} onApprove={(draft) => runWith({ platform: props.blockedInfo?.platform, approvedDraft: draft }, "Your text is approved; the visual agent is making the image (a few minutes).")} onRunAgain={runAgainAfterBlock} />
+          <SafetyBlock info={props.blockedInfo} status={panelStatus} busy={busy !== null} running={busy === "agents"} onRework={(note) => runWith({ platform: props.blockedInfo?.platform, note }, "Sending to the agents… Crina and the agents are reworking the post with your note (about 2 minutes). Keep this page open.")} onApprove={(draft) => runWith({ platform: props.blockedInfo?.platform, approvedDraft: draft }, "Sending to the agents… your text is approved; the visual agent is making the image (about 2 minutes). Keep this page open.")} onRunAgain={runAgainAfterBlock} />
         ) : (
         <OSPanel className="border-amber-500/40">
           <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : props.blockedKind === "moved" ? "Brand changed" : "Blocked by safety check"}</h2>
@@ -178,6 +201,7 @@ export function CampaignReview(props: {
               Run the agents again
             </OSButton>
           </div>
+          <StatusLine status={panelStatus} />
         </OSPanel>
         )
       ) : null}
@@ -329,7 +353,7 @@ function Highlighted({ text, flagged }: { text: string; flagged: string[] }) {
   return <>{parts.map((p, i) => (p.hit ? <mark key={i} className="rounded bg-amber-400/30 px-0.5 text-amber-50">{p.t}</mark> : <span key={i}>{p.t}</span>))}</>;
 }
 
-function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: { info: BlockedInfo; busy: boolean; running: boolean; onRework: (note: string) => void; onApprove: (draft: Draft) => void; onRunAgain: () => void }) {
+function SafetyBlock({ info, status, busy, running, onRework, onApprove, onRunAgain }: { info: BlockedInfo; status: PanelStatus | null; busy: boolean; running: boolean; onRework: (note: string) => void; onApprove: (draft: Draft) => void; onRunAgain: () => void }) {
   const d = info.draft ?? {};
   const flagged = info.flagged ?? [];
   const [mode, setMode] = useState<"none" | "rework" | "edit">("none");
@@ -382,12 +406,14 @@ function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: {
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Run the agents again
         </OSButton>
       </div>
+      {mode === "none" ? <StatusLine status={status} /> : null}
       {mode === "rework" ? (
         <div className="mt-3 space-y-2">
           <OSTextarea value={note} onChange={(e) => setNote(e.target.value)} placeholder='e.g. "Remove the 30% claim; say early riders get priority instead."' aria-label="Your note for the rework" rows={3} />
           <OSButton onClick={() => onRework(note.trim())} disabled={busy || !note.trim()}>
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Send the rework
           </OSButton>
+          <StatusLine status={status} />
         </div>
       ) : null}
       {mode === "edit" ? (
@@ -408,6 +434,7 @@ function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: {
           })} disabled={busy || !edit.body.trim()}>
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve my edited text
           </OSButton>
+          <StatusLine status={status} />
         </div>
       ) : null}
     </OSPanel>
