@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { KeyRound, Loader2, Send, Trash2 } from "lucide-react";
-import { OSBadge, OSButton, OSInput, OSPanel } from "@/components/os/ui";
+import { OSBadge, OSButton, OSKeyInput, OSPanel } from "@/components/os/ui";
 
 type Channel = {
   id: string; kind: "telegram" | "slack"; name: string; token_last4: string; channel_id: string; enabled: boolean;
@@ -79,18 +79,18 @@ export function ChannelsManager({ initialChannels, env }: { initialChannels: Cha
                 </div>
               </div>
               {editing === row.kind ? (
-                <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(ev) => { ev.preventDefault(); void run(row.kind, async () => {
-                  if (ui) await api(`/api/os/notification-channels/${ui.id}`, { method: "PATCH", body: JSON.stringify({ token: form.token, channelId: form.channelId, enabled: true }) });
-                  else await api("/api/os/notification-channels", { method: "POST", body: JSON.stringify({ kind: row.kind, name: row.label, token: form.token, channelId: form.channelId }) });
-                  setEditing(null);
-                  await refresh();
-                  say(row.kind, true, 'Saved. Press "Send test message".');
-                }); }}>
-                  <OSInput type="password" autoComplete="off" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} placeholder={row.tokenLabel} aria-label={`${row.label} token`} className="w-80" />
-                  <OSInput value={form.channelId} onChange={(e) => setForm({ ...form, channelId: e.target.value })} placeholder={`${row.channelLabel} (${row.channelHint})`} aria-label={`${row.label} ${row.channelLabel}`} className="w-56" />
-                  <OSButton type="submit" className="px-3 py-1.5 text-xs" disabled={busy !== null || form.token.trim().length < 10 || !form.channelId.trim()}>Save</OSButton>
+                <div role="presentation" className="mt-2 flex flex-wrap items-center gap-2">
+                  <OSKeyInput secret name={`${row.kind}_notify_token`} value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} placeholder={row.tokenLabel} aria-label={`${row.label} token`} className="w-80" />
+                  <OSKeyInput name={`${row.kind}_notify_target`} value={form.channelId} onChange={(e) => setForm({ ...form, channelId: e.target.value })} placeholder={`${row.channelLabel} (${row.channelHint})`} aria-label={`${row.label} ${row.channelLabel}`} className="w-56" />
+                  <OSButton type="button" className="px-3 py-1.5 text-xs" disabled={busy !== null || form.token.trim().length < 10 || !form.channelId.trim()} onClick={() => void run(row.kind, async () => {
+                    if (ui) await api(`/api/os/notification-channels/${ui.id}`, { method: "PATCH", body: JSON.stringify({ token: form.token, channelId: form.channelId, enabled: true }) });
+                    else await api("/api/os/notification-channels", { method: "POST", body: JSON.stringify({ kind: row.kind, name: row.label, token: form.token, channelId: form.channelId }) });
+                    setEditing(null);
+                    await refresh();
+                    say(row.kind, true, 'Saved. Press "Send test message".');
+                  })}>Save</OSButton>
                   <button type="button" className="text-xs text-neutral-400" onClick={() => setEditing(null)}>Cancel</button>
-                </form>
+                </div>
               ) : null}
               {st ? <p className={`mt-1 text-xs ${st.ok ? "text-emerald-300" : "text-amber-300"}`}>{st.text}</p> : null}
             </div>

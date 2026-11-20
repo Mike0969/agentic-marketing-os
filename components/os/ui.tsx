@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { clsx } from "clsx";
+import type React from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 /** Dark, minimal OS primitives (Vercel/Linear aesthetic). Server-safe. */
@@ -91,6 +92,33 @@ export function OSInput({ className, ...props }: InputHTMLAttributes<HTMLInputEl
         className
       )}
       {...props}
+    />
+  );
+}
+
+/**
+ * An API key / token / app id field that browsers' password managers leave alone. Chrome treats an
+ * <input type="password"> next to a text input as a login form and fills the saved site login into them
+ * (the saved admin email showed up in every API key field). So: never type="password"
+ * (secrets are masked with -webkit-text-security instead), autocomplete off, a unique non-login name,
+ * and the 1Password / LastPass / Dashlane opt-outs.
+ */
+export function OSKeyInput({ name, secret = false, className, style, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "name"> & { name: string; secret?: boolean }) {
+  return (
+    <OSInput
+      {...props}
+      type="text"
+      name={name}
+      id={name}
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      data-1p-ignore=""
+      data-lpignore="true"
+      data-form-type="other"
+      className={clsx("font-mono", className)}
+      style={secret ? { ...style, WebkitTextSecurity: "disc" } as React.CSSProperties : style}
     />
   );
 }

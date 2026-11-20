@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   if (!admin.ok) return admin.response;
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   try {
-    await setAppKeys(body?.platform, body?.clientId, body?.clientSecret);
+    await setAppKeys(body?.platform, body?.clientId, body?.clientSecret, body?.useFacebook === true);
     return NextResponse.json({ keys: await listAppKeysPublic() });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not save." }, { status: 400 });

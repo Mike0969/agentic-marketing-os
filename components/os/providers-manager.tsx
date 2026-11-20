@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { KeyRound, Loader2, Plus, Trash2, Zap } from "lucide-react";
-import { OSBadge, OSButton, OSInput, OSPanel } from "@/components/os/ui";
+import { OSBadge, OSButton, OSKeyInput, OSPanel } from "@/components/os/ui";
 
 type EnvProvider = { key: string; label: string; configured: boolean; defaultModel: string | null };
 type UserProvider = {
@@ -119,13 +119,13 @@ export function ProvidersManager({ initialProviders, env }: { initialProviders: 
                 </div>
               </div>
               {editing === row.key ? (
-                <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(ev) => { ev.preventDefault(); void run(row.key, () => saveKey(row.key, row.label, ui)); }}>
-                  <OSInput type="password" autoComplete="off" value={keyInput} onChange={(ev) => setKeyInput(ev.target.value)} placeholder={`Paste the ${row.label} API key`} aria-label={`${row.label} API key`} className="w-96" />
-                  <OSButton type="submit" className="px-3 py-1.5 text-xs" disabled={busy !== null || keyInput.trim().length < 8}>
+                <div role="presentation" className="mt-2 flex flex-wrap items-center gap-2" onKeyDown={(ev) => { if (ev.key === "Enter" && busy === null && keyInput.trim().length >= 8) { ev.preventDefault(); void run(row.key, () => saveKey(row.key, row.label, ui)); } }}>
+                  <OSKeyInput secret name={`${row.key}_provider_api_key`} value={keyInput} onChange={(ev) => setKeyInput(ev.target.value)} placeholder={`Paste the ${row.label} API key`} aria-label={`${row.label} API key`} className="w-96" />
+                  <OSButton type="button" className="px-3 py-1.5 text-xs" disabled={busy !== null || keyInput.trim().length < 8} onClick={() => void run(row.key, () => saveKey(row.key, row.label, ui))}>
                     {busy === row.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Save and test
                   </OSButton>
                   <button type="button" className="text-xs text-neutral-400" onClick={() => setEditing(null)}>Cancel</button>
-                </form>
+                </div>
               ) : null}
               {st ? <p className={`mt-1 text-xs ${st.ok ? "text-emerald-300" : "text-amber-300"}`}>{st.text}</p> : null}
             </div>
@@ -152,18 +152,18 @@ export function ProvidersManager({ initialProviders, env }: { initialProviders: 
           </div>
         ))}
         {custom.open ? (
-          <form className="mt-2 grid gap-2 rounded-md border border-neutral-800 p-3 md:grid-cols-4" onSubmit={(ev) => { ev.preventDefault(); void run("custom", async () => {
-            const { provider } = await api<{ provider: UserProvider }>("/api/os/model-providers", { method: "POST", body: JSON.stringify({ kind: "custom", name: custom.name || "Custom", baseUrl: custom.baseUrl, apiKey: custom.apiKey }) });
-            setCustom({ open: false, name: "", baseUrl: "", apiKey: "" });
-            const t = await api<{ ok: boolean; detail: string }>(`/api/os/model-providers/${provider.id}/test`, { method: "POST" }).catch((err) => ({ ok: false, detail: String(err) }));
-            await refresh();
-            say(provider.id, t.ok, t.detail);
-          }); }}>
-            <OSInput placeholder="Name" value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} aria-label="Custom name" />
-            <OSInput placeholder="https://api.example.com/v1" value={custom.baseUrl} onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })} aria-label="Custom base URL" />
-            <OSInput type="password" autoComplete="off" placeholder="API key" value={custom.apiKey} onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })} aria-label="Custom API key" />
-            <OSButton type="submit" className="px-3 py-1.5 text-xs" disabled={busy !== null || custom.apiKey.trim().length < 8 || !custom.baseUrl}>Save and test</OSButton>
-          </form>
+          <div role="presentation" className="mt-2 grid gap-2 rounded-md border border-neutral-800 p-3 md:grid-cols-4">
+            <OSKeyInput name="custom_provider_name" placeholder="Name" value={custom.name} onChange={(e) => setCustom({ ...custom, name: e.target.value })} aria-label="Custom name" />
+            <OSKeyInput name="custom_provider_base_url" placeholder="https://api.example.com/v1" value={custom.baseUrl} onChange={(e) => setCustom({ ...custom, baseUrl: e.target.value })} aria-label="Custom base URL" />
+            <OSKeyInput secret name="custom_provider_api_key" placeholder="API key" value={custom.apiKey} onChange={(e) => setCustom({ ...custom, apiKey: e.target.value })} aria-label="Custom API key" />
+            <OSButton type="button" className="px-3 py-1.5 text-xs" disabled={busy !== null || custom.apiKey.trim().length < 8 || !custom.baseUrl} onClick={() => void run("custom", async () => {
+              const { provider } = await api<{ provider: UserProvider }>("/api/os/model-providers", { method: "POST", body: JSON.stringify({ kind: "custom", name: custom.name || "Custom", baseUrl: custom.baseUrl, apiKey: custom.apiKey }) });
+              setCustom({ open: false, name: "", baseUrl: "", apiKey: "" });
+              const t = await api<{ ok: boolean; detail: string }>(`/api/os/model-providers/${provider.id}/test`, { method: "POST" }).catch((err) => ({ ok: false, detail: String(err) }));
+              await refresh();
+              say(provider.id, t.ok, t.detail);
+            })}>Save and test</OSButton>
+          </div>
         ) : (
           <button type="button" className="mt-1 inline-flex items-center gap-1 text-sm text-cyan-300" onClick={() => setCustom({ ...custom, open: true })}>
             <Plus className="h-4 w-4" /> Add another OpenAI-compatible provider (custom URL)

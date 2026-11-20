@@ -98,7 +98,7 @@ export function backToSettings(requestUrl: string | URL, platform: string, statu
   const target = publicUrl("/settings", requestUrl);
   target.searchParams.set(platform, status);
   if (detail) target.searchParams.set(`${platform}_detail`, detail);
-  target.hash = `app-keys-${platform === "facebook" || platform === "instagram" ? "meta" : platform}`;
+  target.hash = `app-keys-${platform}`;
   return NextResponse.redirect(target);
 }
 

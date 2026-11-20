@@ -82,7 +82,7 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         }}
         highlight={(() => {
           const missing = (["facebook", "instagram", "linkedin", "x", "tiktok"] as const).find((p) => first(params[p]) === "not_configured");
-          return missing ? (missing === "facebook" || missing === "instagram" ? "meta" : missing) : null;
+          return missing ?? null;
         })()}
         highlightFor={(() => {
           const labels = { facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", x: "X", tiktok: "TikTok" } as const;

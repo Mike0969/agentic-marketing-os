@@ -153,5 +153,33 @@ test("social app keys: Settings first, then env; the secret is encrypted; not co
   const loc = new URL(res.headers.get("location")!);
   assert.equal(loc.origin + loc.pathname, "https://os.example/settings");
   assert.equal(loc.searchParams.get("instagram"), "not_configured");
-  assert.equal(loc.hash, "#app-keys-meta");
+  assert.equal(loc.hash, "#app-keys-instagram");
+});
+
+test("social app keys: Instagram uses the Facebook keys by default or when ticked, its own keys otherwise", async () => {
+  const appKeys = await import("../lib/social/app-keys.ts");
+  const db = seed();
+  (db as unknown as { tables: Record<string, unknown[]> }).tables.social_app_keys ??= [];
+  await withEnv({ ...ENV, FACEBOOK_CLIENT_ID: undefined, FACEBOOK_CLIENT_SECRET: undefined, INSTAGRAM_CLIENT_ID: undefined, INSTAGRAM_CLIENT_SECRET: undefined }, async () => {
+    await appKeys.setAppKeys("facebook", "fb-app-id", fakeKey("fb"));
+    // nothing set for Instagram -> the Facebook app
+    assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_ID"), "fb-app-id");
+    assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_SECRET"), fakeKey("fb"));
+    let ig = (await appKeys.listAppKeysPublic()).find((k) => k.platform === "instagram")!;
+    assert.equal(ig.usesFacebook, true);
+    // own keys
+    await appKeys.setAppKeys("instagram", "ig-app-id", fakeKey("ig"));
+    assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_ID"), "ig-app-id");
+    assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_SECRET"), fakeKey("ig"));
+    assert.equal(appKeys.appKey("FACEBOOK_CLIENT_ID"), "fb-app-id");
+    // ticked "use the same keys as Facebook"
+    await appKeys.setAppKeys("instagram", null, null, true);
+    assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_ID"), "fb-app-id");
+    ig = (await appKeys.listAppKeysPublic()).find((k) => k.platform === "instagram")!;
+    assert.equal(ig.usesFacebookChosen, true);
+    await assert.rejects(() => appKeys.setAppKeys("x", null, null, true), /Only Instagram/);
+    await appKeys.removeAppKeys("instagram");
+    await appKeys.removeAppKeys("facebook");
+    assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_ID"), undefined);
+  });
 });
