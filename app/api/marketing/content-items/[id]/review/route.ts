@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { CALL_ESTIMATE, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
 import { defaultVault, recordLearning } from "@/lib/learning/vault";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -61,6 +62,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { data: campaignRow } = item.campaign_id ? await supabase.from("campaigns").select("*").eq("id", item.campaign_id).maybeSingle() : { data: null };
   const campaign = campaignRow as Campaign | null;
 
+  if ((text.decision === "rework" || visual?.decision === "rework")) {
+    const refused = await preflight(item.campaign_id ?? null, CALL_ESTIMATE.rework);
+    if (refused) return NextResponse.json({ error: refused }, { status: 429 });
+  }
+
   const vault = defaultVault(brand?.name);
   const campaignTitle = campaign?.title ?? item.title;
   const notes: string[] = [];
@@ -96,9 +102,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .filter(([, decision]) => decision?.decision === "rework")
     .map(([part, decision]) => `${part === "text" ? "Text" : "Visual"}: ${decision!.reason}`)
     .join("\n");
-  const res = await rework(
-    new Request(new URL(`/api/marketing/content-items/${id}/rework`, request.url), { method: "POST", headers: request.headers, body: JSON.stringify({ remark, parts: reworkParts }) }),
-    { params: Promise.resolve({ id }) }
+  const res = await withCampaignBudget(item.campaign_id ?? null, () =>
+    rework(
+      new Request(new URL(`/api/marketing/content-items/${id}/rework`, request.url), { method: "POST", headers: request.headers, body: JSON.stringify({ remark, parts: reworkParts }) }),
+      { params: Promise.resolve({ id }) }
+    )
   );
   const payload = await res.json().catch(() => ({}));
   return NextResponse.json({ outcome: res.ok ? "rework" : "error", parts: reworkParts, notes, ...(res.ok ? {} : { error: (payload as { error?: string }).error ?? "Rework failed." }) }, { status: res.ok ? 200 : res.status });

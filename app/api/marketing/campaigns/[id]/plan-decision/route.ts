@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CALL_ESTIMATE, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
 import { defaultVault, recordLearning } from "@/lib/learning/vault";
 import { jevSummary, planWithJev, type CampaignPlan } from "@/lib/marketing/simple-flow";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -41,8 +42,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ stage: "plan_ready" });
   }
 
+  const refused = await preflight(id, CALL_ESTIMATE.plan);
+  if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   await recordLearning(vault, { kind: "rejected", part: "plan", campaign: plan.title, platform: plan.platforms.join(", "), agent: "Crina", reason, item: planText });
-  const outcome = await planWithJev({ idea: String(brief.idea ?? campaign.objective), brand, platforms: plan.platforms, fixes: [`Mihai: ${reason}`], previous: plan });
+  const outcome = await withCampaignBudget(id, () => planWithJev({ idea: String(brief.idea ?? campaign.objective), brand, platforms: plan.platforms, fixes: [`Mihai: ${reason}`], previous: plan }));
   await supabase
     .from("campaigns")
     .update({ idea_brief: { ...brief, stage: outcome.stage, plan: outcome.plan ?? plan, plan_jev: jevSummary(outcome.jev, outcome.doubts), plan_error: outcome.error } })

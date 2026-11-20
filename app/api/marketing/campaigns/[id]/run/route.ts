@@ -18,6 +18,7 @@ import { saveContentAssets } from "@/lib/marketing/ready-package";
 import { CONTENT_RUBRIC, HONEST_GRADER_PREAMBLE, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { jevCheck, jevLoop, type JevResult } from "@/lib/jev/jev";
+import { CALL_ESTIMATE, getBudgetStatus, limitMessage, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
 import { defaultVault, learningContext } from "@/lib/learning/vault";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -49,6 +50,12 @@ function clampScore(v: unknown): number {
 }
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  // Every model call in this run is charged to the campaign's budget.
+  const { id } = await context.params;
+  return withCampaignBudget(id, () => runCampaign(request, context));
+}
+
+async function runCampaign(request: Request, context: { params: Promise<{ id: string }> }) {
   const access = await requireAgentAccess(request);
   if (!access.ok) return access.response;
 
@@ -98,11 +105,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .not("scheduled_at", "is", null)
     .gte("scheduled_at", new Date().toISOString());
 
+  // Refuse up front if this run could go over the model-call budget or a provider limit is active.
+  const refusedRun = await preflight(id, CALL_ESTIMATE.perPlatform * platforms.length + CALL_ESTIMATE.runOverhead);
+  if (refusedRun) return NextResponse.json({ error: refusedRun }, { status: 429 });
+
   await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running", ...(idea.flow === "simple" ? { idea_brief: { ...idea, blocked: null } } : {}) }).eq("id", id);
   // Simple flow: a safety stop is shown to Mihai on Review (with the reason), not left looking like "agents working".
-  const markBlocked = async (reason: string, platform: string) => {
+  const markBlocked = async (reason: string, platform: string, kind: "safety" | "failed" = "safety") => {
     if (idea.flow !== "simple") return;
-    await supabase.from("campaigns").update({ idea_brief: { ...idea, blocked: { reason, platform, at: new Date().toISOString() } } }).eq("id", id);
+    await supabase.from("campaigns").update({ idea_brief: { ...idea, blocked: { kind, reason, platform, at: new Date().toISOString() } } }).eq("id", id);
   };
 
   // One receipt writer for the whole run; content_item_id is backfilled after each item is created.
@@ -135,6 +146,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const created: Array<{ platform: string; title: string; loops: number; score: number; stop: string; blocked?: boolean; fallback: boolean }> = [];
 
   for (const platform of platforms) {
+   // Provider usage limit tripped mid-run: stop cleanly, make nothing more.
+   const budgetNow = await getBudgetStatus(id);
+   if (budgetNow?.blockedUntil) {
+     await markBlocked(`Agents stopped: ${limitMessage(budgetNow.blockedUntil)} Nothing more was made; run the agents again after that.`, platform, "failed");
+     created.push({ platform, title: `${platform} (Hermes limit)`, loops: 0, score: 0, stop: "error", blocked: true, fallback: true });
+     break;
+   }
    try {
     const platformIndex = created.length;
     const itemScheduledAt = scheduledAt ?? pickScheduledAt(defaultRegion(), (futureScheduledCount ?? 0) + platformIndex);
@@ -191,6 +209,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     };
 
     // Content Creator maker: used by Crina's loop and again by Jev's automatic rework.
+    let lastMakerError: string | null = null;
     const makeContent = async (improvements: string[], champion: NativeDraft | null) => {
         const content = await runMarketingAgentModel({
           agentId: "agent-content-creator",
@@ -205,6 +224,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           routeOrigin: "api.marketing.campaigns.run"
         });
         const draft = plan.normalize(content.json);
+        if (!draft) lastMakerError = content.error ?? "the answer did not match the post format";
         return {
           candidate: draft,
           outputSummary: draft ? `${draft.title} — ${draft.hook}`.slice(0, 180) : "no draft produced",
@@ -248,6 +268,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         durationMs: 0
       });
       created.push({ platform, title: `${platform} (safety-blocked)`, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "safety", blocked: true, fallback: true });
+      continue;
+    }
+
+    // Simple flow: if the Content Creator produced nothing (model down, usage limit, bad output), make NO
+    // stand-in post from the plan text — Mihai would be reviewing text no agent wrote. Show why instead.
+    if (idea.flow === "simple" && !contentLoop.champion) {
+      const why = lastMakerError ?? contentLoop.lastJudgeNotes ?? "no draft produced";
+      await markBlocked(`Agents failed: the Content Creator produced no post (${why.slice(0, 200)}). Nothing was made; run the agents again later.`, platform, "failed");
+      await recordAgentRun({ agentName: "Campaign Run", agentId: "agent-crina", workflowName: "Run Campaign (per-platform)", provider: contentLoop.provider, status: "error", input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" }, output: { platform, content_stop: contentLoop.stopReason }, error: `Content Creator produced no post: ${why.slice(0, 200)}`, model: contentLoop.model, durationMs: 0 });
+      created.push({ platform, title: `${platform} (agents failed)`, loops: contentLoop.rounds, score: 0, stop: "error", blocked: true, fallback: true });
       continue;
     }
 

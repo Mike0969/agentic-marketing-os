@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, CalendarClock, ClipboardCheck, Lightbulb, ListChecks, Sparkles, Workflow } from "lucide-react";
 import { OSBadge, OSPanel, PageHeading } from "@/components/os/ui";
 import { MarketingResetAction } from "@/components/os/marketing-reset-action";
+import { getBudgetStatus } from "@/lib/budget/model-budget";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { FLOW_STEPS, flowView, isSimpleFlow } from "@/lib/marketing/flow-view";
 
@@ -27,7 +28,7 @@ const more = [
 ];
 
 export default async function MarketingHome() {
-  const [data, runs] = await Promise.all([getDashboardData(), getAgentRuns(undefined, 12)]);
+  const [data, runs, budget] = await Promise.all([getDashboardData(), getAgentRuns(undefined, 12), getBudgetStatus()]);
 
   const draftCampaigns = data.campaigns.filter((campaign) => campaign.status === "planning").length;
   const activeCampaigns = data.campaigns.filter((campaign) => campaign.status === "active").length;
@@ -56,6 +57,14 @@ export default async function MarketingHome() {
           </Link>
         }
       />
+
+      {budget ? (
+        <Link href="/settings" className={`mb-4 block rounded-md border px-3 py-2 text-sm ${budget.blockedUntil ? "border-red-500/40 bg-red-500/10 text-red-100" : "border-neutral-800 bg-neutral-900/60 text-neutral-300"}`}>
+          {budget.blockedUntil
+            ? `Hermes limit reached, resets at ${new Date(budget.blockedUntil).toISOString().slice(11, 16)} UTC. No agent runs until then.`
+            : `Model-call budget today: ${budget.remainingToday} of ${budget.perDayMax} calls left · max ${budget.perCampaignMax} per campaign (Settings).`}
+        </Link>
+      ) : null}
 
       <OSPanel className="mb-6 border-cyan-500/20">
         <h2 className="text-lg font-semibold text-neutral-50">Operator flow</h2>

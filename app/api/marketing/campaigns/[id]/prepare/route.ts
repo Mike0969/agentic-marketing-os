@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { CALL_ESTIMATE, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
 import { prepareSupportAgents, type CampaignPlan } from "@/lib/marketing/simple-flow";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign } from "@/lib/types";
@@ -21,8 +22,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   const brief = (campaign.idea_brief ?? {}) as Record<string, unknown>;
   const plan = (brief.plan ?? null) as CampaignPlan | null;
   if (!plan || brief.stage !== "plan_ready") return NextResponse.json({ error: "The plan is not cleared yet (Jev or Mihai must clear it first)." }, { status: 409 });
+  const refused = await preflight(id, CALL_ESTIMATE.prepare + CALL_ESTIMATE.perPlatform * Math.max(1, plan.platforms.length) + CALL_ESTIMATE.runOverhead);
+  if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   const { data: brandRow } = await supabase.from("brands").select("*").eq("id", campaign.brand_id).maybeSingle();
-  const support = await prepareSupportAgents({ idea: String(brief.idea ?? campaign.objective), brand: brandRow as Brand | null, plan });
+  const support = await withCampaignBudget(id, () => prepareSupportAgents({ idea: String(brief.idea ?? campaign.objective), brand: brandRow as Brand | null, plan }));
   await supabase.from("campaigns").update({ status: "active", idea_brief: { ...brief, ...support, stage: "agents" } }).eq("id", id);
   return NextResponse.json({ stage: "agents", ...support });
 }

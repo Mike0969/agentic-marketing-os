@@ -1,4 +1,5 @@
 import { runHermesAgent, type HermesAgentCallOptions } from "@/lib/agents/hermes-client";
+import { chargeModelCall } from "@/lib/budget/model-budget";
 import { getProvider, isProviderKey } from "@/lib/providers/registry";
 import type { ModelProviderModule, ProviderChatOptions, ProviderChatResult, ProviderKey } from "@/lib/providers/types";
 import { failedChat, now } from "@/lib/providers/utils";
@@ -47,7 +48,8 @@ export async function callModel(options: CallModelOptions): Promise<ProviderChat
       status: result.status,
       error: result.error,
       latencyMs: result.durationMs,
-      model: result.modelUsed ?? model
+      model: result.modelUsed ?? model,
+      rateLimited: result.rateLimited === true
     };
   }
 
@@ -56,5 +58,7 @@ export async function callModel(options: CallModelOptions): Promise<ProviderChat
     return failedChat(new Error(`${provider} is not a model provider.`), now(), model);
   }
 
+  const refused = await chargeModelCall(provider, options.agentId);
+  if (refused) return { ...failedChat(new Error(refused), now(), model, 429), rateLimited: true };
   return providerModule.chat(options);
 }

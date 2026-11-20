@@ -1,4 +1,5 @@
 import { TypeSafeClient, noul } from "@typesafe-ai/sdk";
+import { chargeModelCall } from "@/lib/budget/model-budget";
 import type { Brand } from "@/lib/types";
 
 /**
@@ -141,6 +142,8 @@ export async function jevCheck(
 ): Promise<JevResult> {
   if (!client) return { ran: false, score: null, pass: true, doubts: [], answers: {}, note: "Jev not run: TYPESAFE_API_KEY missing.", model: null };
   const questions = jevQuestions(args.kind);
+  const refused = await chargeModelCall("jev", `jev:${args.kind}`);
+  if (refused) return { ran: false, score: null, pass: true, doubts: [], answers: {}, note: `Jev not run: ${refused}`, model: null };
   try {
     const res = await client.systemOne({
       state: jevState(args),

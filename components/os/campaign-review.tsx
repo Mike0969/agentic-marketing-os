@@ -20,6 +20,7 @@ export function CampaignReview(props: {
   planJev: Jev;
   support: { seo: string | null; analytics: string | null };
   blocked: string | null;
+  blockedKind: "safety" | "failed";
   pending: ContentItem[];
   others: ContentItem[];
 }) {
@@ -115,9 +116,9 @@ export function CampaignReview(props: {
 
       {props.blocked && !props.pending.length ? (
         <OSPanel className="border-amber-500/40">
-          <h2 className="text-lg font-semibold text-amber-100">Stopped by the safety check</h2>
+          <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : "Stopped by the safety check"}</h2>
           <p className="mt-2 text-sm leading-6 text-amber-100">{props.blocked}</p>
-          <p className="mt-1 text-sm text-neutral-400">Nothing was packaged or posted. Fix the cause, then run the agents again.</p>
+          <p className="mt-1 text-sm text-neutral-400">{props.blockedKind === "failed" ? "Nothing was made. Try again when the model is available." : "Nothing was packaged or posted. Fix the cause, then run the agents again."}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             {/Brands/.test(props.blocked) ? (
               <Link href="/marketing/brands" className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-900">Open Brands</Link>
@@ -213,6 +214,11 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
         <h2 className="text-lg font-semibold text-neutral-50">{item.platform}: {pkg?.title ?? item.title}</h2>
         {item.scheduled_at ? <OSBadge tone="off">Planned {new Date(item.scheduled_at).toLocaleString()}</OSBadge> : null}
       </div>
+      {pkg?.fallback_used ? (
+        <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">
+          FALLBACK: part of this post did not come from the agents ({(item.performance_summary ?? "").match(/FALLBACK\[([^\]]+)\]/)?.[1] ?? "see details"}). Treat it as a placeholder, not their work.
+        </p>
+      ) : null}
       <div className="mt-4 grid gap-5 lg:grid-cols-2">
         <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Text</h3>

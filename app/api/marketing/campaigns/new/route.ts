@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
+import { CALL_ESTIMATE, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
 import { cleanPlatforms, jevSummary, planWithJev } from "@/lib/marketing/simple-flow";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand } from "@/lib/types";
@@ -28,6 +29,8 @@ export async function POST(request: Request) {
   if (start && end && end < start) return NextResponse.json({ error: "The end date is before the start date." }, { status: 400 });
 
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
+  const refused = await preflight(null, CALL_ESTIMATE.plan);
+  if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   const supabase = await createClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not available." }, { status: 503 });
 
@@ -54,7 +57,7 @@ export async function POST(request: Request) {
     .single();
   if (error || !campaign) return NextResponse.json({ error: error?.message ?? "Campaign was not created." }, { status: 500 });
 
-  const outcome = await planWithJev({ idea, brand, platforms });
+  const outcome = await withCampaignBudget(campaign.id, () => planWithJev({ idea, brand, platforms }));
   const brief = {
     ...(campaign.idea_brief as Record<string, unknown>),
     stage: outcome.stage,

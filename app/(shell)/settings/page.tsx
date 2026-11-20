@@ -1,4 +1,6 @@
+import { ModelBudgetPanel } from "@/components/os/model-budget-panel";
 import { ModelsControlCenter } from "@/components/os/models-control-center";
+import { CALL_ESTIMATE, getBudgetStatus } from "@/lib/budget/model-budget";
 import { SocialConnections } from "@/components/os/social-connections";
 import { PageHeading } from "@/components/os/ui";
 import { PROVIDERS } from "@/lib/providers";
@@ -30,6 +32,10 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         eyebrow="Agentic OS"
         title="Settings · Models"
         subtitle="Provider control center. Status, model lists, and test calls are live server-side checks; secrets remain in environment variables only."
+      />
+      <ModelBudgetPanel
+        initial={await getBudgetStatus()}
+        campaignEstimate={CALL_ESTIMATE.plan + CALL_ESTIMATE.prepare + CALL_ESTIMATE.perPlatform + CALL_ESTIMATE.runOverhead + 2 * CALL_ESTIMATE.rework}
       />
       <ModelsControlCenter providers={PROVIDERS} />
       <SocialConnections oauthStatus={oauthStatus} />

@@ -1,5 +1,6 @@
 import { resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { agentMemoryFileName, buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
+import { chargeModelCall, isUsageLimit, tripUsageLimit } from "@/lib/budget/model-budget";
 import { listIntegrationConfigs } from "@/lib/integration-store";
 
 /**
@@ -50,6 +51,8 @@ export type HermesAgentCallResult = {
   brainResourcesUsed: string[];
   profile: HermesAgentProfile | null;
   error: string | null;
+  /** True when the provider's usage limit (or the budget) stopped the call. */
+  rateLimited?: boolean;
 };
 
 const HARD_SAFETY_RULES = [
@@ -123,7 +126,8 @@ function extractJsonContent(raw: unknown): { json: unknown; rawContent: string }
     return { json: JSON.parse(content), rawContent: content };
   } catch {
     const match = content.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("Hermes response content was not valid JSON.");
+    // Say what Hermes actually answered (e.g. a provider "usage limit reached" message), not just "not JSON".
+    if (!match) throw new Error(`Hermes answered without JSON: "${content.replace(/\s+/g, " ").trim().slice(0, 160)}"`);
     return { json: JSON.parse(match[0]), rawContent: content };
   }
 }
@@ -241,17 +245,39 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
   let lastError: string | null = null;
 
   for (const model of models) {
+    // Hard budget + provider-limit breaker: refused calls never reach Hermes.
+    const refused = await chargeModelCall("hermes", options.agentId);
+    if (refused) {
+      return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, status: 429, durationMs: Date.now() - startedAt, error: refused, rateLimited: true };
+    }
     try {
       const response = await postChatCompletion(endpoint, model, systemPrompt, userPrompt, temperature);
       lastStatus = response.status;
 
       if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        if (response.status === 429 || isUsageLimit(body)) {
+          const message = await tripUsageLimit(body || "HTTP 429");
+          return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, status: 429, durationMs: Date.now() - startedAt, error: message, rateLimited: true };
+        }
         lastError = `Hermes returned HTTP ${response.status} for model ${model}.`;
         continue;
       }
 
       const raw = (await response.json()) as unknown;
-      const { json, rawContent } = extractJsonContent(raw);
+      const content = (raw as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content ?? "";
+      let parsed: { json: unknown; rawContent: string };
+      try {
+        parsed = extractJsonContent(raw);
+      } catch (parseError) {
+        // Hermes can answer 200 with the provider's error as text ("HTTP 429: The usage limit has been reached").
+        if (isUsageLimit(content)) {
+          const message = await tripUsageLimit(content);
+          return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, status: 429, durationMs: Date.now() - startedAt, error: message, rateLimited: true };
+        }
+        throw parseError;
+      }
+      const { json, rawContent } = parsed;
 
       return {
         ok: true,
