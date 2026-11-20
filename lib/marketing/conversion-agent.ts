@@ -158,7 +158,15 @@ export async function runConversionAnalysis(args: { brandId: string; campaignId?
     provider: run.provider,
     status: run.ok ? "success" : "fallback",
     input: { brandId: args.brandId, campaignId: args.campaignId ?? null, gsc_connected: gscConnected, routeOrigin: "api.sales.analyze" },
-    output: { outcomes: outcomeRows.length, insights: memoryRows.length, recommendations: recs.length, model: run.modelUsed },
+    output: {
+      summary: run.ok
+        ? `Logged ${outcomeRows.length} funnel outcome(s), saved ${memoryRows.length} new insight(s) and made ${recs.length} recommendation(s).`
+        : "Conversion analysis fell back; no new insights were saved.",
+      outcomes: outcomeRows.length,
+      insights: memoryRows.length,
+      recommendations: recs.length,
+      model: run.modelUsed
+    },
     error: run.ok ? null : run.error ?? "Conversion analysis fell back.",
     model: run.modelUsed,
     durationMs: run.durationMs

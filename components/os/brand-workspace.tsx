@@ -4,6 +4,7 @@ import { useMemo, useState, type ChangeEvent } from "react";
 import { BrainCircuit, Check, Loader2, Save } from "lucide-react";
 import { OSBadge, OSButton, OSField, OSInput, OSPanel, OSTextarea } from "@/components/os/ui";
 import { BRAND_CONTEXT_FIELDS, brandFieldState, brandGaps } from "@/lib/marketing/brand-placeholders";
+import { isProposableField, type BrandProposals } from "@/lib/marketing/brand-proposals";
 import type { Brand } from "@/lib/types";
 
 const contextKeys = new Map(BRAND_CONTEXT_FIELDS.map((field) => [field.keys[0], field.keys]));
@@ -77,7 +78,10 @@ function getInitialBrand(brands: Brand[]) {
   return brands[0]?.id ?? "";
 }
 
-export function BrandWorkspace({ brands }: { brands: Brand[] }) {
+export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { brands: Brand[]; proposals?: BrandProposals }) {
+  const [proposals, setProposals] = useState(initialProposals);
+  // Fields whose proposal was used or dismissed in this edit; closed on Save.
+  const [decisions, setDecisions] = useState<Record<string, "accepted" | "dismissed">>({});
   const [items, setItems] = useState(brands);
   const [selectedId, setSelectedId] = useState(getInitialBrand(brands));
   const selected = useMemo(() => items.find((brand) => brand.id === selectedId) ?? items[0] ?? null, [items, selectedId]);
@@ -91,8 +95,18 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
     const brand = items.find((item) => item.id === id) ?? null;
     setSelectedId(id);
     setDraft(brand);
+    setDecisions({});
     setMessage(null);
     setAnalysis(null);
+  }
+
+  function applyProposal(field: string, value: string) {
+    setDraft((current) => (current ? { ...current, [field]: value } : current));
+    setDecisions((current) => ({ ...current, [field]: "accepted" }));
+  }
+
+  function dismissProposal(field: string) {
+    setDecisions((current) => ({ ...current, [field]: "dismissed" }));
   }
 
   function updateField(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>, key: keyof Brand) {
@@ -109,7 +123,11 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
       const response = await fetch(`/api/marketing/brands/${draft.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft)
+        body: JSON.stringify({
+          ...draft,
+          accepted_proposals: Object.keys(decisions).filter((field) => decisions[field] === "accepted"),
+          dismissed_proposals: Object.keys(decisions).filter((field) => decisions[field] === "dismissed")
+        })
       });
       const payload = (await response.json()) as { brand?: Brand; error?: string };
 
@@ -119,7 +137,16 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
 
       setItems((current) => current.map((brand) => (brand.id === payload.brand!.id ? payload.brand! : brand)));
       setDraft(payload.brand);
-      setMessage("Brand profile saved to the operating database.");
+      const decided = Object.keys(decisions);
+      if (decided.length) {
+        setProposals((current) => {
+          const forBrand = { ...(current[payload.brand!.id] ?? {}) };
+          for (const field of decided) if (isProposableField(field)) delete forBrand[field];
+          return { ...current, [payload.brand!.id]: forBrand };
+        });
+      }
+      setDecisions({});
+      setMessage(decided.length ? `Brand profile saved. ${decided.length} proposal(s) closed.` : "Brand profile saved to the operating database.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Brand save failed.");
     } finally {
@@ -179,7 +206,13 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
                 {(() => {
                   const gaps = brandGaps(brand);
                   const count = gaps.placeholder.length + gaps.empty.length;
-                  return count ? <OSBadge tone="warn">{count} to fill</OSBadge> : null;
+                  const proposed = Object.keys(proposals[brand.id] ?? {}).length;
+                  return (
+                    <>
+                      {proposed ? <OSBadge tone="warn">{proposed} proposed</OSBadge> : null}
+                      {count ? <OSBadge tone="warn">{count} to fill</OSBadge> : null}
+                    </>
+                  );
                 })()}
                 <OSBadge tone={brand.active ? "ok" : "off"}>{brand.active ? "Active" : "Inactive"}</OSBadge>
               </div>
@@ -231,6 +264,10 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
                 <p className="font-medium">Fill these in so the agents can write real posts. Until then the safety check blocks campaign drafts.</p>
                 {gaps.placeholder.length ? <p>Placeholder text: {gaps.placeholder.join(", ")}.</p> : null}
                 {gaps.empty.length ? <p>Empty: {gaps.empty.join(", ")}.</p> : null}
+                {(() => {
+                  const open = Object.keys(proposals[draft.id] ?? {}).filter((field) => !decisions[field]).length;
+                  return open ? <p className="mt-1">{open} proposed value(s) below are waiting for your review: use, edit or dismiss each one, then Save. Agents never read a proposal until you save it into the field.</p> : null;
+                })()}
               </div>
             );
           })()}
@@ -248,6 +285,28 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
                   )}
                   {state === "placeholder" ? <span className="mt-1 block text-xs text-amber-300">Placeholder text: replace with the real wording.</span> : null}
                   {state === "empty" ? <span className="mt-1 block text-xs text-amber-300">Empty: the agents have nothing to go on here.</span> : null}
+                  {(() => {
+                    const proposal = isProposableField(field.key) ? proposals[draft.id]?.[field.key] : undefined;
+                    if (!proposal) return null;
+                    const decision = decisions[String(field.key)];
+                    if (decision === "accepted") return <span className="mt-1 block text-xs text-amber-300">Proposal copied into the field. Edit it if needed, then Save.</span>;
+                    if (decision === "dismissed") return <span className="mt-1 block text-xs text-neutral-500">Proposal dismissed. Save to confirm.</span>;
+                    return (
+                      <span className="mt-2 block rounded-md border border-amber-500/40 bg-amber-500/10 p-3 normal-case tracking-normal">
+                        <span className="block text-xs font-semibold text-amber-300">Proposed — Mihai to approve</span>
+                        <span className="mt-1 block whitespace-pre-wrap text-sm leading-6 text-amber-50">{proposal.value}</span>
+                        {proposal.source ? <span className="mt-1 block text-xs text-amber-300/80">Source: {proposal.source}</span> : null}
+                        <span className="mt-2 flex gap-2">
+                          <OSButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={(event) => { event.preventDefault(); applyProposal(String(field.key), proposal.value); }}>
+                            Use this
+                          </OSButton>
+                          <OSButton type="button" variant="secondary" className="px-2 py-1 text-xs" onClick={(event) => { event.preventDefault(); dismissProposal(String(field.key)); }}>
+                            Dismiss
+                          </OSButton>
+                        </span>
+                      </span>
+                    );
+                  })()}
                 </OSField>
               );
             })}

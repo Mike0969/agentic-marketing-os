@@ -1,11 +1,12 @@
 import { BrandWorkspace } from "@/components/os/brand-workspace";
 import { OSMetric, PageHeading } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
+import { listOpenBrandProposals } from "@/lib/marketing/brand-proposals-store";
 
 export const dynamic = "force-dynamic";
 
 export default async function BrandsPage() {
-  const data = await getDashboardData();
+  const [data, proposals] = await Promise.all([getDashboardData(), listOpenBrandProposals()]);
   const activeBrands = data.brands.filter((brand) => brand.active).length;
   const contextFields = data.brands.reduce((count, brand) => {
     return (
@@ -32,7 +33,7 @@ export default async function BrandsPage() {
         <OSMetric label="Active" value={activeBrands} hint="Available to Crina workflows" />
         <OSMetric label="Context fields" value={contextFields} hint="Pillars, SEO, CTAs, rules, proof" />
       </div>
-      <BrandWorkspace brands={data.brands} />
+      <BrandWorkspace brands={data.brands} proposals={proposals} />
     </>
   );
 }

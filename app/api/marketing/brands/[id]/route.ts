@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
 import { updateLocalBrand } from "@/lib/local-store";
+import { isProposableField } from "@/lib/marketing/brand-proposals";
 import { isOrganizationUrn } from "@/lib/social/linkedin";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand } from "@/lib/types";
@@ -76,6 +77,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Proposals the operator used ("Use this") or dismissed are closed only by this Save.
+  const decided = new Date().toISOString();
+  for (const [key, status] of [["accepted_proposals", "accepted"], ["dismissed_proposals", "dismissed"]] as const) {
+    const fields = Array.isArray(body[key]) ? (body[key] as unknown[]).filter(isProposableField) : [];
+    if (fields.length) {
+      await supabase.from("brand_field_proposals").update({ status, decided_at: decided }).eq("brand_id", id).eq("status", "proposed").in("field", fields);
+    }
   }
 
   await supabase.from("activity").insert(makeActivity("Brand profile updated", `${data.name} strategic profile was saved.`));
