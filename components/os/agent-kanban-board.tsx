@@ -6,7 +6,7 @@ import { OSBadge, OSButton, OSPanel, OSSelect } from "@/components/os/ui";
 import type { ProviderKey, ProviderMeta } from "@/lib/providers";
 import type { AgentRunStatus } from "@/lib/types";
 
-type ColumnKey = "idle" | "queued" | "running" | "done" | "error";
+type ColumnKey = "idle" | "queued" | "running" | "done" | "needs_key" | "error";
 
 export type AgentKanbanRun = {
   id: string;
@@ -45,6 +45,7 @@ const columns: Array<{ key: ColumnKey; label: string }> = [
   { key: "queued", label: "Queued" },
   { key: "running", label: "Running" },
   { key: "done", label: "Done" },
+  { key: "needs_key", label: "Needs key" },
   { key: "error", label: "Error" }
 ];
 
@@ -52,6 +53,7 @@ function tone(column: ColumnKey, fallback = false): "ok" | "warn" | "danger" | "
   if (fallback) return "warn";
   if (column === "running" || column === "queued") return "info";
   if (column === "done") return "ok";
+  if (column === "needs_key") return "warn";
   if (column === "error") return "danger";
   return "off";
 }
@@ -79,10 +81,10 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
 
     try {
       const response = await fetch(`/api/os/agents/${card.agentId}/run`, { method: "POST" });
-      const payload = (await response.json()) as { ok: boolean; status: AgentRunStatus; provider: string; model: string; outputSummary: string; durationMs: number; error?: string | null };
+      const payload = (await response.json()) as { ok: boolean; status: AgentRunStatus; provider: string; model: string; workflowName?: string; outputSummary: string; durationMs: number; error?: string | null };
       if (!response.ok) throw new Error(payload.error ?? "Agent run failed.");
       updateCard(card.agentId, {
-        column: payload.status === "error" ? "error" : "done",
+        column: payload.status === "error" ? "error" : payload.status === "needs_key" ? "needs_key" : "done",
         provider: payload.provider,
         model: payload.model,
         lastRunAt: new Date().toISOString(),
@@ -91,7 +93,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
         logs: [
           {
             id: `optimistic-${Date.now()}`,
-            workflowName: "OS Agent Smoke Run",
+            workflowName: payload.workflowName ?? "Agent run",
             provider: payload.provider,
             model: payload.model,
             status: payload.status,
@@ -144,7 +146,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
     <div className="space-y-5">
       {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-300">{message}</div> : null}
 
-      <div className="grid gap-4 xl:grid-cols-5">
+      <div className="grid gap-4 xl:grid-cols-6">
         {columns.map((column) => {
           const columnCards = cards.filter((card) => card.column === column.key);
           return (
@@ -165,7 +167,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                           <h3 className="font-semibold text-neutral-100">{card.name}</h3>
                           <div className="mt-1 flex flex-wrap gap-1.5">
                             <OSBadge tone="ok">{card.domain}</OSBadge>
-                            <OSBadge tone={isRateLimited ? "warn" : tone(card.column, isFallback)}>{isRateLimited ? "RATE LIMITED" : isFallback ? "FALLBACK" : card.column}</OSBadge>
+                            <OSBadge tone={isRateLimited ? "warn" : tone(card.column, isFallback)}>{isRateLimited ? "RATE LIMITED" : isFallback ? "FALLBACK" : card.column === "needs_key" ? "NEEDS KEY" : card.column}</OSBadge>
                           </div>
                         </div>
                       </div>
@@ -206,7 +208,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                               <div key={log.id} className="border-b border-neutral-900 pb-2 last:border-0 last:pb-0">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="text-xs font-medium text-neutral-300">{log.workflowName}</div>
-                                  <OSBadge tone={log.status === "success" ? "ok" : log.status === "fallback" || log.status === "rate_limited" ? "warn" : "danger"}>{log.status === "rate_limited" ? "rate limited" : log.status}</OSBadge>
+                                  <OSBadge tone={log.status === "success" ? "ok" : log.status === "fallback" || log.status === "rate_limited" || log.status === "needs_key" ? "warn" : "danger"}>{log.status === "rate_limited" ? "rate limited" : log.status === "needs_key" ? "needs key" : log.status}</OSBadge>
                                 </div>
                                 <div className="mt-1 text-xs text-neutral-500">
                                   {log.provider} / {log.model ?? "default"} · {new Date(log.createdAt).toLocaleString()}

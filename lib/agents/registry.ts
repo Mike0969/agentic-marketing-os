@@ -15,7 +15,8 @@ export const registeredAgents: RegisteredAgent[] = [
   { id: "agent-visual-video", name: "Visual & Video Agent", domain: "Marketing", description: "Carousel, image, and short-video concepts.", defaultModel: "gpt-5.5" },
   { id: "agent-competitor-intelligence", name: "Competitor Intelligence Agent", domain: "Marketing", description: "Social hook discovery and competitor references.", defaultModel: "gpt-5.5" },
   { id: "agent-publishing", name: "Publishing Agent", domain: "Marketing", description: "Draft packaging only. No live posting.", defaultModel: "gpt-5.5" },
-  { id: "agent-conversion", name: "Conversion Agent", domain: "Marketing", description: "Estimates funnel conversion and ranks what converts for Crina.", defaultModel: "gpt-5.5" }
+  { id: "agent-conversion", name: "Conversion Agent", domain: "Marketing", description: "Estimates funnel conversion and ranks what converts for Crina.", defaultModel: "gpt-5.5" },
+  { id: "agent-analytics", name: "Analytics Agent", domain: "Marketing", description: "Reports what is working from OS activity data.", defaultModel: "gpt-5.5" }
 ];
 
 export function getRegisteredAgent(id: string) {

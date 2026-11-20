@@ -42,7 +42,8 @@ const domainByAgent: Record<string, AgentKanbanCard["domain"]> = {
   "agent-visual-video": "Marketing",
   "agent-competitor-intelligence": "Marketing",
   "agent-publishing": "Marketing",
-  "agent-conversion": "Marketing"
+  "agent-conversion": "Marketing",
+  "agent-analytics": "Marketing"
 };
 
 function normalize(value: string) {
@@ -58,6 +59,7 @@ function registryIdFor(agent: Agent, registryIds: string[], namesById: Map<strin
   if (agent.name.toLowerCase().includes("publishing")) return "agent-publishing";
   if (agent.name.toLowerCase().includes("seo")) return "agent-seo";
   if (agent.name.toLowerCase().includes("crina")) return "agent-crina";
+  if (agent.name.toLowerCase().includes("analytics")) return "agent-analytics";
   return agent.id;
 }
 
@@ -66,13 +68,14 @@ function summaryFromRun(run: AgentRun | null) {
   if (run.error) return run.error.slice(0, 100);
   const output = run.output;
   if (!output) return null;
-  const candidate = output.statusSummary ?? output.response ?? output.nextAction ?? output.summary ?? JSON.stringify(output);
+  const candidate = output.summary ?? output.statusSummary ?? output.response ?? output.nextAction ?? output.summary ?? JSON.stringify(output);
   return String(candidate).slice(0, 100);
 }
 
 function columnFromRun(status: AgentRunStatus | null): AgentKanbanCard["column"] {
   if (!status) return "idle";
   if (status === "error") return "error";
+  if (status === "needs_key") return "needs_key";
   return "done";
 }
 
@@ -164,11 +167,12 @@ export default async function AgentsKanbanPage() {
       <PageHeading
         eyebrow="Agentic OS"
         title="Agents"
-        subtitle="Cross-domain operating board. Run smoke checks, switch model assignments, and inspect recent agent_runs without exposing provider secrets."
+        subtitle="Cross-domain operating board. Run each agent job, switch model assignments, and inspect recent agent_runs without exposing provider secrets."
       />
-      <div className="mb-5 grid gap-4 md:grid-cols-4">
+      <div className="mb-5 grid gap-4 md:grid-cols-5">
         <OSMetric label="Agents" value={cards.length} hint="Registry + Supabase roster" />
         <OSMetric label="Done" value={cards.filter((card) => card.column === "done").length} hint="Last run succeeded or fallback" />
+        <OSMetric label="Needs key" value={cards.filter((card) => card.column === "needs_key").length} hint="Output ready; a provider key is missing" />
         <OSMetric label="Error" value={cards.filter((card) => card.column === "error").length} hint="Last run failed" />
         <OSMetric label="Model options" value={modelOptions.length} hint="Configured providers only" />
       </div>
