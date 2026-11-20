@@ -38,6 +38,15 @@ export async function listModels() {
   }
 }
 
+/** gpt-5+/gpt-6/o-series/chatgpt-* accept only the default temperature (sending one is a 400). */
+export function fixedTemperature(model: string) {
+  return /^(gpt-5|gpt-6|o\d|chatgpt-)/.test(model);
+}
+
+function isTemperatureError(error: unknown) {
+  return error instanceof Error && /temperature/i.test(error.message) && /unsupported|not support/i.test(error.message);
+}
+
 function messages(options: ProviderChatOptions): ChatCompletionMessageParam[] {
   return [
     ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
@@ -52,7 +61,8 @@ export async function testCall(prompt: string, model = DEFAULT_MODEL) {
   try {
     const completion = await sdk.chat.completions.create({
       model,
-      max_tokens: 32,
+      // max_tokens is rejected by current models; reasoning models need room before they answer.
+      max_completion_tokens: fixedTemperature(model) ? 512 : 32,
       messages: [{ role: "user", content: prompt }]
     });
     return { ok: true, model, response: completion.choices[0]?.message?.content ?? "", latencyMs: elapsed(startedAt), error: null };
@@ -68,15 +78,23 @@ export async function chat(options: ProviderChatOptions): Promise<ProviderChatRe
   if (!sdk) return failedChat(new Error("OPENAI_API_KEY is not configured."), startedAt, model);
 
   try {
-    const completion = await sdk.chat.completions.create(
-      {
-        model,
-        temperature: options.temperature ?? 0.3,
-        response_format: options.jsonSchema ? { type: "json_object" } : undefined,
-        messages: messages(options)
-      },
-      { signal: timeoutSignal() }
-    );
+    const request = (withTemperature: boolean) =>
+      sdk.chat.completions.create(
+        {
+          model,
+          ...(withTemperature ? { temperature: options.temperature ?? 0.3 } : {}),
+          response_format: options.jsonSchema ? { type: "json_object" } : undefined,
+          messages: messages(options)
+        },
+        { signal: timeoutSignal() }
+      );
+    let completion;
+    try {
+      completion = await request(!fixedTemperature(model));
+    } catch (error) {
+      if (fixedTemperature(model) || !isTemperatureError(error)) throw error;
+      completion = await request(false); // a model we did not know only allows the default temperature
+    }
     const text = completion.choices[0]?.message?.content ?? "";
     return {
       ok: true,
