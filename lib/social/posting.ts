@@ -1,3 +1,4 @@
+import { loadAppKeys } from "@/lib/social/app-keys";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
 import { notifyOperator } from "@/lib/marketing/notify";
 import { linkedinAuthor, publishMemberPost, refreshToken as refreshLinkedInToken } from "@/lib/social/linkedin";
@@ -91,6 +92,7 @@ export function videoAssetUrl(item: Pick<ContentItem, "ready_package">): string 
 
 export async function publishApprovedPackage(contentItemId: string) {
   if (!socialPostingEnabled()) return { ok: false as const, error: "Live posting is off (set SOCIAL_POSTING_ENABLED=true)." };
+  await loadAppKeys(); // app keys from Settings (token refresh needs them)
   if (!isSupabaseConfigured()) return { ok: false as const, error: "Supabase not configured." };
   const supabase = createServiceClient() ?? (await createClient());
   if (!supabase) return { ok: false as const, error: "Supabase not available." };
@@ -241,6 +243,7 @@ export async function publishApprovedPackage(contentItemId: string) {
  */
 export async function reconcileProcessingPosts(maxChecks = 25) {
   const empty = { checked: 0, published: 0, failed: 0, blocked: 0 };
+  await loadAppKeys();
   if (!isSupabaseConfigured()) return empty;
   const supabase = createServiceClient() ?? (await createClient());
   if (!supabase) return empty;

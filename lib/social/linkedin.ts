@@ -1,3 +1,4 @@
+import { appKey } from "@/lib/social/app-keys";
 // LinkedIn OAuth (3-legged) + post publishing as the member or as an organization (Company Page).
 // Server-only; tokens never reach the browser. Member posts need `w_member_social` ("Share on
 // LinkedIn"); organization posts need `w_organization_social` (Community Management API) and the
@@ -17,7 +18,7 @@ export function isOrganizationUrn(value: unknown): value is string {
 }
 
 export function linkedinConfigured() {
-  return Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
+  return Boolean(appKey("LINKEDIN_CLIENT_ID") && appKey("LINKEDIN_CLIENT_SECRET"));
 }
 
 export function linkedinRedirectUri() {
@@ -28,7 +29,7 @@ export function linkedinRedirectUri() {
 export function getAuthorizeUrl(state: string, opts: { organization?: boolean } = {}) {
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: process.env.LINKEDIN_CLIENT_ID ?? "",
+    client_id: appKey("LINKEDIN_CLIENT_ID") ?? "",
     redirect_uri: linkedinRedirectUri(),
     state,
     scope: opts.organization ? `${LINKEDIN_SCOPES} ${LINKEDIN_ORG_SCOPE}` : LINKEDIN_SCOPES
@@ -43,8 +44,8 @@ export async function exchangeCode(code: string): Promise<LinkedInToken> {
     grant_type: "authorization_code",
     code,
     redirect_uri: linkedinRedirectUri(),
-    client_id: process.env.LINKEDIN_CLIENT_ID ?? "",
-    client_secret: process.env.LINKEDIN_CLIENT_SECRET ?? ""
+    client_id: appKey("LINKEDIN_CLIENT_ID") ?? "",
+    client_secret: appKey("LINKEDIN_CLIENT_SECRET") ?? ""
   });
   const res = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
   if (!res.ok) throw new Error(`LinkedIn token exchange failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
@@ -55,8 +56,8 @@ export async function refreshToken(refreshToken: string): Promise<LinkedInToken>
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
-    client_id: process.env.LINKEDIN_CLIENT_ID ?? "",
-    client_secret: process.env.LINKEDIN_CLIENT_SECRET ?? ""
+    client_id: appKey("LINKEDIN_CLIENT_ID") ?? "",
+    client_secret: appKey("LINKEDIN_CLIENT_SECRET") ?? ""
   });
   const res = await fetch(TOKEN_URL, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
   if (!res.ok) throw new Error(`LinkedIn token refresh failed (${res.status}): ${(await res.text()).slice(0, 300)}`);

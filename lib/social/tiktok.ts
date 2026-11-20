@@ -1,10 +1,11 @@
+import { appKey } from "@/lib/social/app-keys";
 const AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 const TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const USERINFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,display_name";
 export const TIKTOK_SCOPES = "user.info.basic,video.publish";
 
 export function tiktokConfigured() {
-  return Boolean(process.env.TIKTOK_CLIENT_ID && process.env.TIKTOK_CLIENT_SECRET);
+  return Boolean(appKey("TIKTOK_CLIENT_ID") && appKey("TIKTOK_CLIENT_SECRET"));
 }
 
 export function tiktokRedirectUri() {
@@ -13,7 +14,7 @@ export function tiktokRedirectUri() {
 
 export function getAuthorizeUrl(state: string) {
   const params = new URLSearchParams({
-    client_key: process.env.TIKTOK_CLIENT_ID ?? "",
+    client_key: appKey("TIKTOK_CLIENT_ID") ?? "",
     redirect_uri: tiktokRedirectUri(),
     state,
     scope: TIKTOK_SCOPES,
@@ -26,8 +27,8 @@ export type TikTokToken = { access_token: string; expires_in?: number; refresh_t
 
 export async function exchangeCode(code: string): Promise<TikTokToken> {
   const body = new URLSearchParams({
-    client_key: process.env.TIKTOK_CLIENT_ID ?? "",
-    client_secret: process.env.TIKTOK_CLIENT_SECRET ?? "",
+    client_key: appKey("TIKTOK_CLIENT_ID") ?? "",
+    client_secret: appKey("TIKTOK_CLIENT_SECRET") ?? "",
     code,
     grant_type: "authorization_code",
     redirect_uri: tiktokRedirectUri()
@@ -48,8 +49,8 @@ export async function resolveAccount(accessToken: string): Promise<{ accountId: 
 
 export async function refreshToken(refresh: string): Promise<TikTokToken> {
   const body = new URLSearchParams({
-    client_key: process.env.TIKTOK_CLIENT_ID ?? "",
-    client_secret: process.env.TIKTOK_CLIENT_SECRET ?? "",
+    client_key: appKey("TIKTOK_CLIENT_ID") ?? "",
+    client_secret: appKey("TIKTOK_CLIENT_SECRET") ?? "",
     grant_type: "refresh_token",
     refresh_token: refresh
   });

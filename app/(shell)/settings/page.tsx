@@ -1,5 +1,7 @@
 import { ModelBudgetPanel } from "@/components/os/model-budget-panel";
 import { ChannelsManager } from "@/components/os/channels-manager";
+import { SocialAppKeys } from "@/components/os/social-app-keys";
+import { listAppKeysPublic } from "@/lib/social/app-keys";
 import { ProvidersManager } from "@/components/os/providers-manager";
 import { listChannels } from "@/lib/notify/channels";
 import { listUserProviders } from "@/lib/providers/user-providers";
@@ -21,6 +23,8 @@ function first(value: string | string[] | undefined) {
 export default async function Page({ searchParams }: { searchParams?: SearchParams }) {
   const params = (await searchParams) ?? {};
   const oauthStatus = {
+    linkedin: first(params.linkedin),
+    linkedin_detail: first(params.linkedin_detail),
     x: first(params.x),
     x_detail: first(params.x_detail),
     facebook: first(params.facebook),
@@ -67,6 +71,20 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         env={{ telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID), slack: Boolean(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID) }}
       />
       <SocialConnections oauthStatus={oauthStatus} />
+      <SocialAppKeys
+        initialKeys={await listAppKeysPublic()}
+        redirectUris={{
+          facebook: process.env.FACEBOOK_REDIRECT_URI ?? "",
+          instagram: process.env.INSTAGRAM_REDIRECT_URI ?? "",
+          linkedin: process.env.LINKEDIN_REDIRECT_URI ?? "",
+          x: process.env.X_REDIRECT_URI ?? "",
+          tiktok: process.env.TIKTOK_REDIRECT_URI ?? ""
+        }}
+        highlight={(() => {
+          const missing = (["facebook", "instagram", "linkedin", "x", "tiktok"] as const).find((p) => first(params[p]) === "not_configured");
+          return missing ? (missing === "facebook" || missing === "instagram" ? "meta" : missing) : null;
+        })()}
+      />
     </>
   );
 }

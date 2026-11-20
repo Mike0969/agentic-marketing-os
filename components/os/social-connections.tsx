@@ -25,8 +25,17 @@ const VIEW_CLASS: Record<ConnectionView, string> = {
   "not connected": "text-neutral-500"
 };
 
-function messageFor(status?: string, detail?: string) {
+const NEEDS: Record<string, string> = {
+  facebook: "the Meta App ID and App secret",
+  instagram: "the Meta App ID and App secret (Instagram uses the same Meta app)",
+  linkedin: "the LinkedIn Client ID and Client secret",
+  x: "the X OAuth 2.0 Client ID (and secret)",
+  tiktok: "the TikTok Client key and Client secret"
+};
+
+function messageFor(status?: string, detail?: string, platform?: string) {
   if (!status) return null;
+  if (status === "not_configured") return { tone: "warn" as const, text: `needs ${NEEDS[platform ?? ""] ?? "its app keys"}: add them below in App keys, then press Connect again.` };
   if (status === "connected") return { tone: "ok" as const, text: "Connected successfully." };
   if (status === "denied") return { tone: "warn" as const, text: "Authorization was cancelled." };
   if (status === "state_error") return { tone: "danger" as const, text: `OAuth state failed${detail ? ` (${detail})` : ""}. Start from the Settings page again and complete the flow in the same browser.` };
@@ -39,12 +48,16 @@ function messageFor(status?: string, detail?: string) {
         : detail === "invalid_grant"
           ? "X rejected the one-time code. Start the connection again; OAuth codes expire quickly and can only be used once."
           : detail === "redirect_uri"
-            ? "X rejected the redirect URI. It must exactly match X_REDIRECT_URI and the callback URL in the X developer portal."
+            ? "The platform rejected the redirect URI. Copy it from App keys below into the platform's developer portal exactly."
             : detail === "account_lookup"
               ? "Token exchange worked, but X /2/users/me failed. Check that the app has users.read."
               : detail === "db_write"
-                ? "X authorized, but saving the connection failed in Supabase."
-                : "The OAuth callback failed. Check the dev server log for the sanitized error.";
+                ? "The platform authorized, but saving the connection failed. Try again."
+                : detail === "brand"
+                  ? "That brand could not be found. Press Connect again from this page."
+                  : detail === "db_read"
+                    ? "The brand's settings could not be read. Try again in a minute."
+                    : "The connection did not complete. Press Connect again; if it repeats, check the app keys and redirect URI below.";
     return { tone: "danger" as const, text: `${hint}${detail ? ` (${detail})` : ""}` };
   }
   return null;
@@ -90,7 +103,7 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
       </div>
       <p className="mb-4 mt-1 text-sm text-neutral-500">Connect each brand&apos;s accounts with Connect / Reconnect. The status is checked live with each platform (hover it for details).</p>
       {platforms.map((platform) => {
-        const message = messageFor(oauthStatus[platform.key], oauthStatus[`${platform.key}_detail`]);
+        const message = messageFor(oauthStatus[platform.key], oauthStatus[`${platform.key}_detail`], platform.key);
         if (!message) return null;
         return (
           <div key={`${platform.key}:message`} className="mb-3 rounded-md border border-neutral-800 bg-neutral-950/70 px-3 py-2 text-sm text-neutral-300">

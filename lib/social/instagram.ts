@@ -1,3 +1,4 @@
+import { appKey } from "@/lib/social/app-keys";
 import { GRAPH_URL, exchangeForLongLivedUserToken, pageTokenExpiry, type MetaApp } from "@/lib/social/meta";
 
 const AUTH_URL = "https://www.facebook.com/v20.0/dialog/oauth";
@@ -5,7 +6,7 @@ const TOKEN_URL = `${GRAPH_URL}/oauth/access_token`;
 export const INSTAGRAM_SCOPES = "pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish";
 
 export function instagramConfigured() {
-  return Boolean(process.env.INSTAGRAM_CLIENT_ID && process.env.INSTAGRAM_CLIENT_SECRET);
+  return Boolean(appKey("INSTAGRAM_CLIENT_ID") && appKey("INSTAGRAM_CLIENT_SECRET"));
 }
 
 export function instagramRedirectUri() {
@@ -14,7 +15,7 @@ export function instagramRedirectUri() {
 
 export function getAuthorizeUrl(state: string) {
   const params = new URLSearchParams({
-    client_id: process.env.INSTAGRAM_CLIENT_ID ?? "",
+    client_id: appKey("INSTAGRAM_CLIENT_ID") ?? "",
     redirect_uri: instagramRedirectUri(),
     state,
     scope: INSTAGRAM_SCOPES,
@@ -26,7 +27,7 @@ export function getAuthorizeUrl(state: string) {
 export type InstagramToken = { access_token: string; expires_in?: number; scope?: string };
 
 function app(): MetaApp {
-  return { clientId: process.env.INSTAGRAM_CLIENT_ID ?? "", clientSecret: process.env.INSTAGRAM_CLIENT_SECRET ?? "" };
+  return { clientId: appKey("INSTAGRAM_CLIENT_ID") ?? "", clientSecret: appKey("INSTAGRAM_CLIENT_SECRET") ?? "" };
 }
 
 /** Code -> short-lived user token -> LONG-lived user token (fb_exchange_token). */

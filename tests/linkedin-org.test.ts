@@ -132,8 +132,13 @@ test("LinkedIn start route refuses when the brand setting cannot be read", async
   holder.db.user = { email: "admin@example.com" };
   holder.db.failOn["brands:select"] = "db down";
   const res = await start();
-  assert.equal(res.status, 503);
-  assert.equal(res.headers.get("location"), null);
+  // Refused: back to Settings with a readable banner (never a raw JSON page), never to linkedin.com.
+  assert.equal(res.status, 307);
+  const location = new URL(res.headers.get("location")!);
+  assert.equal(location.pathname, "/settings");
+  assert.equal(location.searchParams.get("linkedin"), "error");
+  assert.equal(location.searchParams.get("linkedin_detail"), "db_read");
+  assert.ok(!location.host.includes("linkedin.com"));
 });
 
 test("brand PATCH rejects a malformed organization URN", async () => {

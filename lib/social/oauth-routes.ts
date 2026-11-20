@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { publicUrl } from "@/lib/site-url";
+import { loadAppKeys } from "@/lib/social/app-keys";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { saveConnection } from "@/lib/social/connection-store";
@@ -92,13 +93,23 @@ function oauthErrorCode(error: unknown) {
   return "callback_error";
 }
 
+/** Never a raw JSON page in the browser: back to Settings with a banner, scrolled to the platform's app keys. */
+export function backToSettings(requestUrl: string | URL, platform: string, status: string, detail?: string) {
+  const target = publicUrl("/settings", requestUrl);
+  target.searchParams.set(platform, status);
+  if (detail) target.searchParams.set(`${platform}_detail`, detail);
+  target.hash = `app-keys-${platform === "facebook" || platform === "instagram" ? "meta" : platform}`;
+  return NextResponse.redirect(target);
+}
+
 export async function startSocialOAuth(request: Request, options: StartOptions) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
-  if (!options.configured()) return NextResponse.json({ error: options.missingMessage }, { status: 503 });
+  await loadAppKeys(); // Settings keys first, then env
+  if (!options.configured()) return backToSettings(request.url, options.platform, "not_configured");
 
   const brandId = new URL(request.url).searchParams.get("brand_id") ?? "";
-  if (!UUID_RE.test(brandId)) return NextResponse.json({ error: "A valid brand_id is required." }, { status: 400 });
+  if (!UUID_RE.test(brandId)) return backToSettings(request.url, options.platform, "error", "brand");
 
   const state = createState(brandId);
   const verifier = options.makeVerifier?.() ?? "";
@@ -109,12 +120,7 @@ export async function startSocialOAuth(request: Request, options: StartOptions) 
     const redirectOrigin = new URL(redirectUri).origin;
     const localRedirect = redirectOrigin.includes("localhost") || redirectOrigin.includes("127.0.0.1");
     if (localRedirect && redirectOrigin !== requestOrigin) {
-      return NextResponse.json(
-        {
-          error: `OAuth redirect is configured for ${redirectOrigin}, but this dev server is running at ${requestOrigin}. Stop the other dev server and restart on the configured port, or update the provider callback URL and env together.`
-        },
-        { status: 409 }
-      );
+      return backToSettings(request.url, options.platform, "error", "redirect_uri");
     }
   }
 
@@ -146,6 +152,7 @@ export async function handleSocialOAuthCallback<Token extends { access_token: st
   request: Request,
   options: CallbackOptions<Token>
 ) {
+  await loadAppKeys();
   const url = new URL(request.url);
   const back = (status: string, detail?: string) => {
     const target = publicUrl("/settings", url);

@@ -129,3 +129,29 @@ test("learning library: validation and the block the agents read", async () => {
   assert.match(text, /\[YouTube\] Founder talk \(drivers, dubai\): Drivers keep the fare\. <https:\/\/youtu\.be\/abc>/);
   assert.equal(libraryText([]), "");
 });
+
+test("social app keys: Settings first, then env; the secret is encrypted; not configured -> Settings banner, no JSON", async () => {
+  const appKeys = await import("../lib/social/app-keys.ts");
+  const { backToSettings } = await import("../lib/social/oauth-routes.ts");
+  const db = seed();
+  (db as unknown as { tables: Record<string, unknown[]> }).tables.social_app_keys ??= [];
+  await withEnv({ ...ENV, LINKEDIN_CLIENT_ID: "env-id", LINKEDIN_CLIENT_SECRET: "env-secret-1" }, async () => {
+    await appKeys.loadAppKeys(true);
+    assert.equal(appKeys.appKey("LINKEDIN_CLIENT_ID"), "env-id");
+    await appKeys.setAppKeys("linkedin", "ui-client-id", fakeKey("li"));
+    assert.equal(appKeys.appKey("LINKEDIN_CLIENT_ID"), "ui-client-id");
+    assert.equal(appKeys.appKey("LINKEDIN_CLIENT_SECRET"), fakeKey("li"));
+    const row = db.rows("social_app_keys")[0];
+    assert.match(String(row.client_secret_enc), /^enc:v1:/);
+    const list = await appKeys.listAppKeysPublic();
+    assert.ok(!JSON.stringify(list).includes(fakeKey("li")));
+    assert.equal(list.find((k) => k.platform === "linkedin")?.source, "settings");
+    await appKeys.removeAppKeys("linkedin");
+    assert.equal(appKeys.appKey("LINKEDIN_CLIENT_ID"), "env-id");
+  });
+  const res = await withEnv({ NEXT_PUBLIC_SITE_URL: "https://os.example" }, async () => backToSettings("http://localhost:3470/api/auth/instagram/start", "instagram", "not_configured"));
+  const loc = new URL(res.headers.get("location")!);
+  assert.equal(loc.origin + loc.pathname, "https://os.example/settings");
+  assert.equal(loc.searchParams.get("instagram"), "not_configured");
+  assert.equal(loc.hash, "#app-keys-meta");
+});

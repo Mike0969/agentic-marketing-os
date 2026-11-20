@@ -1,3 +1,4 @@
+import { loadAppKeys } from "@/lib/social/app-keys";
 import { NextResponse } from "next/server";
 import { exchangeCode, getMemberUrn } from "@/lib/social/linkedin";
 import { saveConnection } from "@/lib/social/connection-store";
@@ -8,6 +9,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 // LinkedIn redirects the operator's browser here after consent. Verify state (cookie), exchange the
 // code for a token, resolve the member URN, and store the connection per brand.
 export async function GET(request: Request) {
+  await loadAppKeys();
   const url = new URL(request.url);
   const back = (path: string) => {
     const res = NextResponse.redirect(publicUrl(path, url));
