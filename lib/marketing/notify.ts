@@ -34,6 +34,8 @@ export async function notifySlack(text: string): Promise<{ ok: boolean; error?: 
   if (!ch) return null;
   try {
     const r = await sendSlack(ch.channelId.trim(), text, ch.token);
+    // One line in the server log per Slack alert (ok or Slack's error code; never the token).
+    console.info(`[notify] slack ${ch.source} ${ch.channelId.trim().charAt(0)}…: ${r.ok ? "ok" : `error ${r.error ?? "unknown"}`}`);
     return { ok: r.ok, error: r.ok ? null : r.error ?? null };
   } catch {
     // notifications are best-effort
