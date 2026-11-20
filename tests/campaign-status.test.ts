@@ -45,5 +45,20 @@ test("brand analysis keeps only new text for known fields (lists joined one per 
     { positioning: "Same text", tone_of_voice: "old" },
     { positioning: "Same text", tone_of_voice: "Bold, clear", pillars: ["Community", "Mobility"], website: "x", unknown_field: "y", offers: "  " }
   );
-  assert.deepEqual(out, [{ field: "tone_of_voice", value: "Bold, clear" }, { field: "pillars", value: "Community\nMobility" }]);
+  assert.deepEqual(out, [{ field: "tone_of_voice", value: "Bold, clear", sources: [] }, { field: "pillars", value: "Community\nMobility", sources: [] }]);
+  const withSources = usefulProposals({}, { offers: { value: "Fleet shares", sources: ["W1", "L2"] } });
+  assert.deepEqual(withSources, [{ field: "offers", value: "Fleet shares", sources: ["W1", "L2"] }]);
+});
+
+test("site reader: text, same-site links only (subdomains included), robots rules for *", async () => {
+  const { extractPage, robotsDisallows, siteOf } = await import("../lib/marketing/site-reader.ts");
+  assert.equal(siteOf("https://www.gulf-el.com/x"), "gulf-el.com");
+  const dom = '<html><head><title>Gulf-EL</title><script>var x=1</script></head><body><h1>Own a fleet</h1><a href="./nexride/">N</a><a href="https://investor-portal.gulf-el.com">P</a><a href="https://evil.com/">E</a><a href="/a.pdf">pdf</a><a href="mailto:x@y.z">m</a></body></html>';
+  const page = extractPage(dom, "https://www.gulf-el.com/", "gulf-el.com");
+  assert.equal(page.title, "Gulf-EL");
+  assert.match(page.text, /Own a fleet/);
+  assert.ok(!page.text.includes("var x"));
+  assert.deepEqual(page.links.sort(), ["https://investor-portal.gulf-el.com/", "https://www.gulf-el.com/nexride/"]);
+  assert.deepEqual(robotsDisallows("User-agent: *\nAllow: /\nUser-agent: GPTBot\nDisallow: /\n"), []);
+  assert.deepEqual(robotsDisallows("User-agent: *\nDisallow: /admin\n"), ["/admin"]);
 });

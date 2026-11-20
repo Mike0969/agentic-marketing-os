@@ -147,10 +147,11 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
       const response = await fetch(`/api/marketing/brands/${brandId}/analyze`, { method: "POST" });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "The analysis could not start.");
-      for (let i = 0; i < 90; i++) {
+      for (let i = 0; i < 180; i++) {
         await new Promise((resolve) => setTimeout(resolve, 5000));
         const res = await fetch(`/api/marketing/brands/${brandId}/analyze`);
         const body = (await res.json().catch(() => ({}))) as { status?: { state?: string; summary?: string } | null };
+        if (body.status?.state === "running" && body.status.summary) setMessage(`${body.status.summary} You can leave this page; I'll notify you when the proposals are ready.`);
         if (body.status && body.status.state !== "running") {
           setMessage(body.status.summary ?? "Done.");
           if (body.status.state === "done") window.location.reload();
