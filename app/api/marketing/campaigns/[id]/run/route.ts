@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { JOB_STALE_MS, getJob, runOutcome, startCampaignJob } from "@/lib/marketing/campaign-jobs";
 import { brandGaps, safetyBlockReason } from "@/lib/marketing/brand-placeholders";
 import { revalidatePath } from "next/cache";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
@@ -54,7 +55,41 @@ function clampScore(v: unknown): number {
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   // Every model call in this run is charged to the campaign's budget.
   const { id } = await context.params;
-  return withCampaignBudget(id, () => runCampaign(request, context));
+  // { background: true } (the Review buttons): record a job, answer at once, run on the server
+  // (closing the tab never stops it), then alert Mihai with the result and a link.
+  const raw = await request.text();
+  let body: Record<string, unknown> = {};
+  try {
+    body = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+  } catch {
+    body = {};
+  }
+  if (body.background === true) {
+    const access = await requireAgentAccess(request);
+    if (!access.ok) return access.response;
+    const running = await getJob(id);
+    if (running?.state === "running" && Date.now() - Date.parse(running.started_at) < JOB_STALE_MS) {
+      return NextResponse.json({ error: "The agents are already working on this campaign. You'll be notified when it's ready." }, { status: 409 });
+    }
+    const label = body.approvedDraft ? "Edit and approve" : typeof body.note === "string" && body.note.trim() ? "Rework with your note" : "Run the agents";
+    const token = process.env.AGENT_TRIGGER_TOKEN ?? "";
+    const inner = { ...body, background: false };
+    const job = await startCampaignJob({
+      campaignId: id,
+      kind: "run",
+      label,
+      origin: request.url,
+      work: async () => {
+        const res = await withCampaignBudget(id, () =>
+          runCampaign(new Request(request.url, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(inner) }), context)
+        );
+        return runOutcome(res.status, (await res.json().catch(() => ({}))) as Parameters<typeof runOutcome>[1]);
+      }
+    });
+    return NextResponse.json({ background: true, job }, { status: 202 });
+  }
+  const replay = new Request(request.url, { method: "POST", headers: request.headers, body: raw || undefined });
+  return withCampaignBudget(id, () => runCampaign(replay, context));
 }
 
 async function runCampaign(request: Request, context: { params: Promise<{ id: string }> }) {

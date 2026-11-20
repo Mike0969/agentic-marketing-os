@@ -5,6 +5,9 @@ import { makeActivity } from "@/lib/activity";
 import { preflight, withCampaignBudget, STEP_AGENTS } from "@/lib/budget/model-budget";
 import { cleanPlatforms, jevSummary, planWithJev } from "@/lib/marketing/simple-flow";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { getJob, startCampaignJob } from "@/lib/marketing/campaign-jobs";
+import { prepareAndRun } from "@/lib/marketing/start-agents-server";
 import type { Brand } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -57,27 +60,54 @@ export async function POST(request: Request) {
     .single();
   if (error || !campaign) return NextResponse.json({ error: error?.message ?? "Campaign was not created." }, { status: 500 });
 
-  const outcome = await withCampaignBudget(campaign.id, () => planWithJev({ idea, brand, platforms, campaignId: campaign.id }));
-  const brief = {
-    ...(campaign.idea_brief as Record<string, unknown>),
-    stage: outcome.stage,
-    plan: outcome.plan,
-    plan_jev: jevSummary(outcome.jev, outcome.doubts),
-    plan_error: outcome.error,
-    platforms: outcome.plan?.platforms ?? platforms,
-    primary_cta: outcome.plan?.cta ?? null,
-    success_criteria: outcome.plan?.success_criteria ?? null,
-    summary: outcome.plan?.summary ?? null
+  // Crina plans + Jev checks, then the plan is saved on the campaign (same steps in the background job).
+  const db = createServiceClient() ?? supabase;
+  const plan = async () => {
+    const outcome = await withCampaignBudget(campaign.id, () => planWithJev({ idea, brand, platforms, campaignId: campaign.id }));
+    const brief = {
+      ...(campaign.idea_brief as Record<string, unknown>),
+      stage: outcome.stage,
+      plan: outcome.plan,
+      plan_jev: jevSummary(outcome.jev, outcome.doubts),
+      plan_error: outcome.error,
+      platforms: outcome.plan?.platforms ?? platforms,
+      primary_cta: outcome.plan?.cta ?? null,
+      success_criteria: outcome.plan?.success_criteria ?? null,
+      summary: outcome.plan?.summary ?? null,
+      // keep the background job record (the page polls it)
+      ...(await getJob(campaign.id).then((job) => (job ? { job } : {})))
+    };
+    await db
+      .from("campaigns")
+      .update({
+        idea_brief: brief,
+        ...(outcome.plan ? { title: outcome.plan.title, objective: outcome.plan.objective, target_audience: outcome.plan.target_audience || campaign.target_audience } : {})
+      })
+      .eq("id", campaign.id);
+    await db.from("activity").insert(makeActivity("Campaign idea", `Crina planned "${outcome.plan?.title ?? idea.slice(0, 60)}" (${outcome.stage}).`));
+    return { outcome, brief };
   };
-  await supabase
-    .from("campaigns")
-    .update({
-      idea_brief: brief,
-      ...(outcome.plan ? { title: outcome.plan.title, objective: outcome.plan.objective, target_audience: outcome.plan.target_audience || campaign.target_audience } : {})
-    })
-    .eq("id", campaign.id);
-  await supabase.from("activity").insert(makeActivity("Campaign idea", `Crina planned "${outcome.plan?.title ?? idea.slice(0, 60)}" (${outcome.stage}).`));
 
+  // { background: true }: answer at once; plan, then (if Jev clears it) start the agents, all on the
+  // server; Mihai is notified when posts are ready, or when the plan needs him.
+  if (body?.background === true) {
+    const job = await startCampaignJob({
+      campaignId: campaign.id,
+      kind: "plan",
+      label: "Plan and make the posts",
+      origin: request.url,
+      work: async () => {
+        const { outcome } = await plan();
+        if (!outcome.plan) return { state: "error", summary: `Crina could not plan it: ${String(outcome.error ?? "no plan").slice(0, 160)}` };
+        if (outcome.stage === "plan_doubts") return { state: "needs_you", summary: "Jev has doubts about the plan; it needs your look (approve it anyway or rework it with a note)." };
+        return prepareAndRun(campaign.id, request.url);
+      }
+    });
+    revalidatePath("/marketing");
+    return NextResponse.json({ campaign_id: campaign.id, background: true, job }, { status: 202 });
+  }
+
+  const { outcome, brief } = await plan();
   revalidatePath("/marketing");
   return NextResponse.json({ campaign_id: campaign.id, stage: outcome.stage, plan: outcome.plan, jev: brief.plan_jev, error: outcome.error }, { status: 201 });
 }

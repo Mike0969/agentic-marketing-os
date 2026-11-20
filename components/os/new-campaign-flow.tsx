@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, Circle, Loader2, Send, XCircle } from "lucide-react";
 import { OSBadge, OSButton, OSField, OSInput, OSPanel, OSTextarea } from "@/components/os/ui";
 import { startAgents, type AgentStep } from "@/components/os/start-agents";
@@ -13,6 +14,7 @@ type Plan = { title: string; summary: string; key_message: string; platforms: st
 type Jev = { ran: boolean; score: number | null; doubts: string | null; note: string | null } | null;
 
 export function NewCampaignFlow({ brandName, brandId = null }: { brandName: string | null; brandId?: string | null }) {
+  const router = useRouter();
   const [idea, setIdea] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [start, setStart] = useState("");
@@ -39,10 +41,16 @@ export function NewCampaignFlow({ brandName, brandId = null }: { brandName: stri
       const res = await fetch("/api/marketing/campaigns/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea, platforms, brand_id: brandId ?? undefined, start_date: start || undefined, end_date: end || undefined })
+        body: JSON.stringify({ idea, platforms, brand_id: brandId ?? undefined, start_date: start || undefined, end_date: end || undefined, background: true })
       });
-      const body = (await res.json()) as { campaign_id?: string; stage?: string; plan?: Plan | null; jev?: Jev; error?: string | null };
+      const body = (await res.json()) as { campaign_id?: string; stage?: string; plan?: Plan | null; jev?: Jev; error?: string | null; background?: boolean };
       if (!res.ok || !body.campaign_id) throw new Error(body.error ?? "The campaign was not created.");
+      // Runs on the server: Crina plans, Jev checks, the agents make the posts. Mihai is notified.
+      if (body.background) {
+        setStep("plan", "running", "Crina and the agents are working on it (a few minutes). You can leave this page; I'll notify you when it's ready.");
+        router.push(`/marketing/review/${body.campaign_id}`);
+        return;
+      }
       setCampaignId(body.campaign_id);
       setPlan(body.plan ?? null);
       setJev(body.jev ?? null);

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, BookOpen, Bot, Gauge, LogOut, Megaphone, Settings } from "lucide-react";
+import { ArrowLeft, Bell, BookOpen, Bot, Gauge, LogOut, Megaphone, Settings } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
@@ -32,7 +32,10 @@ export function parentPath(pathname: string) {
 type ShellAuth = { supabaseConfigured: boolean; email: string | null };
 type HermesStatus = { configured: boolean; connected: boolean };
 
-export function OsShell({ children, auth, hermes, brands = [], selectedBrandId = null }: { children: React.ReactNode; auth: ShellAuth; hermes: HermesStatus; brands?: Array<{ id: string; name: string }>; selectedBrandId?: string | null }) {
+type ShellAlert = { campaignId: string; title: string; state: string; summary: string; at: string | null };
+
+export function OsShell({ children, auth, hermes, brands = [], selectedBrandId = null, alerts = [] }: { children: React.ReactNode; auth: ShellAuth; hermes: HermesStatus; brands?: Array<{ id: string; name: string }>; selectedBrandId?: string | null; alerts?: ShellAlert[] }) {
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [brandId, setBrandId] = useState(selectedBrandId ?? "");
   const [switching, setSwitching] = useState(false);
 
@@ -113,6 +116,34 @@ export function OsShell({ children, auth, hermes, brands = [], selectedBrandId =
               <span>{hermesLabel}</span>
             </div>
             <div className="flex items-center gap-3">
+              {/* Campaign results Mihai has not opened yet (ready / blocked / needs you / error). */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAlertsOpen(!alertsOpen)}
+                  aria-label={alerts.length ? `${alerts.length} campaign update(s)` : "No campaign updates"}
+                  className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-800 text-neutral-300 hover:bg-neutral-900"
+                >
+                  <Bell className="h-4 w-4" />
+                  {alerts.length ? (
+                    <span data-testid="alerts-count" className="absolute -right-1.5 -top-1.5 rounded-full bg-amber-500 px-1.5 text-[10px] font-semibold text-neutral-950">{alerts.length}</span>
+                  ) : null}
+                </button>
+                {alertsOpen ? (
+                  <div className="absolute right-0 z-30 mt-2 w-96 rounded-md border border-neutral-800 bg-neutral-950 p-2 shadow-xl">
+                    {alerts.length ? (
+                      alerts.map((a) => (
+                        <Link key={a.campaignId} href={`/marketing/review/${a.campaignId}`} onClick={() => setAlertsOpen(false)} className="block rounded-md px-2 py-2 text-sm hover:bg-neutral-900">
+                          <span className="font-medium text-neutral-100">{a.state === "ready" ? "✅" : a.state === "blocked" ? "⛔" : a.state === "needs_you" ? "👋" : "⚠️"} {a.title}</span>
+                          <span className="mt-0.5 block text-xs text-neutral-400">{a.summary}</span>
+                        </Link>
+                      ))
+                    ) : (
+                      <p className="px-2 py-2 text-sm text-neutral-500">No new campaign updates.</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
               {brands.length ? (
                 <label className="flex items-center gap-2 text-xs text-neutral-500">
                   Brand

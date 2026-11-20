@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
 import { CampaignReview } from "@/components/os/campaign-review";
+import { CampaignStatusBar } from "@/components/os/campaign-status-bar";
+import { markJobSeen, type CampaignJob } from "@/lib/marketing/campaign-jobs";
+import { statusLine } from "@/lib/marketing/status-line";
 import { PageHeading } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
 import { flowView } from "@/lib/marketing/flow-view";
@@ -15,9 +18,14 @@ export default async function CampaignReviewPage({ params }: { params: Promise<{
   const posts = data.contentItems.filter((item) => item.campaign_id === id && !item.archived_at);
   const summaryOf = (value: unknown) => (value && typeof value === "object" && typeof (value as { summary?: unknown }).summary === "string" ? String((value as { summary: string }).summary) : null);
   const view = flowView(campaign, data.contentItems);
+  const job = (brief.job ?? null) as CampaignJob | null;
+  const line = statusLine(campaign, posts, job);
+  // Opening the campaign clears its notification in the header.
+  if (job && job.state !== "running" && !job.seen_at) await markJobSeen(id);
   return (
     <>
       <PageHeading eyebrow="Review" title={campaign.title} subtitle={view.label} />
+      <CampaignStatusBar campaignId={id} line={line} running={line.tone === "working" && job?.state === "running"} />
       <CampaignReview
         campaignId={id}
         stage={String(brief.stage ?? "planning")}

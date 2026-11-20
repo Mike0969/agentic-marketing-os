@@ -182,8 +182,9 @@ async function generateHermesImage(prompt: string, options: ImageGenerationOptio
   const model = cfg.provider === "hermes" ? cfg.model : "crina";
   const { refused, id: callId } = await beginModelCall("hermes", "agent-visual-video", model);
   if (refused) return fail(refused, model);
-  const aspect = options.aspect === "landscape" ? "landscape (16:9)" : options.aspect === "vertical" ? "portrait (9:16)" : "square (1:1)";
-  const ask = `Generate exactly ONE image with your image generation tool. Aspect: ${aspect}. Do not add any text inside the image unless the prompt asks for it.\n\nImage prompt:\n${prompt.slice(0, 3500)}\n\nWhen the tool has saved the image, answer with JSON only: {"image_path": "<the absolute file path the tool returned>"}`;
+  // The tool's aspect_ratio is landscape | square | portrait and defaults to landscape: always pass it.
+  const aspect = options.aspect === "landscape" ? "landscape" : options.aspect === "vertical" ? "portrait" : "square";
+  const ask = `Generate exactly ONE image: call image_generate with aspect_ratio="${aspect}" (exactly that value). Do not add any text inside the image unless the prompt asks for it.\n\nImage prompt:\n${prompt.slice(0, 3500)}\n\nWhen the tool has saved the image, answer with JSON only: {"image_path": "<the absolute file path the tool returned>"}`;
   try {
     const res = await fetch(endpoint, {
       method: "POST",

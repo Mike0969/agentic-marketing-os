@@ -1,3 +1,4 @@
+import { markStaleJobs } from "@/lib/marketing/campaign-jobs";
 import { NextResponse } from "next/server";
 import { POST as tickCampaign } from "@/app/api/marketing/campaigns/[id]/automation/tick/route";
 import { runGscIngestion } from "@/lib/analytics/gsc-ingestion";
@@ -193,12 +194,15 @@ async function runCron(request: Request) {
 
   const touchedCampaignIds = Array.from(new Set([...activeCampaignIds, ...results.map((result) => result.campaign_id)]));
   const notifications = await sendCrinaReadyToPostPings({ campaignIds: touchedCampaignIds, baseUrl: baseUrlFrom(request) });
+  // Background jobs cut off by a server restart: end them and alert Mihai (never left "running").
+  const interruptedJobs = await markStaleJobs(request.url).catch(() => 0);
 
   return NextResponse.json({
     processed: results.length,
     skipped_no_internal_step: activeCampaigns.length - candidates.length,
     results,
     notifications,
+    interrupted_jobs: interruptedJobs,
     gsc_ingestion: gscIngestion,
     due_posts: duePosts,
     nurture,

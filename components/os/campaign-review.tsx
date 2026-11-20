@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, Check, Loader2, Play, RotateCcw } from "lucide-react";
 import { OSBadge, OSButton, OSInput, OSPanel, OSSelect, OSTextarea } from "@/components/os/ui";
-import { startAgents } from "@/components/os/start-agents";
 import type { ContentItem } from "@/lib/types";
 
 type Plan = { title: string; summary: string; objective: string; key_message: string; platforms: string[]; cta: string; target_audience: string; agent_tasks?: Record<string, string> };
@@ -67,18 +66,17 @@ export function CampaignReview(props: {
   }
 
   async function runAgainAfterBlock() {
-    await runWith({}, "Sending to the agents… Crina and the agents are making the posts again (about 2 minutes). Keep this page open.");
+    await runWith({}, "Sending to the agents… Crina and the agents are making the posts again (about 2 minutes). You can leave this page; I'll notify you when it's ready.");
   }
 
   async function runAgents() {
     setBusy("agents");
-    setMessage("Agents working: SEO + analytics, then content and visual (a few minutes).");
-    const ok = await startAgents(props.campaignId, (step, state, detail) => {
-      if (state === "error") setMessage(detail ?? "A step failed.");
-      else if (state === "done" && step === "makers") setMessage(`Posts ready: ${detail}`);
-    });
+    const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/start`, { method: "POST" }).catch(() => null);
+    const body = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
     setBusy(null);
-    if (ok) router.refresh();
+    if (!res || !res.ok) return setMessage(body?.error ?? "The agents could not start. Try again in a minute.");
+    setMessage("Crina and the agents are working on it (about 2 minutes). You can leave this page; I'll notify you when it's ready.");
+    router.refresh();
   }
 
   async function changeBrand(brandId: string) {
@@ -98,8 +96,14 @@ export function CampaignReview(props: {
     setMessage(null);
     setPanelStatus({ tone: "busy", text: label });
     try {
-      const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; budget?: boolean; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
+      // Runs on the server (background job): closing the page never stops it; Mihai is notified.
+      const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, background: true }) });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; budget?: boolean; background?: boolean; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
+      if (res.status === 202 && body.background) {
+        setPanelStatus({ tone: "busy", text: "Crina and the agents are working on it (about 2 minutes). You can leave this page; I'll notify you when it's ready." });
+        router.refresh();
+        return;
+      }
       if (!res.ok) {
         setPanelStatus({ tone: "error", text: body.error ?? `The agents could not start (HTTP ${res.status}). Try again in a minute.`, settings: Boolean(body.budget) });
         return;
@@ -186,7 +190,7 @@ export function CampaignReview(props: {
 
       {props.blocked && !props.pending.length ? (
         props.blockedKind === "safety" && props.blockedInfo?.draft ? (
-          <SafetyBlock info={props.blockedInfo} status={panelStatus} busy={busy !== null} running={busy === "agents"} onRework={(note) => runWith({ platform: props.blockedInfo?.platform, note }, "Sending to the agents… Crina and the agents are reworking the post with your note (about 2 minutes). Keep this page open.")} onApprove={(draft) => runWith({ platform: props.blockedInfo?.platform, approvedDraft: draft }, "Sending to the agents… your text is approved; the visual agent is making the image (about 2 minutes). Keep this page open.")} onRunAgain={runAgainAfterBlock} />
+          <SafetyBlock info={props.blockedInfo} status={panelStatus} busy={busy !== null} running={busy === "agents"} onRework={(note) => runWith({ platform: props.blockedInfo?.platform, note }, "Sending to the agents… Crina and the agents are reworking the post with your note (about 2 minutes). You can leave this page; I'll notify you when it's ready.")} onApprove={(draft) => runWith({ platform: props.blockedInfo?.platform, approvedDraft: draft }, "Sending to the agents… your text is approved; the visual agent is making the image (about 2 minutes). You can leave this page; I'll notify you when it's ready.")} onRunAgain={runAgainAfterBlock} />
         ) : (
         <OSPanel className="border-amber-500/40">
           <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : props.blockedKind === "moved" ? "Brand changed" : "Blocked by safety check"}</h2>
@@ -206,6 +210,7 @@ export function CampaignReview(props: {
         )
       ) : null}
 
+      <div id="posts" />
       {props.pending.map((item) => (
         <PostReview key={item.id} item={item} onDone={(text) => { setMessage(text); router.refresh(); }} />
       ))}
