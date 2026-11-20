@@ -22,7 +22,7 @@ export function CampaignReview(props: {
   planJev: Jev;
   support: { seo: string | null; analytics: string | null };
   blocked: string | null;
-  blockedKind: "safety" | "failed";
+  blockedKind: "safety" | "failed" | "moved";
   blockedInfo?: BlockedInfo | null;
   brand?: { id: string | null; options: Array<{ id: string; name: string }>; canChange: boolean };
   pending: ContentItem[];
@@ -166,9 +166,9 @@ export function CampaignReview(props: {
           <SafetyBlock info={props.blockedInfo} busy={busy !== null} running={busy === "agents"} onRework={(note) => runWith({ platform: props.blockedInfo?.platform, note }, "Crina's team is reworking the post with your note (a few minutes).")} onApprove={(draft) => runWith({ platform: props.blockedInfo?.platform, approvedDraft: draft }, "Your text is approved; the visual agent is making the image (a few minutes).")} onRunAgain={runAgainAfterBlock} />
         ) : (
         <OSPanel className="border-amber-500/40">
-          <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : "Blocked by safety check"}</h2>
+          <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : props.blockedKind === "moved" ? "Brand changed" : "Blocked by safety check"}</h2>
           <p className="mt-2 text-sm leading-6 text-amber-100">{props.blocked}</p>
-          <p className="mt-1 text-sm text-neutral-400">{props.blockedKind === "failed" ? "Nothing was made. Try again when the model is available." : "Nothing was packaged or posted. Fix the cause, then run the agents again."}</p>
+          {props.blockedKind !== "moved" ? <p className="mt-1 text-sm text-neutral-400">{props.blockedKind === "failed" ? "Nothing was made. Try again when the model is available." : "Nothing was packaged or posted. Fix the cause, then run the agents again."}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {/Brands/.test(props.blocked) ? (
               <Link href="/marketing/brands" className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-900">Open Brands</Link>

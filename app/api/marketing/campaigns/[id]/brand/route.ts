@@ -6,8 +6,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * POST {brandId}: move a campaign (and its not-yet-published posts) to another brand. Refused once any
- * of its posts is published or being published. Clears a block from the previous brand, so "Run the
- * agents again" starts clean.
+ * of its posts is published or being published. A block from the previous brand becomes a "moved" note
+ * (Review keeps "Run the agents again"; the run clears it).
  */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
@@ -31,7 +31,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .or("published_at.not.is.null,posting_status.in.(processing,published)");
   if (count) return NextResponse.json({ error: "A post of this campaign is already published, so its brand can't change." }, { status: 409 });
   const brief = (campaign.idea_brief ?? {}) as Record<string, unknown>;
-  const up = await db.from("campaigns").update({ brand_id: brandId, idea_brief: { ...brief, blocked: null } }).eq("id", id);
+  // Replace any block from the old brand with a "moved" note that keeps "Run the agents again" on Review.
+  const moved = { kind: "moved", reason: `Brand changed to ${brand.name}. Run the agents again to make the posts for it.`, at: new Date().toISOString() };
+  const up = await db.from("campaigns").update({ brand_id: brandId, idea_brief: { ...brief, blocked: moved } }).eq("id", id);
   if (up.error) return NextResponse.json({ error: up.error.message }, { status: 500 });
   const items = await db.from("content_items").update({ brand_id: brandId }).eq("campaign_id", id);
   if (items.error) return NextResponse.json({ error: items.error.message }, { status: 500 });

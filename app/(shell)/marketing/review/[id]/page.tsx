@@ -26,7 +26,10 @@ export default async function CampaignReviewPage({ params }: { params: Promise<{
         planJev={(brief.plan_jev ?? null) as never}
         support={{ seo: summaryOf(brief.seo), analytics: summaryOf(brief.analytics) }}
         blocked={(brief.blocked as { reason?: string } | null)?.reason ?? null}
-        blockedKind={(brief.blocked as { kind?: string } | null)?.kind === "failed" ? "failed" : "safety"}
+        blockedKind={(() => {
+          const kind = (brief.blocked as { kind?: string } | null)?.kind;
+          return kind === "failed" || kind === "moved" ? kind : "safety";
+        })()}
         blockedInfo={(brief.blocked ?? null) as never}
         brand={{
           id: campaign.brand_id,
