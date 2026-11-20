@@ -37,7 +37,7 @@ const PLATFORMS: Record<Keys["platform"], { label: string; idLabel: string; secr
   }
 };
 
-export function SocialAppKeys({ initialKeys, redirectUris, highlight }: { initialKeys: Keys[]; redirectUris: Record<string, string>; highlight?: string | null }) {
+export function SocialAppKeys({ initialKeys, redirectUris, highlight, highlightFor }: { initialKeys: Keys[]; redirectUris: Record<string, string>; highlight?: string | null; highlightFor?: string | null }) {
   const [keys, setKeys] = useState(initialKeys);
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(highlight ?? null);
@@ -107,6 +107,11 @@ export function SocialAppKeys({ initialKeys, redirectUris, highlight }: { initia
                   ) : null}
                 </div>
               </div>
+              {highlight === k.platform ? (
+                <p className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                  {highlightFor ? `${highlightFor} can't connect yet:` : "This platform can't connect yet:"} add the {p.idLabel} and {p.secretLabel} below, then press Connect / Reconnect again.
+                </p>
+              ) : null}
               <div className="mt-2 space-y-1">
                 {p.redirectKeys.map((r) => {
                   const uri = redirectUris[r.key] ?? "";

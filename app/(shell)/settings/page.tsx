@@ -84,6 +84,11 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
           const missing = (["facebook", "instagram", "linkedin", "x", "tiktok"] as const).find((p) => first(params[p]) === "not_configured");
           return missing ? (missing === "facebook" || missing === "instagram" ? "meta" : missing) : null;
         })()}
+        highlightFor={(() => {
+          const labels = { facebook: "Facebook", instagram: "Instagram", linkedin: "LinkedIn", x: "X", tiktok: "TikTok" } as const;
+          const missing = (Object.keys(labels) as Array<keyof typeof labels>).find((p) => first(params[p]) === "not_configured");
+          return missing ? labels[missing] : null;
+        })()}
       />
     </>
   );
