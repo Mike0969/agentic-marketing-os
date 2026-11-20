@@ -1,19 +1,16 @@
-import { connectedHealth, elapsed, errorHealth, failedTest, missingHealth, now, staticModels, timeoutSignal } from "@/lib/providers/utils";
+import { resolveChannel } from "@/lib/notify/channels";
+import { connectedHealth, elapsed, errorHealth, failedTest, missingHealth, nonAsciiProblem, now, staticModels, timeoutSignal } from "@/lib/providers/utils";
 
 const BASE_URL = "https://api.telegram.org";
 
-function token() {
-  return process.env.TELEGRAM_BOT_TOKEN;
-}
-
-function defaultChatId() {
-  return process.env.TELEGRAM_CHAT_ID;
-}
-
+// Token + chat id: the Settings channel first (encrypted in the DB), else TELEGRAM_* env.
 export async function healthCheck() {
-  const botToken = token();
-  if (!botToken) return missingHealth("TELEGRAM_BOT_TOKEN is not configured.");
+  const ch = await resolveChannel("telegram");
+  const botToken = ch?.token;
+  if (!botToken) return missingHealth("Telegram is not configured (Settings → Notifications).");
   const startedAt = now();
+  const bad = nonAsciiProblem({ "Telegram bot token": botToken });
+  if (bad) return errorHealth(new Error(bad), startedAt);
   try {
     const response = await fetch(`${BASE_URL}/bot${botToken}/getMe`, { signal: timeoutSignal() });
     if (!response.ok) throw new Error(`Telegram returned HTTP ${response.status}.`);
@@ -29,10 +26,12 @@ export async function listModels() {
   return staticModels([]);
 }
 
-export async function send(chatId: string, text: string) {
+export async function send(chatId: string, text: string, tokenOverride?: string) {
   const startedAt = now();
-  const botToken = token();
-  if (!botToken) return { ok: false, response: "", latencyMs: elapsed(startedAt), error: "TELEGRAM_BOT_TOKEN is not configured." };
+  const botToken = tokenOverride ?? (await resolveChannel("telegram"))?.token;
+  if (!botToken) return { ok: false, response: "", latencyMs: elapsed(startedAt), error: "Telegram is not configured." };
+  const bad = nonAsciiProblem({ "Telegram bot token": botToken });
+  if (bad) return { ok: false, response: "", latencyMs: elapsed(startedAt), error: bad };
   try {
     const response = await fetch(`${BASE_URL}/bot${botToken}/sendMessage`, {
       method: "POST",
@@ -49,8 +48,8 @@ export async function send(chatId: string, text: string) {
 
 export async function testCall(prompt: string) {
   const startedAt = now();
-  const chatId = defaultChatId();
-  if (!chatId) return failedTest(new Error("TELEGRAM_CHAT_ID is not configured."), startedAt, "telegram");
-  const result = await send(chatId, prompt || "Agentic OS test");
+  const ch = await resolveChannel("telegram");
+  if (!ch) return failedTest(new Error("Telegram is not configured."), startedAt, "telegram");
+  const result = await send(ch.channelId, prompt || "Agentic OS test", ch.token);
   return { ok: result.ok, model: "telegram", response: result.response, latencyMs: result.latencyMs, error: result.error };
 }

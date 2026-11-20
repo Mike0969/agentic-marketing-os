@@ -22,7 +22,7 @@ export function isEncrypted(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith(ENC_PREFIX);
 }
 
-export type TokenContext = { brandId: string; platform: string; field: "access_token" | "refresh_token" };
+export type TokenContext = { brandId: string; platform: string; field: "access_token" | "refresh_token" | "api_key" | "bot_token" };
 
 function aad(ctx: TokenContext) {
   return Buffer.from(`social_connections|${ctx.brandId}|${ctx.platform}|${ctx.field}`, "utf8");

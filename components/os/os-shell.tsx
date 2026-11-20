@@ -2,17 +2,25 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, Bot, Brain, Gauge, LogOut, Megaphone, Settings } from "lucide-react";
+import { ArrowLeft, BookOpen, Bot, Gauge, LogOut, Megaphone, Settings } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
   { href: "/", label: "Home", icon: Gauge },
   { href: "/marketing", label: "Marketing", icon: Megaphone },
+  { href: "/marketing/learning", label: "Learning library", icon: BookOpen },
   // Sales and Trading are hidden from the menu (Mihai 2026-11-20); their pages still exist.
   { href: "/agents", label: "Agents", icon: Bot },
-  { href: "/brain", label: "Brain", icon: Brain },
+  // Brain is hidden from the menu (Mihai 2026-11-20); the /brain page still exists.
   { href: "/settings", label: "Settings", icon: Settings }
 ];
+
+/** The menu item whose path is the longest prefix of the current page is the active one. */
+function isActive(href: string, pathname: string) {
+  if (href === "/") return pathname === "/";
+  if (!(pathname === href || pathname.startsWith(`${href}/`))) return false;
+  return !nav.some((other) => other.href !== href && other.href.startsWith(href) && (pathname === other.href || pathname.startsWith(`${other.href}/`)));
+}
 
 /** Where Back goes when there is no in-app history (opened from a link or a new tab). */
 export function parentPath(pathname: string) {
@@ -52,7 +60,7 @@ export function OsShell({ children, auth, hermes }: { children: React.ReactNode;
         <nav className="mt-8 space-y-1">
           {nav.map((item) => {
             const Icon = item.icon;
-            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const active = isActive(item.href, pathname);
             return (
               <Link
                 key={item.href}
@@ -105,7 +113,7 @@ export function OsShell({ children, auth, hermes }: { children: React.ReactNode;
           {/* Mobile nav */}
           <nav className="flex gap-1 overflow-x-auto px-3 pb-2 lg:hidden">
             {nav.map((item) => {
-              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              const active = isActive(item.href, pathname);
               return (
                 <Link
                   key={item.href}

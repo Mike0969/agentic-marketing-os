@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Eye, Loader2, Play, Save, X } from "lucide-react";
 import { OSBadge, OSButton, OSPanel, OSSelect } from "@/components/os/ui";
-import type { ProviderKey, ProviderMeta } from "@/lib/providers";
+
 import type { AgentRunStatus } from "@/lib/types";
 
 type ColumnKey = "idle" | "queued" | "running" | "done" | "needs_key" | "blocked" | "error";
@@ -35,7 +35,7 @@ export type AgentKanbanCard = {
 };
 
 type ModelOption = {
-  provider: ProviderKey;
+  provider: string;
   providerLabel: string;
   model: string;
   label: string;
@@ -124,7 +124,7 @@ function statusText(status: AgentRunStatus) {
   return status;
 }
 
-export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { initialCards: AgentKanbanCard[]; providers: ProviderMeta[]; modelOptions: ModelOption[] }) {
+export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { initialCards: AgentKanbanCard[]; providers: Array<{ key: string; label: string }>; modelOptions: ModelOption[] }) {
   const [cards, setCards] = useState(initialCards);
   const [running, setRunning] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
@@ -202,7 +202,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
       const payload = (await response.json()) as { provider?: string; model?: string; error?: string };
       if (!response.ok || !payload.provider || !payload.model) throw new Error(payload.error ?? "Model switch failed.");
       updateCard(agentId, { provider: payload.provider, model: payload.model });
-      setMessage(`Model switch saved: ${providerLabels.get(payload.provider as ProviderKey) ?? payload.provider} / ${payload.model}.`);
+      setMessage(`Model switch saved: ${providerLabels.get(payload.provider) ?? payload.provider} / ${payload.model}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Model switch failed.");
     } finally {
@@ -251,7 +251,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                       </div>
 
                       <div className="mt-2 text-xs text-neutral-500">
-                        {providerLabels.get(card.provider as ProviderKey) ?? card.provider} / {card.model} · {card.lastRunAt ? new Date(card.lastRunAt).toLocaleString() : "Never run"}
+                        {providerLabels.get(card.provider) ?? card.provider} / {card.model} · {card.lastRunAt ? new Date(card.lastRunAt).toLocaleString() : "Never run"}
                       </div>
                       <div className={`mt-2 text-sm leading-5 ${card.column === "blocked" ? "text-amber-200" : "line-clamp-3 text-neutral-400"}`}>{card.lastRunSummary ?? "No run logged yet."}</div>
 

@@ -23,6 +23,7 @@ const more = [
   { href: "/marketing/ready-to-post", title: "Ready to Post", description: "Final packages, copy/export." },
   { href: "/marketing/assets", title: "Assets", description: "Images, video, carousels, decks." },
   { href: "/marketing/analytics", title: "Analytics", description: "Search Console and sample panels." },
+  { href: "/marketing/learning", title: "Learning library", description: "Ideas, YouTube/podcast links, images, documents the agents learn from." },
   { href: "/marketing/brands", title: "Brands", description: "Brand voice, pillars, CTAs, rules." },
   { href: "/marketing/agents", title: "Agents", description: "Models, memory and run status." }
 ];

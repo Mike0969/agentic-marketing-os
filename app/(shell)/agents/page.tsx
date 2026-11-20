@@ -4,6 +4,8 @@ import { listAgentConfigs, resolveAgentRuntimeConfig } from "@/lib/agents/agent-
 import { readHermesRegistry } from "@/lib/agents/hermes-registry";
 import { registeredAgents } from "@/lib/agents/registry";
 import { summarizeRunOutput } from "@/lib/agents/run-summary";
+import { chatModels } from "@/lib/providers/compat";
+import { listUserProviders } from "@/lib/providers/user-providers";
 import { getAgentRuns, getDashboardData } from "@/lib/data";
 import { getProvider, isConfigured, PROVIDERS, type ProviderKey } from "@/lib/providers";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -96,7 +98,7 @@ function runLog(run: AgentRun): AgentKanbanRun {
 
 // Provider model lists change rarely: cache 6 h and refresh in the background, so the page
 // does not call every provider's /models on each load.
-type ModelOption = { provider: ProviderKey; providerLabel: string; model: string; label: string };
+type ModelOption = { provider: string; providerLabel: string; model: string; label: string };
 let modelOptionsCache: { at: number; options: ModelOption[] } | null = null;
 let modelOptionsInflight: Promise<ModelOption[]> | null = null;
 async function getModelOptions(): Promise<ModelOption[]> {
@@ -112,15 +114,21 @@ async function getModelOptions(): Promise<ModelOption[]> {
 }
 
 async function loadModelOptions(): Promise<ModelOption[]> {
+  // Hermes + env providers (chat models only) + every ENABLED provider added in Settings × its real models.
   const providers = PROVIDERS.filter((provider) => provider.kind === "model" && isConfigured(provider.key));
   const results = await Promise.all(
     providers.map(async (provider) => {
       const providerModule = getProvider(provider.key);
       const result = await providerModule.listModels();
-      return result.models.map((model) => ({ provider: provider.key, providerLabel: provider.label, model: model.id, label: model.label }));
+      const ids = provider.key === "hermes" ? result.models.map((m) => m.id) : chatModels(result.models.map((m) => m.id));
+      return ids.map((id) => ({ provider: provider.key, providerLabel: `${provider.label} (server)`.replace("Hermes (server)", "Hermes"), model: id, label: id }));
     })
   );
-  return results.flat();
+  const user = await listUserProviders().catch(() => []);
+  const userOptions = user
+    .filter((p) => p.enabled)
+    .flatMap((p) => p.models_cache.map((id) => ({ provider: p.providerKey, providerLabel: p.name, model: id, label: id })));
+  return [...results.flat(), ...userOptions];
 }
 
 export default async function AgentsKanbanPage() {
@@ -195,7 +203,11 @@ export default async function AgentsKanbanPage() {
         <OSMetric label="Error" value={cards.filter((card) => card.column === "error").length} hint="Last run failed" />
         <OSMetric label="Model options" value={modelOptions.length} hint="Configured providers only" />
       </div>
-      <AgentKanbanBoard initialCards={cards} providers={PROVIDERS} modelOptions={modelOptions} />
+      <AgentKanbanBoard
+        initialCards={cards}
+        providers={[...PROVIDERS.map((p) => ({ key: p.key as string, label: p.label })), ...(await listUserProviders().catch(() => [])).map((p) => ({ key: p.providerKey, label: p.name }))]}
+        modelOptions={modelOptions}
+      />
 
       <OSPanel className="mt-6">
         <h2 className="text-lg font-semibold text-neutral-50">Recent loop receipts</h2>

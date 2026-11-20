@@ -1,3 +1,4 @@
+import { resolveChannel } from "@/lib/notify/channels";
 import { send as sendTelegram } from "@/lib/providers/telegram";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
@@ -52,10 +53,11 @@ export async function sendCrinaReadyToPostPings(args: {
   campaignIds?: string[];
   baseUrl: string;
 }): Promise<{ configured: boolean; claimed: number; results: NotificationResult[] }> {
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!process.env.TELEGRAM_BOT_TOKEN || !chatId) {
+  const channel = await resolveChannel("telegram");
+  if (!channel) {
     return { configured: false, claimed: 0, results: [] };
   }
+  const chatId = channel.channelId;
 
   if (!isSupabaseConfigured()) {
     return { configured: true, claimed: 0, results: [] };
@@ -116,7 +118,7 @@ export async function sendCrinaReadyToPostPings(args: {
   for (const [campaignId, campaignItems] of grouped) {
     const campaign = campaignMap.get(campaignId) ?? null;
     const brand = brandMap.get(campaignItems[0]?.brand_id ?? "") ?? null;
-    const result = await sendTelegram(chatId, campaignMessage({ brand, campaign, items: campaignItems, baseUrl: args.baseUrl }));
+    const result = await sendTelegram(chatId, campaignMessage({ brand, campaign, items: campaignItems, baseUrl: args.baseUrl }), channel.token);
     results.push({
       campaign_id: campaignId,
       campaign_title: campaign?.title ?? "Ready to Post",

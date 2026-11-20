@@ -19,6 +19,7 @@ import { CONTENT_RUBRIC, HONEST_GRADER_PREAMBLE, VISUAL_RUBRIC } from "@/lib/mar
 import { generateMarketingImage } from "@/lib/providers/image-generation";
 import { jevCheck, jevLoop, type JevResult } from "@/lib/jev/jev";
 import { CALL_ESTIMATE, getBudgetStatus, limitMessage, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
+import { libraryContext } from "@/lib/learning/library";
 import { defaultVault, learningContext } from "@/lib/learning/vault";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -84,6 +85,10 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const vault = defaultVault(brand?.name);
   const textLearning = await learningContext(vault, { part: "text" });
   const visualLearning = await learningContext(vault, { part: "visual" });
+  // Learning library (ideas, links, images, documents Mihai added) read next to the Yes/Rework notes.
+  const library = await libraryContext(campaign.brand_id);
+  const textNotes = [textLearning.text, library].filter(Boolean).join("\n\n");
+  const visualNotes = [visualLearning.text, library].filter(Boolean).join("\n\n");
   const ownerIdea = String(idea.idea ?? campaign.objective ?? "");
   // P4a — contract-first (Karpathy III): the judge grades against the campaign's agreed goal, not just
   // the generic rubric. Uses existing campaign data; Codex can add explicit done-criteria templates.
@@ -189,7 +194,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: `Judge ${artifactLabel}`,
-        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualLearning.text : textLearning.text}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
+        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualNotes : textNotes}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
         outputSchema: judgeSchema,
         input: { brand, platform, [artifactLabel]: artifact, campaign_idea: idea, conversion_insights: conversion.insights },
         brainFiles: ["workflow-contract.md", "approval-rules.md", "grader-calibration.md"],
@@ -216,7 +221,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
           fallbackAgentName: "Content Creator Agent",
           fallbackRole: "Copy and Editorial",
           task: `Create ${plan.label} package`,
-          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish. Every field you return is PUBLIC copy readers will see: never put internal notes, approval caveats, questions for Mihai, "subject to confirmation" remarks or tracking instructions into it.\n\nMemory:\n${memoryText(memory)}\n\n${textLearning.text}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
+          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish. Every field you return is PUBLIC copy readers will see: never put internal notes, approval caveats, questions for Mihai, "subject to confirmation" remarks or tracking instructions into it.\n\nMemory:\n${memoryText(memory)}\n\n${textNotes}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
           outputSchema: plan.contentSchema,
           input: { brand, campaign_idea: idea, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -296,7 +301,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     if (contentLoop.champion) {
       const checked = await jevLoop<NativeDraft>(
         draft,
-        (candidate) => jevCheck({ kind: "text", idea: ownerIdea, brand, learning: textLearning.text, subject: candidate, plan: idea.plan }),
+        (candidate) => jevCheck({ kind: "text", idea: ownerIdea, brand, learning: textNotes, subject: candidate, plan: idea.plan }),
         async (candidate, doubts) => (await makeContent(doubts.map((doubt) => `Jev: ${doubt}`), candidate)).candidate
       );
       draft = checked.candidate;
@@ -368,7 +373,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
             fallbackAgentName: "Visual & Video Agent",
             fallbackRole: "Visual Concepts",
             task: `Concept a ${plan.label} visual`,
-            instructions: `Propose ONE visual concept + an image-generation prompt for this approved ${plan.label} post. Match the brand and the post's message. Brand-safe; no text in the image; no real-person likeness; no unapproved logos.\n\n${visualLearning.text}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
+            instructions: `Propose ONE visual concept + an image-generation prompt for this approved ${plan.label} post. Match the brand and the post's message. Brand-safe; no text in the image; no real-person likeness; no unapproved logos.\n\n${visualNotes}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
             outputSchema: visualSchema,
             input: { brand, platform, post: draft, previous: champion },
             brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -406,7 +411,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       if (visualChampion) {
         const checked = await jevLoop<VisualConcept>(
           visualChampion,
-          (candidate) => jevCheck({ kind: "visual", idea: ownerIdea, brand, learning: visualLearning.text, subject: { ...candidate, post: { title: draft.title, hook: draft.hook } }, plan: idea.plan }),
+          (candidate) => jevCheck({ kind: "visual", idea: ownerIdea, brand, learning: visualNotes, subject: { ...candidate, post: { title: draft.title, hook: draft.hook } }, plan: idea.plan }),
           async (candidate, doubts) => (await makeVisual(doubts.map((doubt) => `Jev: ${doubt}`), candidate)).candidate
         );
         visualChampion = checked.candidate;

@@ -1,5 +1,6 @@
 import { runHermesAgent, type HermesAgentCallOptions } from "@/lib/agents/hermes-client";
 import { chargeModelCall } from "@/lib/budget/model-budget";
+import { chatWithUserProvider, resolveUserProvider, USER_PROVIDER_PREFIX } from "@/lib/providers/user-providers";
 import { getProvider, isProviderKey } from "@/lib/providers/registry";
 import type { ModelProviderModule, ProviderChatOptions, ProviderChatResult, ProviderKey } from "@/lib/providers/types";
 import { failedChat, now } from "@/lib/providers/utils";
@@ -19,9 +20,30 @@ function isModelProvider(module: unknown): module is ModelProviderModule {
   return Boolean(module && typeof module === "object" && "chat" in module);
 }
 
+/** A UI-added provider: "custom:<id>", or an enabled UI provider of an env kind (it takes priority). */
+async function userProviderFor(provider: string) {
+  try {
+    return await resolveUserProvider(provider);
+  } catch {
+    return null; // no DB (local/tests) or no table yet: fall back to the env provider
+  }
+}
+
 export async function callModel(options: CallModelOptions): Promise<ProviderChatResult> {
   const provider = options.provider as ProviderKey;
   const model = options.model;
+
+  if (options.provider.startsWith(USER_PROVIDER_PREFIX) || ["openai", "deepseek", "anthropic"].includes(options.provider)) {
+    const user = await userProviderFor(options.provider);
+    if (user) {
+      const refused = await chargeModelCall(user.row.kind, options.agentId);
+      if (refused) return { ...failedChat(new Error(refused), now(), model, 429), rateLimited: true };
+      const out = await chatWithUserProvider(options.provider, model, options);
+      if (out) return out.result;
+    } else if (options.provider.startsWith(USER_PROVIDER_PREFIX)) {
+      return failedChat(new Error("This provider was removed or disabled in Settings. Pick another model for the agent."), now(), model);
+    }
+  }
 
   if (!isProviderKey(provider)) {
     return failedChat(new Error(`Unknown provider: ${options.provider}`), now(), model);

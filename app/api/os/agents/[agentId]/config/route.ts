@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { getAgentConfig, upsertAgentConfig } from "@/lib/agents/agent-config-store";
 import { getProvider, getProviderMeta, isProviderKey } from "@/lib/providers/registry";
+import { chatModels } from "@/lib/providers/compat";
+import { refreshUserProviderModels, resolveUserProvider, USER_PROVIDER_PREFIX } from "@/lib/providers/user-providers";
 import type { ModelProviderModule } from "@/lib/providers/types";
 
 export const runtime = "nodejs";
@@ -11,13 +13,20 @@ function isModelProvider(module: unknown): module is ModelProviderModule {
 }
 
 async function validateProviderModel(provider: string, model: string) {
+  if (provider.startsWith(USER_PROVIDER_PREFIX)) {
+    const user = await resolveUserProvider(provider).catch(() => null);
+    if (!user) return "That provider was removed or is disabled in Settings.";
+    const models = await refreshUserProviderModels(user.row.id).catch(() => [] as string[]);
+    return models.includes(model) ? null : `Model ${model} was not found for ${user.row.name}.`;
+  }
   if (!isProviderKey(provider)) return "Unknown provider.";
   const meta = getProviderMeta(provider);
   if (meta.kind !== "model") return "Agent model provider must be a model provider.";
   const providerModule = getProvider(provider);
   if (!isModelProvider(providerModule)) return "Provider cannot run model calls.";
   const models = await providerModule.listModels();
-  if (!models.models.some((item) => item.id === model)) return `Model ${model} was not found for provider ${provider}.`;
+  const ids = models.models.map((item) => item.id);
+  if (!(provider === "hermes" ? ids : chatModels(ids)).includes(model)) return `Model ${model} was not found for provider ${provider}.`;
   return null;
 }
 

@@ -1,11 +1,14 @@
 import { ModelBudgetPanel } from "@/components/os/model-budget-panel";
-import { ModelsControlCenter } from "@/components/os/models-control-center";
+import { ChannelsManager } from "@/components/os/channels-manager";
+import { ProvidersManager } from "@/components/os/providers-manager";
+import { listChannels } from "@/lib/notify/channels";
+import { listUserProviders } from "@/lib/providers/user-providers";
 import { CALL_ESTIMATE, getBudgetStatus } from "@/lib/budget/model-budget";
 import { peekJevStatus } from "@/lib/jev/status";
 import { OSBadge, OSPanel } from "@/components/os/ui";
 import { SocialConnections } from "@/components/os/social-connections";
 import { PageHeading } from "@/components/os/ui";
-import { PROVIDERS } from "@/lib/providers";
+import { PROVIDERS, isConfigured } from "@/lib/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +35,8 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
     <>
       <PageHeading
         eyebrow="Agentic OS"
-        title="Settings · Models"
-        subtitle="Provider control center. Status, model lists, and test calls are live server-side checks; secrets remain in environment variables only."
+        title="Settings"
+        subtitle="AI providers, notifications, the model budget and social accounts. Keys you add here are stored encrypted and never shown again."
       />
       {await (async () => {
         const jev = peekJevStatus(); // never blocks the page
@@ -54,8 +57,15 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         initial={await getBudgetStatus()}
         campaignEstimate={CALL_ESTIMATE.plan + CALL_ESTIMATE.prepare + CALL_ESTIMATE.perPlatform + CALL_ESTIMATE.runOverhead + 2 * CALL_ESTIMATE.rework}
       />
-      {/* Hermes (the "brain" card) is not a provider Mihai adds keys for: hidden here, still an agent option. */}
-      <ModelsControlCenter providers={PROVIDERS.filter((provider) => provider.key !== "hermes")} />
+      {/* Hermes (the "brain" card) is not a provider Mihai adds keys for: not listed here, still an agent option. */}
+      <ProvidersManager
+        initialProviders={await listUserProviders().catch(() => [])}
+        env={PROVIDERS.filter((p) => p.kind === "model" && p.key !== "hermes").map((p) => ({ key: p.key, label: p.label, configured: isConfigured(p.key), defaultModel: p.defaultModel ?? null }))}
+      />
+      <ChannelsManager
+        initialChannels={await listChannels().catch(() => [])}
+        env={{ telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID), slack: Boolean(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID) }}
+      />
       <SocialConnections oauthStatus={oauthStatus} />
     </>
   );
