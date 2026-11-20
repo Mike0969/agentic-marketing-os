@@ -38,3 +38,12 @@ test("job outcome lines for the Telegram/Slack alert", () => {
   assert.equal(runOutcome(200, { posts: [{ platform: "Instagram", title: "x", blocked: true, stop: "error" }] }).state, "error");
   assert.equal(runOutcome(200, { posts: [] }).state, "error");
 });
+
+test("brand analysis keeps only new text for known fields (lists joined one per line)", async () => {
+  const { usefulProposals } = await import("../lib/marketing/brand-analysis.ts");
+  const out = usefulProposals(
+    { positioning: "Same text", tone_of_voice: "old" },
+    { positioning: "Same text", tone_of_voice: "Bold, clear", pillars: ["Community", "Mobility"], website: "x", unknown_field: "y", offers: "  " }
+  );
+  assert.deepEqual(out, [{ field: "tone_of_voice", value: "Bold, clear" }, { field: "pillars", value: "Community\nMobility" }]);
+});

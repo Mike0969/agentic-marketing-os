@@ -9,23 +9,7 @@ import type { Brand } from "@/lib/types";
 
 const contextKeys = new Map(BRAND_CONTEXT_FIELDS.map((field) => [field.keys[0], field.keys]));
 
-type BrandAnalysis = {
-  positioningDiagnosis: string;
-  audienceGaps: string[];
-  contentPillarRecommendations: string[];
-  seoOpportunities: string[];
-  ctaRecommendations: string[];
-  approvalRisks: string[];
-  nextActions: string[];
-};
 
-type AnalysisResponse = {
-  provider: string;
-  model?: string | null;
-  fallback: boolean;
-  output: BrandAnalysis;
-  error?: string | null;
-};
 
 const editableFields: Array<{ key: keyof Brand; label: string; type: "input" | "textarea"; hint?: string }> = [
   { key: "name", label: "Brand name", type: "input" },
@@ -89,7 +73,6 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
 
   function chooseBrand(id: string) {
     const brand = items.find((item) => item.id === id) ?? null;
@@ -97,7 +80,6 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
     setDraft(brand);
     setDecisions({});
     setMessage(null);
-    setAnalysis(null);
   }
 
   function applyProposal(field: string, value: string) {
@@ -154,21 +136,28 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
     }
   }
 
+  // Analyze: Crina proposes improved brand fields in the background; the proposals appear as
+  // "Proposed — use / dismiss" boxes. Mihai can leave the page; Telegram + Slack tell him when ready.
   async function analyzeBrand() {
     if (!draft) return;
+    const brandId = draft.id;
     setAnalyzing(true);
-    setAnalysis(null);
-    setMessage(null);
-
+    setMessage("Crina is analysing the brand and its materials (about a minute). You can leave this page; I'll notify you when the proposals are ready.");
     try {
-      const response = await fetch(`/api/marketing/brands/${draft.id}/analyze`, { method: "POST" });
-      const payload = (await response.json()) as AnalysisResponse & { error?: string };
-
-      if (!response.ok || !payload.output) {
-        throw new Error(payload.error ?? "Brand analysis failed.");
+      const response = await fetch(`/api/marketing/brands/${brandId}/analyze`, { method: "POST" });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The analysis could not start.");
+      for (let i = 0; i < 90; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const res = await fetch(`/api/marketing/brands/${brandId}/analyze`);
+        const body = (await res.json().catch(() => ({}))) as { status?: { state?: string; summary?: string } | null };
+        if (body.status && body.status.state !== "running") {
+          setMessage(body.status.summary ?? "Done.");
+          if (body.status.state === "done") window.location.reload();
+          return;
+        }
       }
-
-      setAnalysis(payload);
+      setMessage("Still working. You'll be notified when the proposals are ready.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Brand analysis failed.");
     } finally {
@@ -233,7 +222,7 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-semibold text-neutral-50">{draft.name}</h2>
-                <OSBadge tone="info">Supabase-backed</OSBadge>
+                <OSBadge tone="info">Saved on the NexRide server</OSBadge>
               </div>
               <p className="mt-2 text-sm text-neutral-400">Edit the context Crina and the specialist agents use for plans, drafts, SEO, approvals, and CTAs.</p>
             </div>
@@ -251,7 +240,7 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
 
           {message ? (
             <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-950 p-3 text-sm text-neutral-300">
-              <Check className="mr-2 inline h-4 w-4 text-emerald-400" />
+              {analyzing ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin text-cyan-300" /> : <Check className="mr-2 inline h-4 w-4 text-emerald-400" />}
               {message}
             </div>
           ) : null}
@@ -328,27 +317,6 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
           </div>
         </OSPanel>
 
-        {analysis ? (
-          <OSPanel>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-semibold text-neutral-100">Crina brand analysis</h3>
-              <div className="flex gap-2">
-                <OSBadge tone={analysis.fallback ? "warn" : "ok"}>{analysis.fallback ? "FALLBACK" : analysis.provider}</OSBadge>
-                {analysis.error ? <OSBadge tone="danger">Error logged</OSBadge> : null}
-              </div>
-            </div>
-            <div className="mt-2 text-xs text-neutral-600">{analysis.model ? `${analysis.provider}/${analysis.model}` : analysis.provider}</div>
-            <p className="mt-4 text-sm leading-6 text-neutral-300">{analysis.output.positioningDiagnosis}</p>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <ListBlock label="Audience gaps" items={analysis.output.audienceGaps} />
-              <ListBlock label="Pillar recommendations" items={analysis.output.contentPillarRecommendations} />
-              <ListBlock label="SEO opportunities" items={analysis.output.seoOpportunities} />
-              <ListBlock label="CTA recommendations" items={analysis.output.ctaRecommendations} />
-              <ListBlock label="Approval risks" items={analysis.output.approvalRisks} />
-              <ListBlock label="Next actions" items={analysis.output.nextActions} />
-            </div>
-          </OSPanel>
-        ) : null}
       </div>
     </div>
   );

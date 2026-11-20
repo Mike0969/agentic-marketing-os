@@ -116,12 +116,12 @@ export async function removeLearningItem(id: string) {
 const TYPE_LABEL: Record<ItemType, string> = { image: "image", idea: "idea", podcast: "podcast", youtube: "YouTube", document: "document", link: "link" };
 
 /** Pure: the prompt block from items (used by libraryContext; unit-tested). Max 10 items, excerpts ≤ 1,500 chars. */
-export function libraryText(items: Array<Pick<LearningItem, "item_type" | "title" | "tags" | "url" | "notes">>, limit = LIBRARY_MAX_ITEMS) {
+export function libraryText(items: Array<Pick<LearningItem, "item_type" | "title" | "tags" | "url" | "notes">>, limit = LIBRARY_MAX_ITEMS, excerpt = LIBRARY_EXCERPT_CHARS) {
   if (!items.length) return "";
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
   return [
     "Reference materials from Mihai (use them; do not copy them word for word; never invent what they do not say):",
-    ...items.slice(0, limit).map((i) => `- [${TYPE_LABEL[i.item_type]}] ${i.title}${i.tags.length ? ` (${i.tags.join(", ")})` : ""}${i.notes ? `: ${clip(i.notes.replace(/\s+/g, " "), LIBRARY_EXCERPT_CHARS)}` : ""}${i.url ? ` <${i.url}>` : ""}`)
+    ...items.slice(0, limit).map((i) => `- [${TYPE_LABEL[i.item_type]}] ${i.title}${i.tags.length ? ` (${i.tags.join(", ")})` : ""}${i.notes ? `: ${clip(i.notes.replace(/\s+/g, " "), excerpt)}` : ""}${i.url ? ` <${i.url}>` : ""}`)
   ].join("\n");
 }
 
@@ -158,12 +158,12 @@ export function rankLibraryItems(items: Candidate[], query: string, brandId: str
  * only), the most relevant to `query` (the campaign's idea), excerpts capped at 1,500 chars. When `use`
  * is given, records which items this run read (Library → "What the last runs read"). Never throws.
  */
-export async function libraryContext(brandId: string | null | undefined, query = "", use?: { part: "plan" | "run"; campaignId?: string | null }): Promise<string> {
+export async function libraryContext(brandId: string | null | undefined, query = "", use?: { part: "plan" | "run"; campaignId?: string | null }, opts: { limit?: number; excerpt?: number } = {}): Promise<string> {
   try {
     let q = db().from("learning_items").select("id,item_type,title,tags,brand_id,created_at").eq("used_by_agents", true).order("created_at", { ascending: false }).limit(5000);
     q = brandId ? q.or(`brand_id.is.null,brand_id.eq.${brandId}`) : q.is("brand_id", null);
     const { data } = await q;
-    const picked = rankLibraryItems((data ?? []) as Candidate[], query, brandId);
+    const picked = rankLibraryItems((data ?? []) as Candidate[], query, brandId, opts.limit ?? LIBRARY_MAX_ITEMS);
     if (!picked.length) return "";
     const { data: full } = await db().from("learning_items").select("id,item_type,title,tags,url,notes").in("id", picked.map((p) => p.id));
     const byId = new Map(((full ?? []) as LearningItem[]).map((f) => [f.id, f]));
@@ -175,7 +175,7 @@ export async function libraryContext(brandId: string | null | undefined, query =
         .insert(ordered.map((it, rank) => ({ run_id: runId, item_id: it.id, campaign_id: use.campaignId ?? null, part: use.part, rank })))
         .then(() => undefined, () => undefined);
     }
-    return libraryText(ordered);
+    return libraryText(ordered, opts.limit ?? LIBRARY_MAX_ITEMS, opts.excerpt ?? LIBRARY_EXCERPT_CHARS);
   } catch {
     return "";
   }
