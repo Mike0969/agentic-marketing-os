@@ -10,7 +10,7 @@ import { runConversionAnalysis } from "@/lib/marketing/conversion-agent";
 import { defaultRegion, pickScheduledAt } from "@/lib/marketing/auto-schedule";
 import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
 import { getFeedbackMemoryContext, type FeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
-import { runJudgedLoop, type JudgeResult, type LoopReceipt } from "@/lib/marketing/loop-runner";
+import { runJudgedLoop, type JudgeResult, type LoopReceipt, type LoopResult } from "@/lib/marketing/loop-runner";
 import { composeCarouselSlide } from "@/lib/marketing/carousel-composer";
 import { getPlatformPlan, type NativeDraft } from "@/lib/marketing/platform-generation";
 import { createProjectAsset, findAssetCandidates, recordAssetUsage, resolveProjectSlug } from "@/lib/marketing/project-assets";
@@ -35,6 +35,7 @@ const judgeSchema = {
   score: 0,
   dimension_scores: { brand_fit: 0, audience_fit: 0, platform_fit: 0, clarity: 0, proof: 0, cta: 0, non_generic: 0, safety: 0 },
   safety_pass: true,
+  flagged_sentences: ["string"],
   judge_notes: "string",
   improvements: ["specific, concrete fix for the maker"]
 };
@@ -63,10 +64,26 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   // Optional { platform }: add-ONE-platform mode (generate a single native variant without
   // regenerating the others). No body = full-campaign run.
+  // { note }: "Rework with my note" (Mihai's instruction, followed by the makers and the judge).
+  // { approvedDraft }: "Edit and approve": Mihai's edited text for ONE platform, used as the post (no text
+  // loop, no text safety check: he approved it); the visual and his normal Review still follow.
   let requestedPlatform: string | null = null;
+  let ownerNote = "";
+  let approvedDraft: NativeDraft | null = null;
   try {
-    const body = (await request.json()) as { platform?: unknown };
+    const body = (await request.json()) as { platform?: unknown; note?: unknown; approvedDraft?: unknown };
     if (typeof body?.platform === "string" && body.platform.trim()) requestedPlatform = body.platform.trim();
+    if (typeof body?.note === "string") ownerNote = body.note.trim().slice(0, 1000);
+    const d = body?.approvedDraft as Record<string, unknown> | undefined;
+    if (d && typeof d === "object" && typeof d.body === "string" && d.body.trim() && requestedPlatform) {
+      approvedDraft = {
+        title: String(d.title ?? "").trim().slice(0, 200) || requestedPlatform,
+        hook: String(d.hook ?? "").trim().slice(0, 500),
+        body: d.body.trim().slice(0, 5000),
+        cta: String(d.cta ?? "").trim().slice(0, 300),
+        hashtags: Array.isArray(d.hashtags) ? d.hashtags.map(String).map((h) => h.trim()).filter(Boolean).slice(0, 30) : []
+      };
+    }
   } catch {
     // no JSON body -> full run
   }
@@ -92,8 +109,9 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     [campaign.title, campaign.objective, idea.idea, idea.angle, Array.isArray(idea.platforms) ? idea.platforms.join(" ") : ""].map((x) => (typeof x === "string" ? x : "")).join(" "),
     { part: "run", campaignId: campaign.id }
   );
-  const textNotes = [textLearning.text, library].filter(Boolean).join("\n\n");
-  const visualNotes = [visualLearning.text, library].filter(Boolean).join("\n\n");
+  const noteText = ownerNote ? `Mihai's note for this rework (follow it exactly): ${ownerNote}` : "";
+  const textNotes = [noteText, textLearning.text, library].filter(Boolean).join("\n\n");
+  const visualNotes = [noteText, visualLearning.text, library].filter(Boolean).join("\n\n");
   const ownerIdea = String(idea.idea ?? campaign.objective ?? "");
   // P4a — contract-first (Karpathy III): the judge grades against the campaign's agreed goal, not just
   // the generic rubric. Uses existing campaign data; Codex can add explicit done-criteria templates.
@@ -121,9 +139,9 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
 
   await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running", ...(idea.flow === "simple" ? { idea_brief: { ...idea, blocked: null } } : {}) }).eq("id", id);
   // Simple flow: a safety stop is shown to Mihai on Review (with the reason), not left looking like "agents working".
-  const markBlocked = async (reason: string, platform: string, kind: "safety" | "failed" = "safety") => {
+  const markBlocked = async (reason: string, platform: string, kind: "safety" | "failed" = "safety", extra: Record<string, unknown> = {}) => {
     if (idea.flow !== "simple") return;
-    await supabase.from("campaigns").update({ idea_brief: { ...idea, blocked: { kind, reason, platform, at: new Date().toISOString() } } }).eq("id", id);
+    await supabase.from("campaigns").update({ idea_brief: { ...idea, blocked: { kind, reason, platform, at: new Date().toISOString(), ...extra } } }).eq("id", id);
   };
 
   // One receipt writer for the whole run; content_item_id is backfilled after each item is created.
@@ -192,6 +210,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       ? `\n\nIMPORTANT: You are writing copy AROUND an existing approved visual (do NOT describe a new image). Asset: "${selectedAsset.title}"${selectedAsset.description ? ` — ${selectedAsset.description}` : ""}${selectedAsset.content_theme ? ` (theme: ${selectedAsset.content_theme})` : ""}. Make the hook, caption, and CTA fit THIS specific visual.`
       : "";
 
+    // The last judged artifact per kind + the sentences the judge flagged (shown on Review when blocked).
+    const lastJudged: Record<string, { artifact: unknown; flagged: string[] }> = {};
     // Crina judges a candidate against a rubric -> a numeric, bounded acceptance check.
     const judgeWith = async (rubric: string, artifactLabel: string, artifact: unknown): Promise<JudgeResult> => {
       const review = await runMarketingAgentModel({
@@ -199,7 +219,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: `Judge ${artifactLabel}`,
-        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualNotes : textNotes}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
+        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), flagged_sentences (the EXACT sentences copied from the ${artifactLabel} that are unsafe or can't be verified; empty when none), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualNotes : textNotes}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
         outputSchema: judgeSchema,
         input: { brand, platform, [artifactLabel]: artifact, campaign_idea: idea, conversion_insights: conversion.insights },
         brainFiles: ["workflow-contract.md", "approval-rules.md", "grader-calibration.md"],
@@ -207,6 +227,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         routeOrigin: "api.marketing.campaigns.run"
       });
       const j = (review.json ?? {}) as Record<string, unknown>;
+      lastJudged[artifactLabel] = { artifact, flagged: Array.isArray(j.flagged_sentences) ? j.flagged_sentences.map(String).filter((x) => x.trim()).slice(0, 10) : [] };
       return {
         score: clampScore(j.score),
         safetyPass: !(j.safety_pass === false),
@@ -249,7 +270,10 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       };
 
     // 1) Content loop — Content Creator makes a PLATFORM-NATIVE package, Crina scores, keep champion.
-    const contentLoop = await runJudgedLoop<NativeDraft>({
+    const ownerApproved = approvedDraft && requestedPlatform && platform.toLowerCase() === requestedPlatform.toLowerCase() ? approvedDraft : null;
+    const contentLoop: LoopResult<NativeDraft> = ownerApproved
+      ? { loopId: `owner-${Date.now()}`, champion: ownerApproved, championScore: 0, rounds: 0, stopReason: "pass", passed: true, lastJudgeNotes: "Text edited and approved by Mihai over the safety check.", lastScore: 0, fallbackUsed: false, provider: "mihai", model: null }
+      : await runJudgedLoop<NativeDraft>({
       loopType: "content",
       agentId: "agent-content-creator",
       inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
@@ -264,7 +288,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     if (contentLoop.stopReason === "safety") {
       // A safety refusal is the gate working, not a failure: record it as "blocked" with a plain reason.
       const reason = safetyBlockReason("content", contentLoop.lastScore, brand, contentLoop.lastJudgeNotes);
-      await markBlocked(reason, platform);
+      // Keep the blocked draft and the flagged sentences: Review shows them with "Rework with my note" / "Edit and approve".
+      await markBlocked(reason, platform, "safety", { draft: lastJudged.post?.artifact ?? null, flagged: lastJudged.post?.flagged ?? [], judge_notes: contentLoop.lastJudgeNotes, score: contentLoop.lastScore });
       await recordAgentRun({
         agentName: "Campaign Run",
         agentId: "agent-crina",
@@ -303,7 +328,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     // Jev checks the text before it can reach Mihai: below 0.85 -> automatic rework (max 2), then "Jev doubts".
     let textJev: JevResult | null = null;
     let textDoubts: string | null = null;
-    if (contentLoop.champion) {
+    if (contentLoop.champion && !ownerApproved) {
       const checked = await jevLoop<NativeDraft>(
         draft,
         (candidate) => jevCheck({ kind: "text", idea: ownerIdea, brand, learning: textNotes, subject: candidate, plan: idea.plan }),
@@ -315,7 +340,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     }
 
     const contentType = plan.contentType;
-    const reviewChip = `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
+    const reviewChip = ownerApproved ? "Text edited and approved by Mihai" : `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
 
     // Insert at a NON-postable visual stage; only promoted to the human gate after the Visual loop
     // clears safety, so a visual safety-block never reaches Ready to Post.

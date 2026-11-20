@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowRight, Check, Loader2, Play, RotateCcw } from "lucide-react";
-import { OSBadge, OSButton, OSPanel, OSTextarea } from "@/components/os/ui";
+import { OSBadge, OSButton, OSInput, OSPanel, OSSelect, OSTextarea } from "@/components/os/ui";
 import { startAgents } from "@/components/os/start-agents";
 import type { ContentItem } from "@/lib/types";
 
 type Plan = { title: string; summary: string; objective: string; key_message: string; platforms: string[]; cta: string; target_audience: string; agent_tasks?: Record<string, string> };
 type Jev = { ran: boolean; score: number | null; doubts: string | null; note: string | null } | null;
 type Choice = { decision: "yes" | "rework" | null; reason: string };
+type Draft = { title?: string; hook?: string; body?: string; cta?: string; hashtags?: string[] };
+type BlockedInfo = { reason?: string; kind?: string; platform?: string; draft?: Draft | null; flagged?: string[]; judge_notes?: string; score?: number };
 
 export function CampaignReview(props: {
   campaignId: string;
@@ -21,6 +23,8 @@ export function CampaignReview(props: {
   support: { seo: string | null; analytics: string | null };
   blocked: string | null;
   blockedKind: "safety" | "failed";
+  blockedInfo?: BlockedInfo | null;
+  brand?: { id: string | null; options: Array<{ id: string; name: string }>; canChange: boolean };
   pending: ContentItem[];
   others: ContentItem[];
 }) {
@@ -69,11 +73,54 @@ export function CampaignReview(props: {
     if (ok) router.refresh();
   }
 
+  async function changeBrand(brandId: string) {
+    setBusy("brand");
+    setMessage(null);
+    const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/brand`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brandId }) });
+    const body = (await res.json().catch(() => ({}))) as { brand?: string; error?: string };
+    setBusy(null);
+    if (!res.ok) return setMessage(body.error ?? "Could not change the brand.");
+    setMessage(`This campaign is now for ${body.brand}. Press "Run the agents again" to remake its posts for it.`);
+    router.refresh();
+  }
+
+  async function runWith(payload: Record<string, unknown>, label: string) {
+    setBusy("agents");
+    setMessage(label);
+    const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
+    setBusy(null);
+    if (!res.ok) return setMessage(body.error ?? "The run failed.");
+    setMessage((body.posts ?? []).map((p) => `${p.platform}: ${p.blocked ? "blocked again by the safety check" : `ready for your review: ${p.title}`}`).join(" · ") || "No posts came back.");
+    router.refresh();
+  }
+
   const allDone = !props.pending.length && props.others.length > 0 && props.others.every((item) => item.approval_status === "approved");
 
   return (
     <div className="space-y-5">
       {message ? <div className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-200">{message}</div> : null}
+
+      {props.brand?.options.length ? (
+        <OSPanel className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-medium text-neutral-200">Brand</span>
+          <OSSelect
+            value={props.brand.id ?? ""}
+            disabled={!props.brand.canChange || busy !== null}
+            onChange={(e) => {
+              const next = props.brand?.options.find((b) => b.id === e.target.value);
+              if (next && window.confirm(`Move this campaign to ${next.name}?`)) void changeBrand(next.id);
+            }}
+            aria-label="Campaign brand"
+            className="w-72"
+          >
+            {props.brand.options.map((b) => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </OSSelect>
+          <span className="text-xs text-neutral-500">{props.brand.canChange ? "You can change it until a post is published." : "A post is published, so the brand is fixed."}</span>
+        </OSPanel>
+      ) : null}
 
       <OSPanel>
         <div className="flex flex-wrap items-center gap-2">
@@ -115,8 +162,11 @@ export function CampaignReview(props: {
       </OSPanel>
 
       {props.blocked && !props.pending.length ? (
+        props.blockedKind === "safety" && props.blockedInfo?.draft ? (
+          <SafetyBlock info={props.blockedInfo} busy={busy !== null} running={busy === "agents"} onRework={(note) => runWith({ platform: props.blockedInfo?.platform, note }, "Crina's team is reworking the post with your note (a few minutes).")} onApprove={(draft) => runWith({ platform: props.blockedInfo?.platform, approvedDraft: draft }, "Your text is approved; the visual agent is making the image (a few minutes).")} onRunAgain={runAgainAfterBlock} />
+        ) : (
         <OSPanel className="border-amber-500/40">
-          <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : "Stopped by the safety check"}</h2>
+          <h2 className="text-lg font-semibold text-amber-100">{props.blockedKind === "failed" ? "The agents could not finish" : "Blocked by safety check"}</h2>
           <p className="mt-2 text-sm leading-6 text-amber-100">{props.blocked}</p>
           <p className="mt-1 text-sm text-neutral-400">{props.blockedKind === "failed" ? "Nothing was made. Try again when the model is available." : "Nothing was packaged or posted. Fix the cause, then run the agents again."}</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -129,6 +179,7 @@ export function CampaignReview(props: {
             </OSButton>
           </div>
         </OSPanel>
+        )
       ) : null}
 
       {props.pending.map((item) => (
@@ -252,6 +303,98 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
         {text.decision === "yes" && visual.decision === "yes" ? "Yes on both: next" : "Send"}
       </OSButton>
+    </OSPanel>
+  );
+}
+
+/** Highlights the flagged sentences inside a text. */
+function Highlighted({ text, flagged }: { text: string; flagged: string[] }) {
+  const parts: Array<{ t: string; hit: boolean }> = [];
+  let rest = text;
+  const needles = flagged.map((f) => f.trim()).filter((f) => f.length > 3);
+  while (rest) {
+    let best: { at: number; len: number } | null = null;
+    for (const n of needles) {
+      const at = rest.indexOf(n);
+      if (at >= 0 && (!best || at < best.at)) best = { at, len: n.length };
+    }
+    if (!best) {
+      parts.push({ t: rest, hit: false });
+      break;
+    }
+    if (best.at) parts.push({ t: rest.slice(0, best.at), hit: false });
+    parts.push({ t: rest.slice(best.at, best.at + best.len), hit: true });
+    rest = rest.slice(best.at + best.len);
+  }
+  return <>{parts.map((p, i) => (p.hit ? <mark key={i} className="rounded bg-amber-400/30 px-0.5 text-amber-50">{p.t}</mark> : <span key={i}>{p.t}</span>))}</>;
+}
+
+function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: { info: BlockedInfo; busy: boolean; running: boolean; onRework: (note: string) => void; onApprove: (draft: Draft) => void; onRunAgain: () => void }) {
+  const d = info.draft ?? {};
+  const flagged = info.flagged ?? [];
+  const [mode, setMode] = useState<"none" | "rework" | "edit">("none");
+  const [note, setNote] = useState("");
+  const [edit, setEdit] = useState({ title: d.title ?? "", hook: d.hook ?? "", body: d.body ?? "", cta: d.cta ?? "", hashtags: (d.hashtags ?? []).join(" ") });
+  return (
+    <OSPanel className="border-amber-500/40">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold text-amber-100">Blocked by safety check</h2>
+        {info.platform ? <OSBadge tone="off">{info.platform}</OSBadge> : null}
+        {typeof info.score === "number" ? <OSBadge tone="warn">{info.score}/100</OSBadge> : null}
+      </div>
+      {info.judge_notes ? <p className="mt-2 text-sm leading-6 text-amber-100">Reviewer: {info.judge_notes}</p> : null}
+      {flagged.length ? (
+        <div className="mt-3">
+          <div className="text-sm font-medium text-neutral-200">Flagged sentence{flagged.length > 1 ? "s" : ""}:</div>
+          <ul className="mt-1 space-y-1">
+            {flagged.map((f, i) => (
+              <li key={i} className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-50">“{f}”</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-neutral-400">The reviewer did not point to a single sentence; its note above says why.</p>
+      )}
+      <div className="mt-3 rounded-md border border-neutral-800 bg-neutral-950/60 p-3 text-sm leading-6 text-neutral-300">
+        <div className="text-xs uppercase tracking-wider text-neutral-500">The blocked draft (not posted)</div>
+        {d.title ? <div className="mt-1 font-medium text-neutral-100"><Highlighted text={d.title} flagged={flagged} /></div> : null}
+        {d.hook ? <p className="mt-1"><Highlighted text={d.hook} flagged={flagged} /></p> : null}
+        {d.body ? <p className="mt-1 whitespace-pre-wrap"><Highlighted text={d.body} flagged={flagged} /></p> : null}
+        {d.cta ? <p className="mt-1"><span className="text-neutral-500">CTA:</span> <Highlighted text={d.cta} flagged={flagged} /></p> : null}
+        {d.hashtags?.length ? <p className="mt-1 text-neutral-500">{d.hashtags.join(" ")}</p> : null}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <OSButton variant={mode === "rework" ? "primary" : "secondary"} onClick={() => setMode(mode === "rework" ? "none" : "rework")} disabled={busy}>
+          <RotateCcw className="h-4 w-4" /> Rework with my note
+        </OSButton>
+        <OSButton variant={mode === "edit" ? "primary" : "secondary"} onClick={() => setMode(mode === "edit" ? "none" : "edit")} disabled={busy}>
+          <Check className="h-4 w-4" /> Edit and approve
+        </OSButton>
+        <OSButton variant="secondary" onClick={onRunAgain} disabled={busy}>
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Run the agents again
+        </OSButton>
+      </div>
+      {mode === "rework" ? (
+        <div className="mt-3 space-y-2">
+          <OSTextarea value={note} onChange={(e) => setNote(e.target.value)} placeholder='e.g. "Remove the 30% claim; say early riders get priority instead."' aria-label="Your note for the rework" rows={3} />
+          <OSButton onClick={() => onRework(note.trim())} disabled={busy || !note.trim()}>
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Send the rework
+          </OSButton>
+        </div>
+      ) : null}
+      {mode === "edit" ? (
+        <div className="mt-3 grid gap-2">
+          <OSInput value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} aria-label="Title" placeholder="Title" />
+          <OSInput value={edit.hook} onChange={(e) => setEdit({ ...edit, hook: e.target.value })} aria-label="Hook" placeholder="Hook" />
+          <OSTextarea value={edit.body} onChange={(e) => setEdit({ ...edit, body: e.target.value })} aria-label="Text" rows={8} />
+          <OSInput value={edit.cta} onChange={(e) => setEdit({ ...edit, cta: e.target.value })} aria-label="CTA" placeholder="CTA" />
+          <OSInput value={edit.hashtags} onChange={(e) => setEdit({ ...edit, hashtags: e.target.value })} aria-label="Hashtags" placeholder="#hashtags" />
+          <p className="text-xs text-neutral-500">Approving sends your text on without the safety check (you are the reviewer). The visual agent then makes the image and the post comes back here for your final Yes.</p>
+          <OSButton onClick={() => onApprove({ ...edit, hashtags: edit.hashtags.split(/\s+/).filter(Boolean) })} disabled={busy || !edit.body.trim()}>
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve my edited text
+          </OSButton>
+        </div>
+      ) : null}
     </OSPanel>
   );
 }

@@ -70,6 +70,11 @@ export function NewCampaignFlow({ brandName, brandId = null }: { brandName: stri
     <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
       <OSPanel>
         <form onSubmit={submit} className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-cyan-500/30 bg-cyan-500/5 px-3 py-2 text-sm">
+            <span className="text-neutral-400">Brand:</span>
+            <span className="font-semibold text-neutral-50" data-testid="new-campaign-brand">{brandName ?? "none"}</span>
+            <span className="text-xs text-neutral-500">(change it with the Brand menu at the top)</span>
+          </div>
           <OSField label="Your idea" hint={`Write it the way you would tell a person. Crina plans the campaign for ${brandName ?? "your brand"}.`}>
             <OSTextarea
               value={idea}

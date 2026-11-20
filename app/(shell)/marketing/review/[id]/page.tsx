@@ -27,6 +27,12 @@ export default async function CampaignReviewPage({ params }: { params: Promise<{
         support={{ seo: summaryOf(brief.seo), analytics: summaryOf(brief.analytics) }}
         blocked={(brief.blocked as { reason?: string } | null)?.reason ?? null}
         blockedKind={(brief.blocked as { kind?: string } | null)?.kind === "failed" ? "failed" : "safety"}
+        blockedInfo={(brief.blocked ?? null) as never}
+        brand={{
+          id: campaign.brand_id,
+          options: data.brands.map((b) => ({ id: b.id, name: b.name })),
+          canChange: !posts.some((p) => p.published_at || p.posting_status === "processing" || p.posting_status === "published")
+        }}
         pending={posts.filter((item) => item.approval_status === "pending")}
         others={posts.filter((item) => item.approval_status !== "pending")}
       />
