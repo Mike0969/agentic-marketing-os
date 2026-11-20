@@ -68,7 +68,7 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
       />
       <ChannelsManager
         initialChannels={await listChannels().catch(() => [])}
-        env={{ telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID), slack: Boolean(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID) }}
+        env={{ telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID), slack: Boolean(process.env.SLACK_BOT_TOKEN && process.env.SLACK_CHANNEL_ID), slackDm: /^D/.test(process.env.SLACK_CHANNEL_ID?.trim() ?? "") }}
       />
       <SocialConnections oauthStatus={oauthStatus} />
       <SocialAppKeys

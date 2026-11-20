@@ -11,7 +11,7 @@ type Channel = {
 
 const ROWS = [
   { kind: "telegram" as const, label: "Telegram", tokenLabel: "Bot token", channelLabel: "Chat id", channelHint: "123456789" },
-  { kind: "slack" as const, label: "Slack", tokenLabel: "Bot token (xoxb-…)", channelLabel: "Channel id", channelHint: "C0123456789" }
+  { kind: "slack" as const, label: "Slack", tokenLabel: "Bot token (xoxb-…)", channelLabel: "Channel or DM id", channelHint: "C… or D…" }
 ];
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -21,7 +21,7 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export function ChannelsManager({ initialChannels, env }: { initialChannels: Channel[]; env: { telegram: boolean; slack: boolean } }) {
+export function ChannelsManager({ initialChannels, env }: { initialChannels: Channel[]; env: { telegram: boolean; slack: boolean; slackDm?: boolean } }) {
   const [channels, setChannels] = useState(initialChannels);
   const [busy, setBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<Record<string, { ok: boolean; text: string }>>({});
@@ -49,7 +49,12 @@ export function ChannelsManager({ initialChannels, env }: { initialChannels: Cha
           const ui = channels.filter((c) => c.kind === row.kind).sort((a, b) => Number(b.enabled) - Number(a.enabled))[0];
           const fromEnv = env[row.kind];
           const isSet = Boolean(ui) || fromEnv;
-          const line = ui ? `…${ui.token_last4} · ${row.channelLabel.toLowerCase()} ${ui.channel_id} · set in Settings` : fromEnv ? "from server environment" : "not set";
+          const dm = (id: string) => (row.kind === "slack" && /^D/.test(id) ? " · direct message" : "");
+          const line = ui
+            ? `…${ui.token_last4} · ${row.channelLabel.toLowerCase()} ${ui.channel_id}${dm(ui.channel_id)} · set in Settings`
+            : fromEnv
+              ? `from server environment${row.kind === "slack" && env.slackDm ? " · direct message" : ""}`
+              : "not set";
           const st = status[row.kind];
           return (
             <div key={row.kind} className="p-3">

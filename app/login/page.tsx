@@ -36,6 +36,7 @@ export default function LoginPage() {
       return;
     }
 
+    void fetch("/api/auth/login-notify", { method: "POST", keepalive: true }).catch(() => {});
     router.push(nextPath);
     router.refresh();
   }
