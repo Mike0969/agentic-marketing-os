@@ -1,5 +1,5 @@
 import type { ProviderChatOptions, ProviderChatResult } from "@/lib/providers/types";
-import { connectedHealth, elapsed, errorHealth, failedChat, failedTest, liveModels, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal } from "@/lib/providers/utils";
+import { connectedHealth, elapsed, errorHealth, failedChat, failedTest, liveModels, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal, withJsonHint } from "@/lib/providers/utils";
 
 const BASE_URL = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1";
 const STATIC_MODELS = ["deepseek-chat", "deepseek-reasoner"];
@@ -46,7 +46,7 @@ async function chatCompletion(model: string, prompt: string, system?: string, js
       temperature,
       response_format: json ? { type: "json_object" } : undefined,
       messages: [
-        ...(system ? [{ role: "system", content: system }] : []),
+        ...(system || json ? [{ role: "system", content: json ? withJsonHint(system) : system }] : []),
         { role: "user", content: prompt }
       ]
     }),

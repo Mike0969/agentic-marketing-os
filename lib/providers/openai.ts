@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ProviderChatOptions, ProviderChatResult } from "@/lib/providers/types";
-import { connectedHealth, elapsed, errorHealth, failedChat, failedTest, liveModels, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal } from "@/lib/providers/utils";
+import { connectedHealth, elapsed, errorHealth, failedChat, failedTest, liveModels, missingHealth, now, parseJsonFromText, staticModels, timeoutSignal, withJsonHint } from "@/lib/providers/utils";
 
 const STATIC_MODELS = ["gpt-5.5", "gpt-4o", "gpt-4o-mini"];
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -49,7 +49,7 @@ function isTemperatureError(error: unknown) {
 
 function messages(options: ProviderChatOptions): ChatCompletionMessageParam[] {
   return [
-    ...(options.system ? [{ role: "system" as const, content: options.system }] : []),
+    ...(options.system || options.jsonSchema ? [{ role: "system" as const, content: options.jsonSchema ? withJsonHint(options.system) : options.system! }] : []),
     { role: "user" as const, content: options.user }
   ];
 }

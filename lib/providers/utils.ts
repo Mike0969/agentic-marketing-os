@@ -14,6 +14,12 @@ export function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   return AbortSignal.timeout(ms);
 }
 
+/** OpenAI / DeepSeek JSON mode requires the word "json" in the messages; make sure the system prompt has it. */
+export function withJsonHint(system: string | undefined): string {
+  const base = system ?? "";
+  return /json/i.test(base) ? base : `${base}${base ? "\n" : ""}Respond with a single valid JSON object.`;
+}
+
 /** A readable error for env values that cannot go into an HTTP header (e.g. a pasted "…" placeholder). */
 export function nonAsciiProblem(values: Record<string, string | undefined>): string | null {
   for (const [name, value] of Object.entries(values)) {
