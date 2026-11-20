@@ -197,7 +197,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           fallbackAgentName: "Content Creator Agent",
           fallbackRole: "Copy and Editorial",
           task: `Create ${plan.label} package`,
-          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\n${textLearning.text}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
+          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish. Every field you return is PUBLIC copy readers will see: never put internal notes, approval caveats, questions for Mihai, "subject to confirmation" remarks or tracking instructions into it.\n\nMemory:\n${memoryText(memory)}\n\n${textLearning.text}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
           outputSchema: plan.contentSchema,
           input: { brand, campaign_idea: idea, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -233,7 +233,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     // Spec: ANY content safety stop => NO postable package, even if an earlier round was a champion.
     if (contentLoop.stopReason === "safety") {
       // A safety refusal is the gate working, not a failure: record it as "blocked" with a plain reason.
-      const reason = safetyBlockReason("content", contentLoop.lastScore, brand);
+      const reason = safetyBlockReason("content", contentLoop.lastScore, brand, contentLoop.lastJudgeNotes);
       await markBlocked(reason, platform);
       await recordAgentRun({
         agentName: "Campaign Run",
@@ -366,7 +366,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (visualLoop.stopReason === "safety") {
         await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", loopIds);
         await supabase.from("content_items").update({ status: "draft", approval_status: "changes_requested", workflow_stage: "rework", current_owner: "Crina", next_owner: "Visual & Video Agent", visual_asset_status: "error", crina_review_notes: `${reviewChip} · VISUAL SAFETY-BLOCKED`, performance_summary: `BLOCKED: visual safety violation. ${visualLoop.lastJudgeNotes.slice(0, 160)}` }).eq("id", item.id);
-        await markBlocked(safetyBlockReason("visual", visualLoop.lastScore, brand), platform);
+        await markBlocked(safetyBlockReason("visual", visualLoop.lastScore, brand, visualLoop.lastJudgeNotes), platform);
         await recordAgentRun({ agentName: "Campaign Run", agentId: "agent-crina", workflowName: "Run Campaign (per-platform)", provider: contentLoop.provider, status: "blocked", input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" }, output: { summary: safetyBlockReason("visual", visualLoop.lastScore, brand), platform, content_score: contentLoop.championScore, visual_stop: "safety", safety_score: visualLoop.lastScore, judge_notes: visualLoop.lastJudgeNotes, blocked: true }, error: null, model: contentLoop.model, durationMs: 0 });
         created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "visual_safety", blocked: true, fallback: true });
         continue;

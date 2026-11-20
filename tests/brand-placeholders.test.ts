@@ -38,6 +38,13 @@ test("a visual block says the image concept failed, then points at the placehold
   );
 });
 
+test("the reviewer's first sentence is appended when judge notes are given", () => {
+  assert.equal(
+    safetyBlockReason("content", 68, testBrand, "The biggest weakness is that the post body embeds internal approval questions. More detail here."),
+    "Blocked by safety check: brand details are still placeholder (score 68/100). Fill in Brands → NexRide. Reviewer: The post body embeds internal approval questions."
+  );
+});
+
 test("reason without placeholder fields does not blame the brand", () => {
   const real = { ...testBrand, website: "https://nexride.ae", positioning: "EV rides", target_audience: "Dubai commuters", tone_of_voice: "Plain, warm" };
   assert.match(safetyBlockReason("content", 30, real), /^Blocked by safety check: the draft made claims the reviewer could not verify \(score 30\/100\)/);

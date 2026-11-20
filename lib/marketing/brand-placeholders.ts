@@ -45,7 +45,17 @@ export function brandGaps(brand: Partial<Brand> | null | undefined) {
 }
 
 /** Plain-words reason shown on the Agents board when a safety check stops a campaign run. */
-export function safetyBlockReason(kind: "content" | "visual", score: number, brand: Partial<Brand> | null | undefined) {
+export function safetyBlockReason(kind: "content" | "visual", score: number, brand: Partial<Brand> | null | undefined, judgeNotes?: string) {
+  return `${baseReason(kind, score, brand)}${reviewerSays(judgeNotes)}`;
+}
+
+/** The reviewer's first sentence, so Mihai sees what actually failed, not only the likely cause. */
+function reviewerSays(judgeNotes?: string) {
+  const first = (judgeNotes ?? "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0]?.replace(/^The (single )?biggest weakness is that /i, "") ?? "";
+  return first ? ` Reviewer: ${first.charAt(0).toUpperCase()}${first.slice(1, 220)}` : "";
+}
+
+function baseReason(kind: "content" | "visual", score: number, brand: Partial<Brand> | null | undefined) {
   const { placeholder } = brandGaps(brand);
   const name = brand?.name ?? "the brand";
   if (kind === "visual") {
