@@ -148,6 +148,14 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     [campaign.title, campaign.objective, idea.idea, idea.angle, Array.isArray(idea.platforms) ? idea.platforms.join(" ") : ""].map((x) => (typeof x === "string" ? x : "")).join(" "),
     { part: "run", campaignId: campaign.id }
   );
+  const { data: ruleDocs } = await supabase
+    .from("learning_items")
+    .select("title,notes")
+    .eq("brand_id", campaign.brand_id)
+    .eq("used_by_agents", true)
+    .or("title.ilike.%prohibited%,title.ilike.%content rules%,title.ilike.%truth%")
+    .limit(4);
+  const rulesText = ((ruleDocs ?? []) as Array<{ title: string; notes: string }>).map((d) => `${d.title}:\n${String(d.notes ?? "").slice(0, 2000)}`).join("\n\n").slice(0, 6000);
   const planNote = typeof idea.plan_note === "string" ? idea.plan_note : "";
   const checklist = String(brand?.tpl_review_checklist ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
   const noteText = [
@@ -275,6 +283,9 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       ? `\n\nIMPORTANT: You are writing copy AROUND an existing approved visual (do NOT describe a new image). Asset: "${selectedAsset.title}"${selectedAsset.description ? ` — ${selectedAsset.description}` : ""}${selectedAsset.content_theme ? ` (theme: ${selectedAsset.content_theme})` : ""}. Make the hook, caption, and CTA fit THIS specific visual.`
       : "";
 
+    // Crina's review is slim: the post (or visual), the brand's voice + approval rules, the brand's own
+    // prohibited-claims / content-rules / truth-book material, the approver's notes and the checklist.
+    // No memory, library or conversion dump (that was ~57K tokens per review).
     // The last judged artifact per kind + the sentences the judge flagged (shown on Review when blocked).
     const lastJudged: Record<string, { artifact: unknown; flagged: string[] }> = {};
     // Crina judges a candidate against a rubric -> a numeric, bounded acceptance check.
@@ -284,10 +295,11 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: `Judge ${artifactLabel}`,
-        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Also answer Jev's checks for this ${artifactLabel}; any that fails must lower the score below the pass mark and appear in improvements:\n${jevQuestions(artifactLabel === "visual" ? "visual" : "text").map((q) => `- ${q.text}`).join("\n")}\n\nReturn the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), flagged_sentences (the EXACT sentences copied from the ${artifactLabel} that are unsafe or can't be verified; empty when none), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualNotes : textNotes}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
+        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}${noteText ? `\n\n${noteText}` : ""}${rulesText ? `\n\nBrand rules (prohibited claims, content rules, facts):\n${rulesText}` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Use the approver's notes, the checklist and the brand rules above. Also answer Jev's checks for this ${artifactLabel}; any that fails must lower the score below the pass mark and appear in improvements:\n${jevQuestions(artifactLabel === "visual" ? "visual" : "text").map((q) => `- ${q.text}`).join("\n")}\n\nReturn the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), flagged_sentences (the EXACT sentences copied from the ${artifactLabel} that are unsafe or can't be verified; empty when none), concise judge_notes, and specific improvements the maker can apply next round.`,
         outputSchema: judgeSchema,
-        input: { brand: brandVoice, platform, [artifactLabel]: artifact, campaign_idea: ideaSlim, conversion_insights: conversion.insights },
-        brainFiles: ["workflow-contract.md", "approval-rules.md", "grader-calibration.md"],
+        input: { brand: brandVoice, platform, [artifactLabel]: artifact, campaign_idea: ideaSlim },
+        brainFiles: ["approval-rules.md"],
+        slim: true,
         temperature: 0.2,
         routeOrigin: "api.marketing.campaigns.run"
       });
@@ -337,7 +349,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     // 1) Content loop — Content Creator makes a PLATFORM-NATIVE package, Crina scores, keep champion.
     const ownerApproved = approvedDraft && requestedPlatform && platform.toLowerCase() === requestedPlatform.toLowerCase() ? approvedDraft : null;
     const contentLoop: LoopResult<NativeDraft> = ownerApproved
-      ? { loopId: `owner-${Date.now()}`, champion: ownerApproved, championScore: 0, rounds: 0, stopReason: "pass", passed: true, lastJudgeNotes: "Text edited and approved by the admin over the safety check.", lastScore: 0, fallbackUsed: false, provider: "mihai", model: null }
+      ? { loopId: `owner-${Date.now()}`, champion: ownerApproved, championScore: 0, rounds: 0, stopReason: "pass", passed: true, lastJudgeNotes: "Text edited and approved by the admin over the safety check.", lastScore: 0, fallbackUsed: false, provider: "admin", model: null }
       : await runJudgedLoop<NativeDraft>({
       loopType: "content",
       agentId: "agent-content-creator",

@@ -41,4 +41,4 @@ export function offerForSignal(signal: SignalType): OfferDefinition {
 }
 
 /** Marker every voice placeholder carries until the admin approves the wording. */
-export const WORDING_PENDING_MARKER = "WORDING PENDING MIHAI";
+export const WORDING_PENDING_MARKER = "WORDING PENDING APPROVAL";

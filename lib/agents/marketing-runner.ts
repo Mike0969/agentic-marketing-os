@@ -14,6 +14,8 @@ export type MarketingAgentRunOptions = {
   brainFiles?: string[];
   temperature?: number;
   routeOrigin: string;
+  /** Only the named brain files (no agent memory file, no full brain): for short checks like Crina's review. */
+  slim?: boolean;
 };
 
 export type MarketingAgentRunResult = {
@@ -116,8 +118,8 @@ function normalizeResult(
 export async function runMarketingAgentModel(options: MarketingAgentRunOptions): Promise<MarketingAgentRunResult> {
   const runtime = await resolveAgentRuntimeConfig(options.agentId, process.env.HERMES_AGENT_MODEL || "gpt-5.5");
   const profile = await getHermesAgentProfile(options.agentId);
-  const brainFiles = options.brainFiles ? Array.from(new Set([...options.brainFiles, agentMemoryFileName(options.agentId)])) : undefined;
-  const brain = await buildBrainContext(brainFiles);
+  const brainFiles = options.slim ? options.brainFiles ?? [] : options.brainFiles ? Array.from(new Set([...options.brainFiles, agentMemoryFileName(options.agentId)])) : undefined;
+  const brain = options.slim && !brainFiles?.length ? { text: "", resourcesUsed: [] as string[] } : await buildBrainContext(brainFiles);
   const systemPrompt = buildSystemPrompt(profile, options);
   const userPrompt = buildUserPrompt(options, brain.text);
 
@@ -132,7 +134,8 @@ export async function runMarketingAgentModel(options: MarketingAgentRunOptions):
     temperature: options.temperature,
     hermesInput: options.input,
     hermesInstructions: options.instructions,
-    brainFiles: options.brainFiles
+    brainFiles: options.brainFiles,
+    slim: options.slim
   };
 
   const result = await callModel({ provider: runtime.provider, model: runtime.model, ...callArgs });

@@ -34,6 +34,8 @@ export type HermesAgentCallOptions = {
   input: unknown;
   /** Restrict which brain files are read for context (by file name). */
   brainFiles?: string[];
+  /** Only the named brain files: no agent memory file added (short checks). */
+  slim?: boolean;
   handoffFrom?: string | null;
   handoffTo?: string | null;
   temperature?: number;
@@ -184,8 +186,8 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
   // Always include this agent's own memory file alongside its assigned brain
   // files. When no files are restricted, buildBrainContext reads all of them
   // (which already includes the memory file).
-  const brainFiles = options.brainFiles ? Array.from(new Set([...options.brainFiles, agentMemoryFileName(options.agentId)])) : undefined;
-  const brain = await buildBrainContext(brainFiles);
+  const brainFiles = options.slim ? options.brainFiles ?? [] : options.brainFiles ? Array.from(new Set([...options.brainFiles, agentMemoryFileName(options.agentId)])) : undefined;
+  const brain = options.slim && !brainFiles?.length ? { text: "", resourcesUsed: [] as string[] } : await buildBrainContext(brainFiles);
   const systemPrompt = buildSystemPrompt(profile, options);
   const userPrompt = buildUserPrompt(options, brain.text);
   const temperature = options.temperature ?? 0.4;

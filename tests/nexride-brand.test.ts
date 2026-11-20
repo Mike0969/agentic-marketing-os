@@ -16,7 +16,7 @@ test("catalogue carries types only: no amount/price fields", () => {
   assert.ok(!/amount|price|aed|eur|ron|percent/i.test(json), json);
 });
 
-test("rider and driver voice files exist and are marked pending the admin, with no amounts", () => {
+test("rider and driver voice files exist and are marked pending approval, with no amounts", () => {
   const files = new Set(OFFER_TYPES.flatMap((t) => OFFER_CATALOGUE[t].voiceFiles));
   assert.equal(files.size, 2);
   for (const f of files) {

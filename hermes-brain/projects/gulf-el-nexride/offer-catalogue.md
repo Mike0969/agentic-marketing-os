@@ -12,4 +12,4 @@
 | driver_supply_bonus | driver | supply_gap | driver_bonus |
 | event_push | rider and driver | spike_event | none (message only) |
 
-Wording for each type: WORDING PENDING MIHAI (see rider-voice.md, driver-voice.md).
+Wording for each type: WORDING PENDING APPROVAL (see rider-voice.md, driver-voice.md).
