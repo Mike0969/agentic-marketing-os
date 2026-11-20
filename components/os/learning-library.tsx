@@ -13,7 +13,10 @@ type Brand = { id: string; name: string };
 const ICON = { idea: Lightbulb, youtube: Youtube, podcast: Mic, image: ImageIcon, document: FileText, link: Link2 } as const;
 const LABEL = { idea: "Idea", youtube: "YouTube", podcast: "Podcast", image: "Image", document: "Document", link: "Web link" } as const;
 
-export function LearningLibrary({ initialItems, brands, inboxPath }: { initialItems: Item[]; brands: Brand[]; inboxPath?: string }) {
+type RunUse = { runId: string; part: string; usedAt: string; campaignId: string | null; campaignTitle: string | null; items: Array<{ id: string; title: string }> };
+const PAGE = 60;
+
+export function LearningLibrary({ initialItems, brands, inboxPath, runUses = [] }: { initialItems: Item[]; brands: Brand[]; inboxPath?: string; runUses?: RunUse[] }) {
   const [items, setItems] = useState(initialItems);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: "ok" | "warn"; text: string } | null>(null);
@@ -23,7 +26,11 @@ export function LearningLibrary({ initialItems, brands, inboxPath }: { initialIt
   const [filter, setFilter] = useState("all");
   const fileInput = useRef<HTMLInputElement>(null);
   const brandName = useMemo(() => new Map(brands.map((b) => [b.id, b.name])), [brands]);
-  const shown = items.filter((i) => filter === "all" || i.item_type === filter);
+  const [search, setSearch] = useState("");
+  const [pageCount, setPageCount] = useState(1);
+  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+  const matching = items.filter((i) => (filter === "all" || i.item_type === filter) && words.every((w) => `${i.title} ${i.tags.join(" ")}`.toLowerCase().includes(w)));
+  const shown = matching.slice(0, pageCount * PAGE);
 
   async function post(data: FormData) {
     const res = await fetch("/api/marketing/learning", { method: "POST", body: data });
@@ -201,13 +208,17 @@ export function LearningLibrary({ initialItems, brands, inboxPath }: { initialIt
       <OSPanel>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-neutral-50">Library ({items.length})</h2>
-          <OSSelect value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter by type" className="w-48">
+          <div className="flex flex-wrap gap-2">
+          <OSInput value={search} onChange={(e) => { setSearch(e.target.value); setPageCount(1); }} placeholder="Search titles and tags" aria-label="Search the library" className="w-64" />
+          <OSSelect value={filter} onChange={(e) => { setFilter(e.target.value); setPageCount(1); }} aria-label="Filter by type" className="w-48">
             <option value="all">All types</option>
             {Object.entries(LABEL).map(([k, v]) => (
               <option key={k} value={k}>{v}</option>
             ))}
           </OSSelect>
+          </div>
         </div>
+        {search || filter !== "all" ? <p className="mt-2 text-xs text-neutral-500">{matching.length} matching</p> : null}
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           {shown.length ? (
             shown.map((item) => {
@@ -217,7 +228,7 @@ export function LearningLibrary({ initialItems, brands, inboxPath }: { initialIt
                   <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-neutral-800 bg-neutral-900">
                     {item.item_type === "image" && item.url ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.url} alt={item.title} className="h-full w-full object-cover" />
+                      <img src={item.url} alt={item.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
                       <Icon className="h-8 w-8 text-cyan-300" />
                     )}
@@ -249,9 +260,33 @@ export function LearningLibrary({ initialItems, brands, inboxPath }: { initialIt
               );
             })
           ) : (
-            <p className="text-sm text-neutral-500">Nothing here yet. Drop a file above, or add an idea or a link.</p>
+            <p className="text-sm text-neutral-500">{items.length ? "Nothing matches." : "Nothing here yet. Drop a file above, or add an idea or a link."}</p>
           )}
         </div>
+        {matching.length > shown.length ? (
+          <div className="mt-4 text-center">
+            <OSButton variant="secondary" onClick={() => setPageCount((n) => n + 1)}>Show more ({matching.length - shown.length} left)</OSButton>
+          </div>
+        ) : null}
+      </OSPanel>
+
+      <OSPanel>
+        <h2 className="text-lg font-semibold text-neutral-50">What the last runs read</h2>
+        <p className="mt-1 text-sm text-neutral-400">Each plan or run gets only the {10} items most relevant to its campaign (brand, keywords in the title and tags, newest), each cut to 1,500 characters, never the whole library.</p>
+        {runUses.length ? (
+          <ul className="mt-3 space-y-2">
+            {runUses.map((r) => (
+              <li key={r.runId} className="rounded-md border border-neutral-800 p-2 text-sm">
+                <div className="text-neutral-200">
+                  {r.part === "plan" ? "Plan" : "Run"} · {r.campaignTitle ?? "campaign"} · <span className="text-neutral-500">{new Date(r.usedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</span>
+                </div>
+                <div className="mt-1 text-xs text-neutral-400">{r.items.map((i, n) => `${n + 1}. ${i.title}`).join(" · ")}</div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-3 text-sm text-neutral-500">No run has read the library yet; the next plan or run will show here.</p>
+        )}
       </OSPanel>
     </div>
   );

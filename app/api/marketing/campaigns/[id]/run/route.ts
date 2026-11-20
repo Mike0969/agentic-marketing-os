@@ -86,7 +86,12 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const textLearning = await learningContext(vault, { part: "text" });
   const visualLearning = await learningContext(vault, { part: "visual" });
   // Learning library (ideas, links, images, documents Mihai added) read next to the Yes/Rework notes.
-  const library = await libraryContext(campaign.brand_id);
+  // Only the ~10 items most relevant to this campaign (brand, keywords, recency); the Library shows which.
+  const library = await libraryContext(
+    campaign.brand_id,
+    [campaign.title, campaign.objective, idea.idea, idea.angle, Array.isArray(idea.platforms) ? idea.platforms.join(" ") : ""].map((x) => (typeof x === "string" ? x : "")).join(" "),
+    { part: "run", campaignId: campaign.id }
+  );
   const textNotes = [textLearning.text, library].filter(Boolean).join("\n\n");
   const visualNotes = [visualLearning.text, library].filter(Boolean).join("\n\n");
   const ownerIdea = String(idea.idea ?? campaign.objective ?? "");

@@ -115,24 +115,97 @@ export async function removeLearningItem(id: string) {
 
 const TYPE_LABEL: Record<ItemType, string> = { image: "image", idea: "idea", podcast: "podcast", youtube: "YouTube", document: "document", link: "link" };
 
-/** Pure: the prompt block from items (used by libraryContext; unit-tested). */
-export function libraryText(items: Array<Pick<LearningItem, "item_type" | "title" | "tags" | "url" | "notes">>, limit = 12) {
+/** Pure: the prompt block from items (used by libraryContext; unit-tested). Max 10 items, excerpts ≤ 1,500 chars. */
+export function libraryText(items: Array<Pick<LearningItem, "item_type" | "title" | "tags" | "url" | "notes">>, limit = LIBRARY_MAX_ITEMS) {
   if (!items.length) return "";
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
   return [
     "Reference materials from Mihai (use them; do not copy them word for word; never invent what they do not say):",
-    ...items.slice(0, limit).map((i) => `- [${TYPE_LABEL[i.item_type]}] ${i.title}${i.tags.length ? ` (${i.tags.join(", ")})` : ""}${i.notes ? `: ${clip(i.notes.replace(/\s+/g, " "), 400)}` : ""}${i.url ? ` <${i.url}>` : ""}`)
+    ...items.slice(0, limit).map((i) => `- [${TYPE_LABEL[i.item_type]}] ${i.title}${i.tags.length ? ` (${i.tags.join(", ")})` : ""}${i.notes ? `: ${clip(i.notes.replace(/\s+/g, " "), LIBRARY_EXCERPT_CHARS)}` : ""}${i.url ? ` <${i.url}>` : ""}`)
   ].join("\n");
 }
 
-/** The block every agent reads for a brand: its items + items for all brands, used_by_agents only. Never throws. */
-export async function libraryContext(brandId: string | null | undefined): Promise<string> {
+export const LIBRARY_MAX_ITEMS = 10;
+export const LIBRARY_EXCERPT_CHARS = 1500;
+const STOP = new Set("the and for with from that this your our are was were will can not but all any its into about over more than then them they their there here what when who how why which a an to of in on at by is it be as or we you i".split(" "));
+
+/** Lowercase keywords (≥ 3 chars, no stop words, no pure numbers). Pure. */
+export function keywords(text: string): string[] {
+  return Array.from(new Set(text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2 && !STOP.has(w) && !/^\d+$/.test(w))));
+}
+
+type Candidate = { id: string; item_type: ItemType; title: string; tags: string[]; brand_id: string | null; created_at: string };
+
+/**
+ * Pure: the most relevant items for a run. Score = keyword overlap of the campaign text with the item's
+ * title + tags (×3), +1 for the brand's own items (vs "all brands"), +1 for text items (documents and
+ * ideas carry content an image title doesn't), + up to 1 for recency (last 90 days). Ties: newest first.
+ */
+export function rankLibraryItems(items: Candidate[], query: string, brandId: string | null | undefined, limit = LIBRARY_MAX_ITEMS, now = Date.now()): Candidate[] {
+  const q = new Set(keywords(query));
+  const scored = items.map((i) => {
+    const words = keywords(`${i.title} ${i.tags.join(" ")}`);
+    const hits = words.filter((w) => q.has(w) || [...q].some((k) => k.length > 4 && (w.startsWith(k) || k.startsWith(w)))).length;
+    const ageDays = (now - Date.parse(i.created_at)) / 86_400_000;
+    const score = hits * 3 + (brandId && i.brand_id === brandId ? 1 : 0) + (i.item_type === "document" || i.item_type === "idea" ? 1 : 0) + Math.max(0, 1 - ageDays / 90);
+    return { i, score };
+  });
+  return scored.sort((a, b) => b.score - a.score || b.i.created_at.localeCompare(a.i.created_at)).slice(0, limit).map((s) => s.i);
+}
+
+/**
+ * The block an agent reads for a brand: at most 10 of its items + items for all brands (used_by_agents
+ * only), the most relevant to `query` (the campaign's idea), excerpts capped at 1,500 chars. When `use`
+ * is given, records which items this run read (Library → "What the last runs read"). Never throws.
+ */
+export async function libraryContext(brandId: string | null | undefined, query = "", use?: { part: "plan" | "run"; campaignId?: string | null }): Promise<string> {
   try {
-    let q = db().from("learning_items").select("item_type,title,tags,url,notes,brand_id").eq("used_by_agents", true).order("created_at", { ascending: false }).limit(30);
+    let q = db().from("learning_items").select("id,item_type,title,tags,brand_id,created_at").eq("used_by_agents", true).order("created_at", { ascending: false }).limit(5000);
     q = brandId ? q.or(`brand_id.is.null,brand_id.eq.${brandId}`) : q.is("brand_id", null);
     const { data } = await q;
-    return libraryText((data ?? []) as LearningItem[]);
+    const picked = rankLibraryItems((data ?? []) as Candidate[], query, brandId);
+    if (!picked.length) return "";
+    const { data: full } = await db().from("learning_items").select("id,item_type,title,tags,url,notes").in("id", picked.map((p) => p.id));
+    const byId = new Map(((full ?? []) as LearningItem[]).map((f) => [f.id, f]));
+    const ordered = picked.map((p) => byId.get(p.id)).filter((x): x is LearningItem => Boolean(x));
+    if (use) {
+      const runId = randomUUID();
+      await db()
+        .from("learning_item_uses")
+        .insert(ordered.map((it, rank) => ({ run_id: runId, item_id: it.id, campaign_id: use.campaignId ?? null, part: use.part, rank })))
+        .then(() => undefined, () => undefined);
+    }
+    return libraryText(ordered);
   } catch {
     return "";
+  }
+}
+
+export type LibraryRunUse = { runId: string; part: string; usedAt: string; campaignId: string | null; campaignTitle: string | null; items: Array<{ id: string; title: string }> };
+
+/** The last runs and the items each read (newest first). Never throws. */
+export async function recentLibraryUses(runs = 8): Promise<LibraryRunUse[]> {
+  try {
+    const { data } = await db().from("learning_item_uses").select("run_id,part,used_at,campaign_id,rank,item_id").order("used_at", { ascending: false }).limit(runs * LIBRARY_MAX_ITEMS);
+    const rows = (data ?? []) as Array<{ run_id: string; part: string; used_at: string; campaign_id: string | null; rank: number; item_id: string }>;
+    const runIds = Array.from(new Set(rows.map((r) => r.run_id))).slice(0, runs);
+    const itemIds = Array.from(new Set(rows.filter((r) => runIds.includes(r.run_id)).map((r) => r.item_id)));
+    const campIds = Array.from(new Set(rows.map((r) => r.campaign_id).filter((x): x is string => Boolean(x))));
+    const items = itemIds.length ? (((await db().from("learning_items").select("id,title").in("id", itemIds)).data ?? []) as Array<{ id: string; title: string }>) : [];
+    const camps = campIds.length ? (((await db().from("campaigns").select("id,title").in("id", campIds)).data ?? []) as Array<{ id: string; title: string }>) : [];
+    return runIds.map((runId) => {
+      const rs = rows.filter((r) => r.run_id === runId).sort((a, b) => a.rank - b.rank);
+      const first = rs[0];
+      return {
+        runId,
+        part: first.part,
+        usedAt: first.used_at,
+        campaignId: first.campaign_id,
+        campaignTitle: camps.find((c) => c.id === first.campaign_id)?.title ?? null,
+        items: rs.map((r) => ({ id: r.item_id, title: items.find((i) => i.id === r.item_id)?.title ?? "(removed)" }))
+      };
+    });
+  } catch {
+    return [];
   }
 }

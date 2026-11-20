@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     .single();
   if (error || !campaign) return NextResponse.json({ error: error?.message ?? "Campaign was not created." }, { status: 500 });
 
-  const outcome = await withCampaignBudget(campaign.id, () => planWithJev({ idea, brand, platforms }));
+  const outcome = await withCampaignBudget(campaign.id, () => planWithJev({ idea, brand, platforms, campaignId: campaign.id }));
   const brief = {
     ...(campaign.idea_brief as Record<string, unknown>),
     stage: outcome.stage,

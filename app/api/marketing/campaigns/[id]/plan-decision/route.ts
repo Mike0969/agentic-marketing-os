@@ -45,7 +45,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const refused = await preflight(id, CALL_ESTIMATE.plan);
   if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   await recordLearning(vault, { kind: "rejected", part: "plan", campaign: plan.title, platform: plan.platforms.join(", "), agent: "Crina", reason, item: planText });
-  const outcome = await withCampaignBudget(id, () => planWithJev({ idea: String(brief.idea ?? campaign.objective), brand, platforms: plan.platforms, fixes: [`Mihai: ${reason}`], previous: plan }));
+  const outcome = await withCampaignBudget(id, () => planWithJev({ idea: String(brief.idea ?? campaign.objective), brand, platforms: plan.platforms, fixes: [`Mihai: ${reason}`], previous: plan, campaignId: id }));
   await supabase
     .from("campaigns")
     .update({ idea_brief: { ...brief, stage: outcome.stage, plan: outcome.plan ?? plan, plan_jev: jevSummary(outcome.jev, outcome.doubts), plan_error: outcome.error } })

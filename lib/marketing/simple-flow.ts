@@ -96,8 +96,9 @@ export type PlanOutcome = {
 };
 
 /** Crina plans, Jev checks; below 0.85 Crina reworks (max 2), then it waits for Mihai with "Jev doubts". */
-export async function planWithJev(args: { idea: string; brand: Brand | null; platforms: string[]; fixes?: string[]; previous?: CampaignPlan | null }): Promise<PlanOutcome> {
-  const learning = [(await learningContext(defaultVault(args.brand?.name), { part: "plan" })).text, await libraryContext(args.brand?.id)].filter(Boolean).join("\n\n");
+export async function planWithJev(args: { idea: string; brand: Brand | null; platforms: string[]; fixes?: string[]; previous?: CampaignPlan | null; campaignId?: string | null }): Promise<PlanOutcome> {
+  const library = await libraryContext(args.brand?.id, `${args.idea} ${args.platforms.join(" ")}`, { part: "plan", campaignId: args.campaignId ?? null });
+  const learning = [(await learningContext(defaultVault(args.brand?.name), { part: "plan" })).text, library].filter(Boolean).join("\n\n");
   const first = await makePlan({ idea: args.idea, brand: args.brand, platforms: args.platforms, learning, fixes: args.fixes ?? [], previous: args.previous ?? null });
   if (!first.plan) return { plan: null, jev: null, doubts: null, reworks: 0, stage: "planning", error: first.error };
   const checked = await jevLoop<CampaignPlan>(
