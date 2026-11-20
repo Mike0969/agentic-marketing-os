@@ -37,7 +37,7 @@ export default async function PipelinePage() {
                   <div className="text-sm font-medium text-neutral-100">{view.campaign.title}</div>
                   <div className="text-xs text-neutral-400">Step {view.step}: {FLOW_STEPS[view.step - 1].label} · {view.label}</div>
                 </div>
-                {view.needsMihai ? <OSBadge tone="warn">Needs you</OSBadge> : <OSBadge tone="info">Agents / system</OSBadge>}
+                {view.needsApproval ? <OSBadge tone="warn">Needs you</OSBadge> : <OSBadge tone="info">Agents / system</OSBadge>}
               </Link>
             ))}
           </div>

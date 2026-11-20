@@ -96,7 +96,7 @@ export function CampaignReview(props: {
     setMessage(null);
     setPanelStatus({ tone: "busy", text: label });
     try {
-      // Runs on the server (background job): closing the page never stops it; Mihai is notified.
+      // Runs on the server (background job): closing the page never stops it; the admin is notified.
       const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, background: true }) });
       const body = (await res.json().catch(() => ({}))) as { error?: string; budget?: boolean; background?: boolean; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
       if (res.status === 202 && body.background) {

@@ -7,6 +7,7 @@ import { cleanPlatforms, jevSummary, templatePlan, type CampaignPlan } from "@/l
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getJob, startCampaignJob } from "@/lib/marketing/campaign-jobs";
+import { pickSelectedBrandId, selectedBrandCookie } from "@/lib/marketing/brand-selection";
 import { prepareAndRun } from "@/lib/marketing/start-agents-server";
 import type { Brand } from "@/lib/types";
 
@@ -16,7 +17,7 @@ export const maxDuration = 300;
 const isDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 /**
- * New campaign, Mihai's simple flow: one idea (+ optional platforms and dates).
+ * New campaign, the admin's simple flow: one idea (+ optional platforms and dates).
  * Creates the campaign, lets Crina write the plan and Jev check it.
  */
 export async function POST(request: Request) {
@@ -37,9 +38,18 @@ export async function POST(request: Request) {
   const supabase = await createClient();
   if (!supabase) return NextResponse.json({ error: "Supabase is not available." }, { status: 503 });
 
-  const brandQuery = typeof body?.brand_id === "string" && body.brand_id ? supabase.from("brands").select("*").eq("id", body.brand_id) : supabase.from("brands").select("*").eq("active", true).order("name").limit(1);
-  const { data: brandRows } = await brandQuery;
-  const brand = ((brandRows ?? [])[0] ?? null) as Brand | null;
+  // The brand sent by the page, else the one selected in the header / the default brand (never "first
+  // by name", which picked GridFactory).
+  let brand: Brand | null = null;
+  if (typeof body?.brand_id === "string" && body.brand_id) {
+    const { data } = await supabase.from("brands").select("*").eq("id", body.brand_id).maybeSingle();
+    brand = (data ?? null) as Brand | null;
+  } else {
+    const { data } = await supabase.from("brands").select("*").eq("active", true).order("name");
+    const rows = (data ?? []) as Brand[];
+    const selected = pickSelectedBrandId(rows, await selectedBrandCookie());
+    brand = rows.find((r) => r.id === selected) ?? null;
+  }
   if (!brand) return NextResponse.json({ error: "No active brand. Add one under More → Brands." }, { status: 400 });
 
   const today = new Date().toISOString().slice(0, 10);
@@ -91,7 +101,7 @@ export async function POST(request: Request) {
   };
 
   // { background: true }: answer at once; plan, then (if Jev clears it) start the agents, all on the
-  // server; Mihai is notified when posts are ready, or when the plan needs him.
+  // server; the admin is notified when posts are ready, or when the plan needs him.
   if (body?.background === true) {
     const job = await startCampaignJob({
       campaignId: campaign.id,

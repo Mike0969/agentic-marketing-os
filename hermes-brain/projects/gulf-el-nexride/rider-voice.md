@@ -2,7 +2,7 @@
 
 > STATUS: WORDING PENDING MIHAI. Every line below is a neutral placeholder.
 > No rider-facing text (push, social, email) may be published from this file until
-> Mihai approves the exact wording. Agents must not invent final marketing copy here.
+> the admin approves the exact wording. Agents must not invent final marketing copy here.
 
 ## Audience
 

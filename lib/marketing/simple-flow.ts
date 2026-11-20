@@ -5,7 +5,7 @@ import { defaultVault, learningContext } from "@/lib/learning/vault";
 import type { Brand } from "@/lib/types";
 
 /**
- * Mihai's simple flow (2026-11-20): he writes an idea -> Crina writes the plan
+ * the admin's simple flow (2026-11-20): he writes an idea -> Crina writes the plan
  * -> Jev checks it -> the agents work -> he reviews each part (Yes / Rework).
  * The flow's state lives in campaigns.idea_brief.
  */
@@ -42,7 +42,7 @@ const planSchema = {
   seo_keywords: ["3-6 search keywords the posts should use (no invented search volumes)"],
   hashtags: ["3-6 hashtags"],
   measure: ["2-4 things to track and where, matching the success criteria (no invented numbers)"],
-  summary: "two sentences Mihai can read in 10 seconds"
+  summary: "two sentences the approver can read in 10 seconds"
 };
 
 function list(value: unknown, max: number): string[] {
@@ -87,7 +87,7 @@ const lines = (v: string | null | undefined) => String(v ?? "").split(/\r?\n|;/)
 const firstLine = (v: string | null | undefined) => lines(v)[0] ?? "";
 
 /**
- * The plan from the brand + its templates, with NO model call (Mihai 2026-11-20: "template some parts;
+ * The plan from the brand + its templates, with NO model call (admin 2026-11-20: "template some parts;
  * only content and visual use imagination"). His idea + an optional note are passed to the writer as is.
  * Pure (tested).
  */
@@ -106,9 +106,9 @@ export function templatePlan(args: { idea: string; brand: Brand | null; platform
     key_message: firstLine(b?.key_messages) || firstLine(b?.positioning),
     platforms,
     cta: firstLine(b?.ctas ?? b?.reusable_ctas) || "Follow us",
-    success_criteria: String(b?.tpl_success_criteria ?? "").trim() || "Every post approved by Mihai before it goes out.",
+    success_criteria: String(b?.tpl_success_criteria ?? "").trim() || "Every post approved by the admin before it goes out.",
     agent_tasks: {
-      content: `Write the ${platforms.join(" + ")} post(s) for: ${idea.slice(0, 200)}${args.note ? ` (Mihai's note: ${args.note})` : ""}`,
+      content: `Write the ${platforms.join(" + ")} post(s) for: ${idea.slice(0, 200)}${args.note ? ` (approver's note: ${args.note})` : ""}`,
       visual: "Create the image freely, on-brand, for the post.",
       seo: keywords.join(", "),
       analytics: lines(b?.tpl_measure).join("; ")
@@ -120,14 +120,14 @@ export function templatePlan(args: { idea: string; brand: Brand | null; platform
   };
 }
 
-/** Crina turns Mihai's idea into a plan. `fixes` = Jev's doubts or Mihai's Rework reason. */
+/** Crina turns the admin's idea into a plan. `fixes` = Jev's doubts or the admin's Rework reason. */
 export async function makePlan(args: { idea: string; brand: Brand | null; platforms: string[]; learning: string; fixes: string[]; previous: CampaignPlan | null }) {
   const run = await runMarketingAgentModel({
     agentId: "agent-crina",
     fallbackAgentName: "Crina",
     fallbackRole: "Marketing CEO Agent",
-    task: "Turn Mihai's idea into a campaign plan",
-    instructions: `Mihai wrote this campaign idea in his own words. Build ONE campaign plan that delivers exactly his idea, no more. Use the brand profile; never invent numbers or results. Give each working agent (content, visual) one concrete task, and include the SEO keywords + hashtags the posts should use and what to measure (no invented numbers or search volumes).${args.platforms.length ? ` Use these platforms only: ${args.platforms.join(", ")}.` : " Pick at most 2 platforms that fit the idea."}\n\n${args.learning}${args.fixes.length ? `\n\nFix these before anything else:\n- ${args.fixes.join("\n- ")}` : ""}`,
+    task: "Turn the owner's idea into a campaign plan",
+    instructions: `The owner wrote this campaign idea in their own words. Build ONE campaign plan that delivers exactly that idea, no more. Use the brand profile; never invent numbers or results. Give each working agent (content, visual) one concrete task, and include the SEO keywords + hashtags the posts should use and what to measure (no invented numbers or search volumes).${args.platforms.length ? ` Use these platforms only: ${args.platforms.join(", ")}.` : " Pick at most 2 platforms that fit the idea."}\n\n${args.learning}${args.fixes.length ? `\n\nFix these before anything else:\n- ${args.fixes.join("\n- ")}` : ""}`,
     outputSchema: planSchema,
     input: { idea: args.idea, brand: brandVoice(args.brand), previous_plan: args.previous },
     brainFiles: ["workflow-contract.md", "approval-rules.md"],
@@ -146,7 +146,7 @@ export type PlanOutcome = {
   error: string | null;
 };
 
-/** Crina plans, Jev checks; below 0.85 Crina reworks once, then it waits for Mihai with "Jev doubts". */
+/** Crina plans, Jev checks; below 0.85 Crina reworks once, then it waits for the admin with "Jev doubts". */
 export async function planWithJev(args: { idea: string; brand: Brand | null; platforms: string[]; fixes?: string[]; previous?: CampaignPlan | null; campaignId?: string | null }): Promise<PlanOutcome> {
   const library = await libraryContext(args.brand?.id, `${args.idea} ${args.platforms.join(" ")}`, { part: "plan", campaignId: args.campaignId ?? null });
   const learning = [(await learningContext(defaultVault(args.brand?.name), { part: "plan" })).text, library].filter(Boolean).join("\n\n");
@@ -156,7 +156,7 @@ export async function planWithJev(args: { idea: string; brand: Brand | null; pla
     first.plan,
     (plan) => jevCheck({ kind: "plan", idea: args.idea, brand: args.brand, learning, subject: plan }),
     async (plan, doubts) => (await makePlan({ idea: args.idea, brand: args.brand, platforms: args.platforms, learning, fixes: doubts.map((d) => `Jev: ${d}`), previous: plan })).plan,
-    1 // at most one automatic rework; more only when Mihai presses Rework
+    1 // at most one automatic rework; more only when the admin presses Rework
   );
   return {
     plan: checked.candidate,

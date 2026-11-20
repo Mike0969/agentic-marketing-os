@@ -194,7 +194,7 @@ async function runCron(request: Request) {
 
   const touchedCampaignIds = Array.from(new Set([...activeCampaignIds, ...results.map((result) => result.campaign_id)]));
   const notifications = await sendCrinaReadyToPostPings({ campaignIds: touchedCampaignIds, baseUrl: baseUrlFrom(request) });
-  // Background jobs cut off by a server restart: end them and alert Mihai (never left "running").
+  // Background jobs cut off by a server restart: end them and alert the admin (never left "running").
   const interruptedJobs = await markStaleJobs(request.url).catch(() => 0);
 
   return NextResponse.json({

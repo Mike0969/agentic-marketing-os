@@ -1,4 +1,4 @@
--- One default brand for the whole app (Mihai 2026-11-20: "I need Gulf-EL as default; every time I move
+-- One default brand for the whole app (admin 2026-11-20: "I need Gulf-EL as default; every time I move
 -- to another tab it sends me to Grid"). The header switcher's choice (cookie) wins; this is the fallback
 -- and is set in Settings → Default brand. At most one default. Safe to run repeatedly.
 

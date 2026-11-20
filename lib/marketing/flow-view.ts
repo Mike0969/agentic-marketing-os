@@ -1,13 +1,13 @@
 import type { Campaign, ContentItem } from "@/lib/types";
 
-/** Where a campaign in Mihai's simple flow is, derived from idea_brief.stage and its posts. */
+/** Where a campaign in the admin's simple flow is, derived from idea_brief.stage and its posts. */
 export type FlowStep = 1 | 2 | 3 | 4 | 5;
 
 export type FlowView = {
   campaign: Campaign;
   step: FlowStep;
   label: string;
-  needsMihai: boolean;
+  needsApproval: boolean;
   pendingPosts: number;
   jevDoubts: string | null;
 };
@@ -34,13 +34,13 @@ export function flowView(campaign: Campaign, items: ContentItem[]): FlowView {
   const planJev = (brief.plan_jev ?? null) as { doubts?: string | null } | null;
   const base = { campaign, pendingPosts, jevDoubts: planJev?.doubts ?? null };
 
-  if (stage === "planning") return { ...base, step: 2, label: brief.plan_error ? `Crina could not plan: ${String(brief.plan_error).slice(0, 80)}` : "Crina is planning", needsMihai: Boolean(brief.plan_error) };
-  if (stage === "plan_doubts") return { ...base, step: 2, label: "Jev doubts the plan: your look", needsMihai: true };
-  if (stage === "plan_ready") return { ...base, step: 3, label: "Plan cleared: start the agents", needsMihai: true };
-  if (pendingPosts) return { ...base, step: 4, label: `${pendingPosts} post(s) ready for your review`, needsMihai: true };
+  if (stage === "planning") return { ...base, step: 2, label: brief.plan_error ? `Crina could not plan: ${String(brief.plan_error).slice(0, 80)}` : "Crina is planning", needsApproval: Boolean(brief.plan_error) };
+  if (stage === "plan_doubts") return { ...base, step: 2, label: "Jev doubts the plan: your look", needsApproval: true };
+  if (stage === "plan_ready") return { ...base, step: 3, label: "Plan cleared: start the agents", needsApproval: true };
+  if (pendingPosts) return { ...base, step: 4, label: `${pendingPosts} post(s) ready for your review`, needsApproval: true };
   const blocked = (brief.blocked ?? null) as { reason?: string; kind?: string } | null;
-  if (blocked?.reason) return { ...base, step: 3, label: blocked.reason, needsMihai: true };
-  if (inRework) return { ...base, step: 3, label: `${inRework} post(s) back with the agents (rework)`, needsMihai: false };
-  if (decided && decided === posts.length) return { ...base, step: 5, label: "All approved: in the schedule", needsMihai: false };
-  return { ...base, step: 3, label: "Agents working", needsMihai: false };
+  if (blocked?.reason) return { ...base, step: 3, label: blocked.reason, needsApproval: true };
+  if (inRework) return { ...base, step: 3, label: `${inRework} post(s) back with the agents (rework)`, needsApproval: false };
+  if (decided && decided === posts.length) return { ...base, step: 5, label: "All approved: in the schedule", needsApproval: false };
+  return { ...base, step: 3, label: "Agents working", needsApproval: false };
 }

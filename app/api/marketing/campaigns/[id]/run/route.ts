@@ -25,7 +25,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ProjectAsset, ReadyPackageAsset } from "@/lib/types";
 
-const VISUAL_MAX_ROUNDS = 1; // the visual is creative: one concept + one review (Mihai reviews the image)
+const VISUAL_MAX_ROUNDS = 1; // the visual is creative: one concept + one review (the admin reviews the image)
 const MAX_PLATFORMS = 4; // bound per request to stay under serverless timeouts
 
 type VisualConcept = { concept: string; prompt: string };
@@ -55,7 +55,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // Every model call in this run is charged to the campaign's budget.
   const { id } = await context.params;
   // { background: true } (the Review buttons): record a job, answer at once, run on the server
-  // (closing the tab never stops it), then alert Mihai with the result and a link.
+  // (closing the tab never stops it), then alert the admin with the result and a link.
   const raw = await request.text();
   let body: Record<string, unknown> = {};
   try {
@@ -98,8 +98,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const { id } = await context.params;
   // Optional { platform }: add-ONE-platform mode (generate a single native variant without
   // regenerating the others). No body = full-campaign run.
-  // { note }: "Rework with my note" (Mihai's instruction, followed by the makers and the judge).
-  // { approvedDraft }: "Edit and approve": Mihai's edited text for ONE platform, used as the post (no text
+  // { note }: "Rework with my note" (the admin's instruction, followed by the makers and the judge).
+  // { approvedDraft }: "Edit and approve": the admin's edited text for ONE platform, used as the post (no text
   // loop, no text safety check: he approved it); the visual and his normal Review still follow.
   let requestedPlatform: string | null = null;
   let ownerNote = "";
@@ -137,11 +137,11 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const brand = brandRow as Brand | null;
 
   const idea = (campaign.idea_brief ?? {}) as Record<string, unknown>;
-  // Learning notes (Mihai's past Yes/Rework) that every maker, Crina's judge and Jev read before working.
+  // Learning notes (the admin's past Yes/Rework) that every maker, Crina's judge and Jev read before working.
   const vault = defaultVault(brand?.name);
   const textLearning = await learningContext(vault, { part: "text" });
   const visualLearning = await learningContext(vault, { part: "visual" });
-  // Learning library (ideas, links, images, documents Mihai added) read next to the Yes/Rework notes.
+  // Learning library (ideas, links, images, documents the admin added) read next to the Yes/Rework notes.
   // Only the ~10 items most relevant to this campaign (brand, keywords, recency); the Library shows which.
   const library = await libraryContext(
     campaign.brand_id,
@@ -151,8 +151,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const planNote = typeof idea.plan_note === "string" ? idea.plan_note : "";
   const checklist = String(brand?.tpl_review_checklist ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
   const noteText = [
-    ownerNote ? `Mihai's note for this rework (follow it exactly): ${ownerNote}` : "",
-    planNote && planNote !== ownerNote ? `Mihai's note for this campaign (follow it exactly): ${planNote}` : "",
+    ownerNote ? `The approver's note for this rework (follow it exactly): ${ownerNote}` : "",
+    planNote && planNote !== ownerNote ? `The approver's note for this campaign (follow it exactly): ${planNote}` : "",
     checklist.length ? `Review checklist (every post must pass):\n- ${checklist.join("\n- ")}` : ""
   ].filter(Boolean).join("\n\n");
   const textNotes = [noteText, textLearning.text, library].filter(Boolean).join("\n\n");
@@ -190,7 +190,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     .gte("scheduled_at", new Date().toISOString());
 
   // Refuse up front if this run could go over the model-call budget or a provider limit is active.
-  // Keep Mihai's rework note on the campaign before any refusal, so a budget stop never loses it.
+  // Keep the admin's rework note on the campaign before any refusal, so a budget stop never loses it.
   if (ownerNote) {
     await supabase.from("campaigns").update({ idea_brief: { ...idea, last_rework_note: { note: ownerNote, platform: requestedPlatform, at: new Date().toISOString() } } }).eq("id", id);
     idea.last_rework_note = { note: ownerNote, platform: requestedPlatform, at: new Date().toISOString() };
@@ -203,7 +203,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   }
 
   await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running", ...(idea.flow === "simple" ? { idea_brief: { ...idea, blocked: null } } : {}) }).eq("id", id);
-  // Simple flow: a safety stop is shown to Mihai on Review (with the reason), not left looking like "agents working".
+  // Simple flow: a safety stop is shown to the admin on Review (with the reason), not left looking like "agents working".
   const markBlocked = async (reason: string, platform: string, kind: "safety" | "failed" = "safety", extra: Record<string, unknown> = {}) => {
     if (idea.flow !== "simple") return;
     await supabase.from("campaigns").update({ idea_brief: { ...idea, blocked: { kind, reason, platform, at: new Date().toISOString(), ...extra } } }).eq("id", id);
@@ -312,7 +312,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
           fallbackAgentName: "Content Creator Agent",
           fallbackRole: "Copy and Editorial",
           task: `Create ${plan.label} package`,
-          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish. Every field you return is PUBLIC copy readers will see: never put internal notes, approval caveats, questions for Mihai, "subject to confirmation" remarks or tracking instructions into it.\n\nMemory:\n${memoryText(memory)}\n\n${textNotes}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
+          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish. Every field you return is PUBLIC copy readers will see: never put internal notes, approval caveats, questions for the admin, "subject to confirmation" remarks or tracking instructions into it.\n\nMemory:\n${memoryText(memory)}\n\n${textNotes}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
           outputSchema: plan.contentSchema,
           input: { brand: brandVoice, campaign_idea: ideaSlim, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -337,13 +337,13 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     // 1) Content loop — Content Creator makes a PLATFORM-NATIVE package, Crina scores, keep champion.
     const ownerApproved = approvedDraft && requestedPlatform && platform.toLowerCase() === requestedPlatform.toLowerCase() ? approvedDraft : null;
     const contentLoop: LoopResult<NativeDraft> = ownerApproved
-      ? { loopId: `owner-${Date.now()}`, champion: ownerApproved, championScore: 0, rounds: 0, stopReason: "pass", passed: true, lastJudgeNotes: "Text edited and approved by Mihai over the safety check.", lastScore: 0, fallbackUsed: false, provider: "mihai", model: null }
+      ? { loopId: `owner-${Date.now()}`, champion: ownerApproved, championScore: 0, rounds: 0, stopReason: "pass", passed: true, lastJudgeNotes: "Text edited and approved by the admin over the safety check.", lastScore: 0, fallbackUsed: false, provider: "mihai", model: null }
       : await runJudgedLoop<NativeDraft>({
       loopType: "content",
       agentId: "agent-content-creator",
       inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
       // Add-one-platform is interactive: keep it to a single round so it returns fast on a slow model.
-      // At most one automatic rework (2 rounds); more only when Mihai presses Rework.
+      // At most one automatic rework (2 rounds); more only when the admin presses Rework.
       maxRounds: requestedPlatform && !ownerNote ? 1 : CONTENT_ROUNDS,
       recordReceipt,
       make: async (_round, improvements, champion) => makeContent(improvements, champion),
@@ -373,7 +373,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     }
 
     // Simple flow: if the Content Creator produced nothing (model down, usage limit, bad output), make NO
-    // stand-in post from the plan text — Mihai would be reviewing text no agent wrote. Show why instead.
+    // stand-in post from the plan text — the admin would be reviewing text no agent wrote. Show why instead.
     if (idea.flow === "simple" && !contentLoop.champion) {
       const why = lastMakerError ?? contentLoop.lastJudgeNotes ?? "no draft produced";
       await markBlocked(`Agents failed: the Content Creator produced no post (${why.slice(0, 200)}). Nothing was made; run the agents again later.`, platform, "failed");
@@ -394,7 +394,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     // Lean pipeline: Jev's checks are inside Crina's single review above (no separate Jev loop).
 
     const contentType = plan.contentType;
-    const reviewChip = ownerApproved ? "Text edited and approved by Mihai" : `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
+    const reviewChip = ownerApproved ? "Text edited and approved by the admin" : `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
 
     // Insert at a NON-postable visual stage; only promoted to the human gate after the Visual loop
     // clears safety, so a visual safety-block never reaches Ready to Post.

@@ -8,7 +8,7 @@ import type { StatusLine } from "@/lib/marketing/status-line";
 
 const LEAVE = "Crina and the agents are working on it (about 2 minutes). You can leave this page; I'll notify you when it's ready.";
 
-/** The one-sentence status at the top of every campaign, with what Mihai can do right there. */
+/** The one-sentence status at the top of every campaign, with what the admin can do right there. */
 export function CampaignStatusBar({ campaignId, line, running }: { campaignId: string; line: StatusLine; running: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export function CampaignStatusBar({ campaignId, line, running }: { campaignId: s
         <div className="mt-2 flex flex-wrap gap-2">
           {line.actions.includes("approve_plan") ? (
             <OSButton className="px-3 py-1.5 text-xs" disabled={busy !== null} onClick={async () => {
-              const ok = await call("approve", `/api/marketing/campaigns/${campaignId}/plan-decision`, { decision: "yes", reason: "Approved by Mihai over Jev's doubts." }, "Approving the plan…");
+              const ok = await call("approve", `/api/marketing/campaigns/${campaignId}/plan-decision`, { decision: "yes", reason: "Approved by the admin over Jev's doubts." }, "Approving the plan…");
               if (ok) await startAgents();
             }}>Approve the plan anyway</OSButton>
           ) : null}

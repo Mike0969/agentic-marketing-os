@@ -145,7 +145,7 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
   }
 
   // Analyze: Crina proposes improved brand fields in the background; the proposals appear as
-  // "Proposed — use / dismiss" boxes. Mihai can leave the page; Telegram + Slack tell him when ready.
+  // "Proposed — use / dismiss" boxes. The admin can leave the page; Telegram + Slack tell him when ready.
   async function analyzeBrand() {
     if (!draft) return;
     const brandId = draft.id;
@@ -291,7 +291,7 @@ export function BrandWorkspace({ brands, proposals: initialProposals = {} }: { b
                     if (decision === "dismissed") return <span className="mt-1 block text-xs text-neutral-500">Proposal dismissed. Save to confirm.</span>;
                     return (
                       <span className="mt-2 block rounded-md border border-amber-500/40 bg-amber-500/10 p-3 normal-case tracking-normal">
-                        <span className="block text-xs font-semibold text-amber-300">Proposed — Mihai to approve</span>
+                        <span className="block text-xs font-semibold text-amber-300">Proposed — for approval</span>
                         <span className="mt-1 block whitespace-pre-wrap text-sm leading-6 text-amber-50">{proposal.value}</span>
                         {proposal.source ? <span className="mt-1 block text-xs text-amber-300/80">Source: {proposal.source}</span> : null}
                         <span className="mt-2 flex gap-2">

@@ -1,4 +1,4 @@
--- Split the Meta app keys into Facebook and Instagram (Mihai 2026-11-20: "how do I input Instagram and
+-- Split the Meta app keys into Facebook and Instagram (admin 2026-11-20: "how do I input Instagram and
 -- Facebook when it is just one field?"). Instagram can say "use the same keys as Facebook"
 -- (use_facebook, no keys of its own). Any old 'meta' row becomes the Facebook row. Safe to run repeatedly.
 

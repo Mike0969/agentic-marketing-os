@@ -8,7 +8,7 @@ import { FLOW_STEPS, flowView, isSimpleFlow } from "@/lib/marketing/flow-view";
 
 export const dynamic = "force-dynamic";
 
-// Mihai 2026-11-20: "My idea is simple" — one main path; everything else under More.
+// the admin 2026-11-20: "My idea is simple" — one main path; everything else under More.
 const mainPath = [
   { step: 1, href: "/marketing/new", title: "Your idea", detail: "Write it in one form, plus platforms and dates if you want.", icon: Lightbulb },
   { step: 2, href: "/marketing/review", title: "Crina plans · Jev checks", detail: "Crina builds the plan; Jev checks it before any agent starts.", icon: ListChecks },
@@ -117,9 +117,9 @@ export default async function MarketingHome() {
                   </div>
                   <div className="flex items-center gap-1">
                     {FLOW_STEPS.map((step) => (
-                      <span key={step.step} title={step.label} className={`h-2 w-6 rounded-full ${step.step < view.step ? "bg-cyan-400/70" : step.step === view.step ? (view.needsMihai ? "bg-amber-400" : "bg-cyan-300") : "bg-neutral-800"}`} />
+                      <span key={step.step} title={step.label} className={`h-2 w-6 rounded-full ${step.step < view.step ? "bg-cyan-400/70" : step.step === view.step ? (view.needsApproval ? "bg-amber-400" : "bg-cyan-300") : "bg-neutral-800"}`} />
                     ))}
-                    {view.needsMihai ? <OSBadge tone="warn">Needs you</OSBadge> : null}
+                    {view.needsApproval ? <OSBadge tone="warn">Needs you</OSBadge> : null}
                   </div>
                 </Link>
               ))

@@ -178,7 +178,7 @@ export type ReadyPackage = {
   project_slug?: string | null;
   reuse_allowed?: boolean | null;
   crina_route_notes?: string | null;
-  /** Jev's checks of the text and the visual before Mihai sees them (doubts = still below 0.85 after 2 reworks). */
+  /** Jev's checks of the text and the visual before the admin sees them (doubts = still below 0.85 after 2 reworks). */
   jev?: {
     text: JevPartResult | null;
     visual: JevPartResult | null;

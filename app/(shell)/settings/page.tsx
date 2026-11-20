@@ -69,7 +69,7 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         campaignEstimateUsd={await estimateUsd([...STEP_AGENTS.plan, ...STEP_AGENTS.perPlatform, ...STEP_AGENTS.runOverhead]).catch(() => 0)}
         prices={await listModelPrices(true).catch(() => [])}
       />
-      {/* Hermes (the "brain" card) is not a provider Mihai adds keys for: not listed here, still an agent option. */}
+      {/* Hermes (the "brain" card) is not a provider the admin adds keys for: not listed here, still an agent option. */}
       <ProvidersManager
         initialProviders={await listUserProviders().catch(() => [])}
         env={PROVIDERS.filter((p) => p.kind === "model" && p.key !== "hermes").map((p) => ({ key: p.key, label: p.label, configured: isConfigured(p.key), defaultModel: p.defaultModel ?? null }))}

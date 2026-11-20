@@ -1,7 +1,7 @@
 # NexRide - Offer Catalogue (types only)
 
 > Types only. No amounts live here: every amount is set per campaign, capped by the
-> monthly marketing budget and approved by Mihai (gate_budget). The Marketing OS never
+> monthly marketing budget and approved by the admin (gate_budget). The Marketing OS never
 > pays; it requests credits/bonuses from NexRide. Machine-readable copy:
 > `lib/marketing/nexride/offer-catalogue.ts`.
 

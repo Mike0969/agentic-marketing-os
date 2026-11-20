@@ -5,7 +5,7 @@ import { prepareAndRun } from "@/lib/marketing/start-agents-server";
 
 export const runtime = "nodejs";
 
-/** "Start the agents" in the background: answers at once; Mihai is notified when the posts are ready. */
+/** "Start the agents" in the background: answers at once; the admin is notified when the posts are ready. */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;

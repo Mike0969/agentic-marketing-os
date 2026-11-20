@@ -7,7 +7,7 @@ const now = Date.parse("2026-11-20T12:45:00Z");
 const job = (state: string, extra: Record<string, unknown> = {}) => ({ id: "j", kind: "run", label: "Rework with your note", state, started_at: "2026-11-20T12:41:00Z", finished_at: null, summary: null, seen_at: null, ...extra }) as never;
 const post = (approval_status: string, extra: Record<string, unknown> = {}) => ({ approval_status, workflow_stage: "human_final_approval", platform: "Instagram", scheduled_at: null, published_at: null, ...extra }) as never;
 
-test("status line: one plain sentence + time, and what Mihai can do", () => {
+test("status line: one plain sentence + time, and what the admin can do", () => {
   const working = statusLine({ idea_brief: { stage: "agents" } } as never, [], job("running"), now);
   assert.equal(working.tone, "working");
   assert.match(working.text, /^Agents working: rework with your note\. You can leave this page/);

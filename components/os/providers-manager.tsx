@@ -10,7 +10,7 @@ type UserProvider = {
   models_cache: string[]; models_cached_at: string | null; last_test_ok: boolean | null; last_test_at: string | null; last_test_detail: string | null;
 };
 
-// The providers Mihai can set a key for in place. GLM/Ollama appear only when the server has them.
+// The providers the admin can set a key for in place. GLM/Ollama appear only when the server has them.
 const KNOWN = [
   { key: "openai", label: "OpenAI" },
   { key: "anthropic", label: "Anthropic" },

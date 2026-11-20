@@ -167,7 +167,7 @@ export function safeHermesImagePath(candidate: unknown, home = HERMES_HOME): str
 }
 
 /**
- * Image through Hermes (Mihai 2026-11-20): the crina profile's image tool on the ChatGPT plan
+ * Image through Hermes (admin 2026-11-20): the crina profile's image tool on the ChatGPT plan
  * (openai-codex, gpt-image-2-medium; $0 per image, counts against the plan). Hermes saves the file
  * locally and returns its path; we read it only from Hermes's home. Never throws.
  */

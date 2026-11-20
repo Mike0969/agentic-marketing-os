@@ -4,10 +4,10 @@ import { publicUrl } from "@/lib/site-url";
 import { createServiceClient } from "@/lib/supabase/service";
 
 /**
- * Long campaign actions run on the server, not in the browser request (Mihai 2026-11-20: "why do I
+ * Long campaign actions run on the server, not in the browser request (admin 2026-11-20: "why do I
  * need to stay on the page? The platform should notify me"). The job lives in idea_brief.job; the
  * work runs as a detached task in the server process, so closing the tab never stops it. When it ends
- * (or needs Mihai) Telegram + Slack get one line with a link to the campaign's Review page, and the
+ * (or needs the admin) Telegram + Slack get one line with a link to the campaign's Review page, and the
  * app header shows it until he opens that page. The cron marks a job interrupted by a restart.
  */
 
@@ -88,7 +88,7 @@ export async function startCampaignJob(args: { campaignId: string; kind: string;
   return job;
 }
 
-/** Pure: one line for Mihai from the run route's answer. */
+/** Pure: one line for the admin from the run route's answer. */
 export function runOutcome(status: number, body: { error?: string; posts?: Array<{ platform: string; title: string; blocked?: boolean; stop?: string }> }): JobOutcome {
   if (status >= 400) return { state: "error", summary: body.error ?? `The agents could not run (HTTP ${status}).` };
   const posts = body.posts ?? [];
@@ -119,7 +119,7 @@ export async function markStaleJobs(origin: string, now = Date.now()): Promise<n
   return marked;
 }
 
-/** For the header: finished jobs Mihai has not opened yet (newest first). */
+/** For the header: finished jobs the admin has not opened yet (newest first). */
 export async function unseenJobs(limit = 8): Promise<Array<{ campaignId: string; title: string; job: CampaignJob }>> {
   try {
     const supabase = db();

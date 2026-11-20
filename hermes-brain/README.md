@@ -58,7 +58,7 @@ Live social posting: **disabled**
 
 - Retrieve this brain before long reasoning for Agentic Marketing OS work.
 - Keep dashboard responses concise and structured JSON.
-- Do not store large full transcripts unless Mihai explicitly asks.
+- Do not store large full transcripts unless the admin explicitly asks.
 - Store short, stable run summaries, winning/weak phrases, postmortems, and
   reusable patterns here only when they are worth versioning.
 - No live posting or social browser automation until explicit dashboard approval gates and platform OAuth exist.

@@ -1,4 +1,4 @@
--- Learning library (Mihai 2026-11-20): reference materials the agents read before working: images, ideas
+-- Learning library (admin 2026-11-20): reference materials the agents read before working: images, ideas
 -- (text), podcast / YouTube links (link + optional transcript, never a media download), documents, web links.
 -- brand_id null = for all brands. used_by_agents=false keeps an item stored but out of the prompts.
 -- Safe to run repeatedly.

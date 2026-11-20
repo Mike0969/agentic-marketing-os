@@ -1,4 +1,4 @@
--- Which Learning library items each agent run read (Mihai 2026-11-20: with ~700 items the agents get
+-- Which Learning library items each agent run read (admin 2026-11-20: with ~700 items the agents get
 -- only the ~10 most relevant per run, and the Library shows which ones). Safe to run repeatedly.
 
 create table if not exists learning_item_uses (

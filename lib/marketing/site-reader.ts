@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 /**
- * Reads a brand's own public website for Brands → Analyze (Mihai 2026-11-20: "read gulf-el.com, the
+ * Reads a brand's own public website for Brands → Analyze (admin 2026-11-20: "read gulf-el.com, the
  * investor portal, all data"). The sites are JavaScript apps, so each page is rendered by headless
  * Chromium (--dump-dom). Same site only (the brand domain and its subdomains), robots.txt respected
  * for our generic user agent, one page at a time, at most `max` pages. Never throws.

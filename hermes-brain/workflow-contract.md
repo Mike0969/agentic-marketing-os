@@ -7,4 +7,4 @@
 - Publishing Agent may prepare drafts only.
 - Publishing Agent must never publish automatically.
 - No agent may approve its own content automatically.
-- Live posting and direct social posting are blocked until Mihai explicitly enables platform OAuth and dashboard approval gates.
+- Live posting and direct social posting are blocked until the admin explicitly enables platform OAuth and dashboard approval gates.

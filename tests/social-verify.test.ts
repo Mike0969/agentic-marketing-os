@@ -8,7 +8,7 @@ const slack = await import("../lib/providers/slack.ts");
 const { getJevStatus } = await import("../lib/jev/status.ts");
 
 test("provider answers map to valid / expired / revoked / error", () => {
-  assert.equal(classify("linkedin", 200, { name: "Mihai" }, false).state, "valid");
+  assert.equal(classify("linkedin", 200, { name: "The admin" }, false).state, "valid");
   assert.equal(classify("x", 200, { data: { username: "nexride" } }, true).account, "nexride");
   const x401 = classify("x", 401, {}, true);
   assert.equal(x401.state, "expired");

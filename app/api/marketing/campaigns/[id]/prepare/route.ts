@@ -21,7 +21,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   if (!campaign) return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
   const brief = (campaign.idea_brief ?? {}) as Record<string, unknown>;
   const plan = (brief.plan ?? null) as CampaignPlan | null;
-  if (!plan || brief.stage !== "plan_ready") return NextResponse.json({ error: "The plan is not cleared yet (Jev or Mihai must clear it first)." }, { status: 409 });
+  if (!plan || brief.stage !== "plan_ready") return NextResponse.json({ error: "The plan is not cleared yet (Jev or the admin must clear it first)." }, { status: 409 });
   const refused = await preflight(id, [...times(STEP_AGENTS.perPlatform, Math.max(1, plan.platforms.length)), ...STEP_AGENTS.runOverhead]);
   if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   const { data: brandRow } = await supabase.from("brands").select("*").eq("id", campaign.brand_id).maybeSingle();

@@ -6,7 +6,7 @@ import { brandFieldState, brandGaps, safetyBlockReason } from "../lib/marketing/
 const testBrand = {
   name: "NexRide",
   website: "https://example.com",
-  positioning: "TEST BRAND - placeholder positioning (wording pending Mihai).",
+  positioning: "TEST BRAND - placeholder positioning (wording pending the admin).",
   target_audience: "TEST BRAND - placeholder audience.",
   tone_of_voice: "TEST BRAND - placeholder tone.",
   pillars: "",

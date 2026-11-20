@@ -1,4 +1,4 @@
--- Settings → Models and Notifications managed from the UI (Mihai 2026-11-20: "look like are hard coded").
+-- Settings → Models and Notifications managed from the UI (admin 2026-11-20: "look like are hard coded").
 -- Keys/tokens are encrypted at rest (AES-256-GCM with the server-held SOCIAL_TOKEN_ENCRYPTION_KEY, bound to
 -- the row id + field); only the last 4 characters are kept in clear for display. Admin-only.
 -- Env keys keep working as read-only "from server environment"; a UI row of the same kind takes priority.

@@ -1,4 +1,4 @@
--- Hard model-call budget for the Marketing OS (Mihai 2026-11-20, after the shared Codex usage limit
+-- Hard model-call budget for the Marketing OS (admin 2026-11-20, after the shared Codex usage limit
 -- was hit): a cap per campaign and per day (UTC), set in Settings, plus a Hermes limit breaker.
 -- While a provider usage limit is active, no model call is made until it resets.
 -- Safe to run repeatedly.

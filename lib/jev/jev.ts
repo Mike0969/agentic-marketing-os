@@ -4,9 +4,9 @@ import type { Brand } from "@/lib/types";
 
 /**
  * Jev (TypeSafe System One) checks Crina's plan and each agent's output before
- * it reaches Mihai: atomic yes/no questions scored 0..1 against his brand rules
+ * it reaches the admin: atomic yes/no questions scored 0..1 against his brand rules
  * and the learning notes. The score is the lowest answer; below 0.85 the item
- * goes back for automatic rework (max 2 rounds), then to Mihai marked
+ * goes back for automatic rework (max 2 rounds), then to the admin marked
  * "Jev doubts: …". Same bar as tools/jev/jev-gate.mjs in nexride-hq.
  */
 
@@ -118,7 +118,7 @@ function brandRules(brand: Partial<Brand> | null | undefined) {
 export function jevState(args: { kind: JevKind; idea: string; brand: Partial<Brand> | null | undefined; learning: string; subject: unknown; plan?: unknown }) {
   return [
     `Item to check: ${args.kind === "plan" ? "Crina's campaign plan" : args.kind === "text" ? "a social post (text)" : "a visual concept for a social post"}.`,
-    `Owner's idea (Mihai's own words): ${args.idea || "(none given)"}`,
+    `Owner's idea (in the owner's own words): ${args.idea || "(none given)"}`,
     `Brand rules:\n${brandRules(args.brand)}`,
     args.plan ? `Campaign plan:\n${JSON.stringify(args.plan)}` : "",
     args.learning,
@@ -165,7 +165,7 @@ export async function jevCheck(
 /**
  * Check, and on a fail ask `rework` for a new version with Jev's doubts, at most
  * JEV_MAX_REWORKS times. Returns the last version and its last check; a version
- * that still fails carries "Jev doubts: …" for Mihai.
+ * that still fails carries "Jev doubts: …" for the admin.
  */
 export async function jevLoop<T>(
   first: T,

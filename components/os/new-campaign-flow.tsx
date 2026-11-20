@@ -45,7 +45,7 @@ export function NewCampaignFlow({ brandName, brandId = null }: { brandName: stri
       });
       const body = (await res.json()) as { campaign_id?: string; stage?: string; plan?: Plan | null; jev?: Jev; error?: string | null; background?: boolean };
       if (!res.ok || !body.campaign_id) throw new Error(body.error ?? "The campaign was not created.");
-      // Runs on the server: Crina plans, Jev checks, the agents make the posts. Mihai is notified.
+      // Runs on the server: Crina plans, Jev checks, the agents make the posts. The admin is notified.
       if (body.background) {
         setStep("plan", "running", "Crina and the agents are working on it (a few minutes). You can leave this page; I'll notify you when it's ready.");
         router.push(`/marketing/review/${body.campaign_id}`);

@@ -9,7 +9,7 @@ import type { Brand, Campaign } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
-/** Mihai's Yes / Rework on a plan Jev still doubted. Both are saved to the learning notes. */
+/** the admin's Yes / Rework on a plan Jev still doubted. Both are saved to the learning notes. */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;

@@ -110,7 +110,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .filter(([, decision]) => decision?.decision === "rework")
     .map(([part, decision]) => `${part === "text" ? "Text" : "Visual"}: ${decision!.reason}`)
     .join("\n");
-  // The rework runs on the server (background job): closing the page never stops it; Mihai is notified.
+  // The rework runs on the server (background job): closing the page never stops it; the admin is notified.
   const callRework = () =>
     withCampaignBudget(item.campaign_id ?? null, () =>
       rework(

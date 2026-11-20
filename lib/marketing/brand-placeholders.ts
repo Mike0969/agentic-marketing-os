@@ -2,7 +2,7 @@ import type { Brand } from "@/lib/types";
 
 /**
  * Which brand fields the agents read are still placeholder text or empty.
- * Used by Brands (to show Mihai what to fill in) and by the campaign run (to
+ * Used by Brands (to show the admin what to fill in) and by the campaign run (to
  * explain a safety block in plain words).
  */
 
@@ -49,7 +49,7 @@ export function safetyBlockReason(kind: "content" | "visual", score: number, bra
   return `${baseReason(kind, score, brand)}${reviewerSays(judgeNotes)}`;
 }
 
-/** The reviewer's first sentence, so Mihai sees what actually failed, not only the likely cause. */
+/** The reviewer's first sentence, so the admin sees what actually failed, not only the likely cause. */
 function reviewerSays(judgeNotes?: string) {
   const first = (judgeNotes ?? "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s/)[0]?.replace(/^The (single )?biggest weakness is that /i, "") ?? "";
   return first ? ` Reviewer: ${first.charAt(0).toUpperCase()}${first.slice(1, 220)}` : "";

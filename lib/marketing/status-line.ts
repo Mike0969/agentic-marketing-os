@@ -2,7 +2,7 @@ import type { CampaignJob } from "@/lib/marketing/campaign-jobs";
 import type { Campaign, ContentItem } from "@/lib/types";
 
 /**
- * One plain sentence + a time for the top of every campaign (Mihai 2026-11-20: "are the agents
+ * One plain sentence + a time for the top of every campaign (admin 2026-11-20: "are the agents
  * working or did they stop? Nothing says it needs me"). Pure (tested).
  */
 export type StatusAction = "approve_plan" | "rework_plan" | "start_agents" | "run_again" | "review_posts";

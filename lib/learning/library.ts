@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/service";
 
 /**
- * Learning library (table learning_items, migration 0040): reference materials Mihai adds for the
+ * Learning library (table learning_items, migration 0040): reference materials the admin adds for the
  * agents: images, ideas (text), podcast / YouTube links (link + optional transcript; media is never
  * downloaded), documents and web links. Items with used_by_agents=true go into every maker's, Crina's
- * judge's and Jev's prompt as "Reference materials from Mihai", next to the Yes/Rework notes.
+ * judge's and Jev's prompt as "Reference materials from the admin", next to the Yes/Rework notes.
  */
 
 export const ITEM_TYPES = ["image", "idea", "podcast", "youtube", "document", "link"] as const;
@@ -120,7 +120,7 @@ export function libraryText(items: Array<Pick<LearningItem, "item_type" | "title
   if (!items.length) return "";
   const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
   return [
-    "Reference materials from Mihai (use them; do not copy them word for word; never invent what they do not say):",
+    "Reference materials (use them; do not copy them word for word; never invent what they do not say):",
     ...items.slice(0, limit).map((i) => `- [${TYPE_LABEL[i.item_type]}] ${i.title}${i.tags.length ? ` (${i.tags.join(", ")})` : ""}${i.notes ? `: ${clip(i.notes.replace(/\s+/g, " "), excerpt)}` : ""}${i.url ? ` <${i.url}>` : ""}`)
   ].join("\n");
 }

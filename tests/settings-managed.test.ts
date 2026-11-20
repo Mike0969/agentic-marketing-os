@@ -125,7 +125,7 @@ test("learning library: validation and the block the agents read", async () => {
   const item = await withEnv(ENV, () => addLearningItem({ type: "youtube", title: "Founder talk", url: "https://youtu.be/abc", tags: "drivers, Dubai", notes: "Drivers keep the fare." }));
   assert.deepEqual(item.tags, ["drivers", "dubai"]);
   const text = libraryText([item]);
-  assert.match(text, /^Reference materials from Mihai/);
+  assert.match(text, /^Reference materials \(/);
   assert.match(text, /\[YouTube\] Founder talk \(drivers, dubai\): Drivers keep the fare\. <https:\/\/youtu\.be\/abc>/);
   assert.equal(libraryText([]), "");
 });

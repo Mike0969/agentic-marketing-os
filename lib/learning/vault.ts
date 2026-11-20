@@ -3,7 +3,7 @@ import path from "path";
 
 /**
  * Learning vault: an Obsidian-style folder of markdown notes per project.
- * Every Rework Mihai asks for is saved with his reason and the rejected item;
+ * Every Rework the admin asks for is saved with his reason and the rejected item;
  * every Yes is saved as a good example. Crina, the agents and Jev read the
  * notes before working. This is memory the agents read every time, not model
  * training.
@@ -100,7 +100,7 @@ export function noteMarkdown(note: Omit<LearningNote, "file">) {
     "",
     `# ${title}`,
     "",
-    note.kind === "rejected" ? `**Why Mihai said Rework:** ${note.reason}` : `**Mihai said Yes.**${note.reason ? ` ${note.reason}` : ""}`,
+    note.kind === "rejected" ? `**Why the approver said Rework:** ${note.reason}` : `**The approver said Yes.**${note.reason ? ` ${note.reason}` : ""}`,
     "",
     "## The item",
     "",
@@ -135,7 +135,7 @@ async function writeIndex(storage: VaultStorage) {
     [
       "# Learning notes",
       "",
-      "What Mihai rejected (with his reason) and approved. Crina, every agent and Jev read these before working.",
+      "What the approver rejected (with the reason) and approved. Crina, every agent and Jev read these before working.",
       "This is memory the agents read every time, not model training.",
       "",
       `## Don't repeat (${rejected.length})`,
@@ -191,7 +191,7 @@ export async function learningContext(storage: VaultStorage | null, options: { p
   const good = notes.filter((note) => note.kind === "approved").slice(0, limit);
   const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max)}…` : text);
   const text = [
-    "Learning notes from Mihai's past decisions (read these before working):",
+    "Learning notes from the approver's past decisions (read these before working):",
     "Don't repeat:",
     ...(dontRepeat.length ? dontRepeat.map((note) => `- [${note.part}] ${note.reason} — rejected: "${clip(oneLine(note.item), 220)}"`) : ["- none yet"]),
     "Good examples:",

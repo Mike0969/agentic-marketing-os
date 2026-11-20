@@ -167,7 +167,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const fromTags = routeFromTags(tags);
     if (fromTags.visual || fromTags.content) route = fromTags;
   }
-  // Review screen: Mihai said Rework on a specific part (text and/or visual) — that is authoritative.
+  // Review screen: the admin said Rework on a specific part (text and/or visual) — that is authoritative.
   const parts = Array.isArray(body.parts) ? body.parts.filter((part): part is string => typeof part === "string") : [];
   if (parts.includes("text") || parts.includes("visual")) route = { content: parts.includes("text"), visual: parts.includes("visual") };
   const memory = await getFeedbackMemoryContext({ brandId: item.brand_id, platform: item.platform });

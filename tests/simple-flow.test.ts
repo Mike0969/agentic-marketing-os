@@ -1,4 +1,4 @@
-// Mihai's simple flow: learning vault, Jev gate, flow stages, the new-campaign and review routes. No network.
+// the admin's simple flow: learning vault, Jev gate, flow stages, the new-campaign and review routes. No network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
@@ -70,7 +70,7 @@ test("jev: no key -> not run, not blocking", async () => {
   assert.match(result.note!, /TYPESAFE_API_KEY missing/);
 });
 
-test("jev loop: automatic rework at most 2 rounds, then 'Jev doubts: …' for Mihai", async () => {
+test("jev loop: automatic rework at most 2 rounds, then 'Jev doubts: …' for the admin", async () => {
   const client = fakeJev([{ ...all(0.9), brand_rules: 0.3 }]);
   const reworkInputs: string[][] = [];
   const out = await jevLoop<string>(
@@ -96,7 +96,7 @@ test("jev loop: automatic rework at most 2 rounds, then 'Jev doubts: …' for Mi
 
 test("flow view: stage and who it waits for", () => {
   const campaign = (stage: string) => ({ id: "c1", idea_brief: { flow: "simple", stage, plan_jev: { doubts: "Jev doubts: x" } } }) as never;
-  assert.equal(flowView(campaign("plan_doubts"), []).needsMihai, true);
+  assert.equal(flowView(campaign("plan_doubts"), []).needsApproval, true);
   assert.equal(flowView(campaign("plan_doubts"), []).step, 2);
   assert.equal(flowView(campaign("agents"), []).label, "Agents working");
   const pending = [{ campaign_id: "c1", approval_status: "pending" }] as never;
@@ -104,7 +104,7 @@ test("flow view: stage and who it waits for", () => {
   const approved = [{ campaign_id: "c1", approval_status: "approved" }] as never;
   assert.equal(flowView(campaign("agents"), approved).step, 5);
   const blocked = { id: "c1", idea_brief: { flow: "simple", stage: "agents", blocked: { reason: "Blocked by safety check: brand details are still placeholder (score 26/100). Fill in Brands → NexRide." } } } as never;
-  assert.equal(flowView(blocked, []).needsMihai, true);
+  assert.equal(flowView(blocked, []).needsApproval, true);
   assert.match(flowView(blocked, []).label, /^Blocked by safety check/);
   assert.equal(flowView(blocked, pending).step, 4, "a post waiting for review wins over an older block");
 });
@@ -178,7 +178,7 @@ test("review: Yes on both -> final approval (scheduled) and two good-example not
   assert.equal(readdirSync(approvedDir).length, 2);
   const notes = await listLearningNotes(defaultVault("NexRide"));
   assert.equal(notes.length, 0, "defaultVault reads the env at call time; outside withEnv nothing is configured");
-  assert.match(readFileSync(path.join(approvedDir, readdirSync(approvedDir)[0]), "utf8"), /Mihai said Yes/);
+  assert.match(readFileSync(path.join(approvedDir, readdirSync(approvedDir)[0]), "utf8"), /The approver said Yes/);
 });
 
 test("review: Rework without a reason or no choice at all is refused; one decided part is saved and the other stays waiting", async () => {

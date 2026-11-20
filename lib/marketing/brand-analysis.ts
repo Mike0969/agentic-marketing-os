@@ -12,10 +12,10 @@ import { createServiceClient } from "@/lib/supabase/service";
 import type { Brand } from "@/lib/types";
 
 /**
- * Brands → Analyze (Mihai 2026-11-20): Crina reads the brand fields, the ~10 most relevant Learning
+ * Brands → Analyze (admin 2026-11-20): Crina reads the brand fields, the ~10 most relevant Learning
  * library items for this brand (soul, truth book, prohibited claims, newsletters…) and the recent
  * Yes/Rework notes, then PROPOSES an improved value for each brand field. The proposals appear as
- * "Proposed — use / dismiss" boxes; nothing is written to the brand until Mihai presses Use.
+ * "Proposed — use / dismiss" boxes; nothing is written to the brand until the admin presses Use.
  * Runs in the background (one per brand); Telegram + Slack get a line with the Brands link when done.
  */
 
@@ -140,7 +140,7 @@ async function analyze(brandId: string): Promise<AnalysisStatus> {
     fallbackAgentName: "Crina",
     fallbackRole: "Marketing CEO Agent",
     task: "Brand analysis: propose brand fields from the brand's sites and materials",
-    instructions: `Analyse this brand from its own sources below (W = its website and investor portal pages, L = its Learning library: soul, truth book, prohibited claims, content rules, newsletters, decks) and Mihai's past Yes/Rework notes. For each brand field, PROPOSE the improved value, written as the field itself (ready to use), and list the source ids it rests on. Follow the prohibited-claims and content rules strictly: a claim they say needs sign-off or is prohibited is left out, or said as "planned" only where they allow it. Never invent numbers, results, partners or proof; a number appears only if a source states it, with that source id. Keep a field's current text when it is already right.\n\nCurrent brand fields:\n${JSON.stringify(current, null, 1)}\n\nSOURCES:\n${sourceText}\n\n${notes}`,
+    instructions: `Analyse this brand from its own sources below (W = its website and investor portal pages, L = its Learning library: soul, truth book, prohibited claims, content rules, newsletters, decks) and the approver's past Yes/Rework notes. For each brand field, PROPOSE the improved value, written as the field itself (ready to use), and list the source ids it rests on. Follow the prohibited-claims and content rules strictly: a claim they say needs sign-off or is prohibited is left out, or said as "planned" only where they allow it. Never invent numbers, results, partners or proof; a number appears only if a source states it, with that source id. Keep a field's current text when it is already right.\n\nCurrent brand fields:\n${JSON.stringify(current, null, 1)}\n\nSOURCES:\n${sourceText}\n\n${notes}`,
     outputSchema,
     input: { brand: { name: brand.name, website: brand.website } },
     brainFiles: ["approval-rules.md"],
@@ -196,7 +196,7 @@ export function analysisMarkdown(a: { brand: string; date: string; summary: stri
   return [
     `# Brand analysis ${a.date}: ${a.brand}`,
     "",
-    `Written by Crina (Hermes / crina) from the brand's own website, investor portal and Learning library. Proposals are not applied until Mihai presses Use on the Brands page.`,
+    `Written by Crina (Hermes / crina) from the brand's own website, investor portal and Learning library. Proposals are not applied until the admin presses Use on the Brands page.`,
     "",
     "## Summary",
     a.summary || "(none)",

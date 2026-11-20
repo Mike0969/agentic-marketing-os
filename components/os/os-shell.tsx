@@ -10,9 +10,9 @@ const nav = [
   { href: "/", label: "Home", icon: Gauge },
   { href: "/marketing", label: "Marketing", icon: Megaphone },
   { href: "/marketing/learning", label: "Learning library", icon: BookOpen },
-  // Sales and Trading are hidden from the menu (Mihai 2026-11-20); their pages still exist.
+  // Sales and Trading are hidden from the menu (admin 2026-11-20); their pages still exist.
   { href: "/agents", label: "Agents", icon: Bot },
-  // Brain is hidden from the menu (Mihai 2026-11-20); the /brain page still exists.
+  // Brain is hidden from the menu (admin 2026-11-20); the /brain page still exists.
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 
@@ -116,7 +116,7 @@ export function OsShell({ children, auth, hermes, brands = [], selectedBrandId =
               <span>{hermesLabel}</span>
             </div>
             <div className="flex items-center gap-3">
-              {/* Campaign results Mihai has not opened yet (ready / blocked / needs you / error). */}
+              {/* Campaign results the admin has not opened yet (ready / blocked / needs you / error). */}
               <div className="relative">
                 <button
                   type="button"

@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 export default async function ReviewListPage() {
   const data = await getDashboardData();
   const views = data.campaigns.filter(isSimpleFlow).map((campaign) => flowView(campaign, data.contentItems));
-  const waiting = views.filter((view) => view.needsMihai);
-  const rest = views.filter((view) => !view.needsMihai);
+  const waiting = views.filter((view) => view.needsApproval);
+  const rest = views.filter((view) => !view.needsApproval);
   return (
     <>
       <PageHeading eyebrow="Marketing" title="Review" subtitle="One screen per campaign: say Yes or Rework on each part. Campaigns waiting for you are first." />
@@ -26,7 +26,7 @@ export default async function ReviewListPage() {
                 <div className="font-semibold text-neutral-100">{view.campaign.title}</div>
                 <div className="mt-1 text-sm text-neutral-400">{view.label}</div>
               </div>
-              <OSBadge tone={view.needsMihai ? "warn" : "off"}>{view.needsMihai ? "Needs you" : `Step ${view.step} of 5`}</OSBadge>
+              <OSBadge tone={view.needsApproval ? "warn" : "off"}>{view.needsApproval ? "Needs you" : `Step ${view.step} of 5`}</OSBadge>
             </OSPanel>
           </Link>
         ))}

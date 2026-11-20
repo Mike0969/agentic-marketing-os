@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const VISUAL_ROUNDS = 1;
-export const CONTENT_ROUNDS = 2; // 1 automatic rework; more only when Mihai presses Rework
+export const CONTENT_ROUNDS = 2; // 1 automatic rework; more only when the admin presses Rework
 
 /**
  * Hard model-call budget (migration 0038). Every model call (Hermes, other LLM
@@ -33,7 +33,7 @@ export type BudgetStatus = BudgetSettings & {
 export const DEFAULT_BUDGET: BudgetSettings = { perCampaignMax: 40, perDayMax: 150, perDayUsd: null, perCampaignUsd: null };
 
 /**
- * Upper bounds per step (lean pipeline, Mihai 2026-11-20): one plan + one Jev review (1 automatic
+ * Upper bounds per step (lean pipeline, the admin 2026-11-20): one plan + one Jev review (1 automatic
  * rework); per platform one writer + one review (1 automatic rework) and, unless a library image is
  * used, one visual + one review (1 rework). Used for the call counts shown and, with STEP_AGENTS, for
  * the dollar preflight.
@@ -44,7 +44,7 @@ export const CALL_ESTIMATE = {
   perPlatform: 2 * 2 + VISUAL_ROUNDS * 2 + 1, // writer + review (2 rounds max) + visual concept + review + 1 image
   runOverhead: 0, // no conversion analysis after a run
   rework: 3,
-  // "Edit and approve": Mihai's text is used as is: only the visual + its review.
+  // "Edit and approve": the admin's text is used as is: only the visual + its review.
   approvedTextPlatform: VISUAL_ROUNDS * 2
 };
 
