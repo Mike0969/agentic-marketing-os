@@ -48,6 +48,11 @@ const PLATFORMS: Record<Platform, { label: string; idLabel: string; secretLabel:
   }
 };
 
+/** Instagram account / business IDs look like 1784xxxxxxxxxxxxx (17 digits); Meta rejects them as an App ID. */
+export function looksLikeInstagramAccountId(id: string | null | undefined) {
+  return /^1784\d{13}$/.test((id ?? "").trim());
+}
+
 function keyLine(k: Keys | undefined, idLabel: string) {
   if (!k || k.source === "none") return "not set";
   if (k.source === "env") return `${idLabel} ${k.clientId} · from server environment`;
@@ -118,6 +123,9 @@ export function SocialAppKeys({ initialKeys, redirectUris, highlight, highlightF
     // Not a <form>: a text field + a secret field inside a form is what password managers fill a saved login into.
     return (
       <div role="presentation" className="mt-2 flex flex-wrap items-center gap-2" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } }}>
+        {(k.platform === "facebook" || k.platform === "instagram") && looksLikeInstagramAccountId(form.clientId) ? (
+          <p className="w-full text-xs text-amber-300">This looks like an Instagram account ID (1784…), not a Meta App ID: use the App ID from App settings → Basic.</p>
+        ) : null}
         <OSKeyInput name={`${k.platform}_app_client_id`} value={form.clientId} onChange={(e) => setForm({ ...form, clientId: e.target.value })} placeholder={p.idLabel} aria-label={`${p.label} ${p.idLabel}`} className="w-72" />
         <OSKeyInput secret name={`${k.platform}_app_client_secret`} value={form.clientSecret} onChange={(e) => setForm({ ...form, clientSecret: e.target.value })} placeholder={k.source === "settings" && k.secretSet ? `${p.secretLabel} (leave empty to keep …${k.secretLast4})` : p.secretLabel} aria-label={`${p.label} ${p.secretLabel}`} className="w-80" />
         <OSButton type="button" className="px-3 py-1.5 text-xs" disabled={busy !== null || !form.clientId.trim()} onClick={submit}>
@@ -175,6 +183,11 @@ export function SocialAppKeys({ initialKeys, redirectUris, highlight, highlightF
           <p className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
             {`${highlightFor ?? p.label} can't connect yet: `}
             {onFacebook ? "it uses the Facebook keys, so add the Facebook App ID and App secret above" : `add the ${p.idLabel} and ${p.secretLabel} below`}, then press Connect / Reconnect again.
+          </p>
+        ) : null}
+        {(k.platform === "facebook" || k.platform === "instagram") && !onFacebook && looksLikeInstagramAccountId(k.clientId) ? (
+          <p className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+            {k.clientId} looks like an Instagram account ID, not a Meta App ID, so Facebook answers &quot;Invalid App ID&quot;. Press Change and paste the App ID from Meta for Developers → your app → App settings → Basic (with its App secret).
           </p>
         ) : null}
         {isInstagram ? (
