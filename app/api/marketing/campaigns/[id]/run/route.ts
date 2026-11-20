@@ -81,7 +81,12 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         hook: String(d.hook ?? "").trim().slice(0, 500),
         body: d.body.trim().slice(0, 5000),
         cta: String(d.cta ?? "").trim().slice(0, 300),
-        hashtags: Array.isArray(d.hashtags) ? d.hashtags.map(String).map((h) => h.trim()).filter(Boolean).slice(0, 30) : []
+        hashtags: Array.isArray(d.hashtags) ? d.hashtags.map(String).map((h) => h.trim()).filter(Boolean).slice(0, 30) : [],
+        ...(Array.isArray(d.slides)
+          ? { slides: (d.slides as Array<Record<string, unknown>>).slice(0, 10).map((sl) => ({ headline: String(sl?.headline ?? "").slice(0, 200), text: String(sl?.text ?? "").slice(0, 1000) })).filter((sl) => sl.headline || sl.text) }
+          : {}),
+        ...(typeof d.script === "string" && d.script.trim() ? { script: d.script.trim().slice(0, 5000) } : {}),
+        ...(Array.isArray(d.storyboard) ? { storyboard: d.storyboard.map(String).slice(0, 20) } : {})
       };
     }
   } catch {

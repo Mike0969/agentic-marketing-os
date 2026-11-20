@@ -11,7 +11,7 @@ import type { ContentItem } from "@/lib/types";
 type Plan = { title: string; summary: string; objective: string; key_message: string; platforms: string[]; cta: string; target_audience: string; agent_tasks?: Record<string, string> };
 type Jev = { ran: boolean; score: number | null; doubts: string | null; note: string | null } | null;
 type Choice = { decision: "yes" | "rework" | null; reason: string };
-type Draft = { title?: string; hook?: string; body?: string; cta?: string; hashtags?: string[] };
+type Draft = { title?: string; hook?: string; body?: string; cta?: string; hashtags?: string[]; slides?: Array<{ headline: string; text: string }>; script?: string; storyboard?: string[] };
 type BlockedInfo = { reason?: string; kind?: string; platform?: string; draft?: Draft | null; flagged?: string[]; judge_notes?: string; score?: number };
 
 export function CampaignReview(props: {
@@ -334,7 +334,7 @@ function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: {
   const flagged = info.flagged ?? [];
   const [mode, setMode] = useState<"none" | "rework" | "edit">("none");
   const [note, setNote] = useState("");
-  const [edit, setEdit] = useState({ title: d.title ?? "", hook: d.hook ?? "", body: d.body ?? "", cta: d.cta ?? "", hashtags: (d.hashtags ?? []).join(" ") });
+  const [edit, setEdit] = useState({ title: d.title ?? "", hook: d.hook ?? "", body: d.body ?? "", cta: d.cta ?? "", hashtags: (d.hashtags ?? []).join(" "), slides: (d.slides ?? []).map((sl) => `${sl.headline} | ${sl.text}`).join("\n"), script: d.script ?? "" });
   return (
     <OSPanel className="border-amber-500/40">
       <div className="flex flex-wrap items-center gap-2">
@@ -362,6 +362,14 @@ function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: {
         {d.body ? <p className="mt-1 whitespace-pre-wrap"><Highlighted text={d.body} flagged={flagged} /></p> : null}
         {d.cta ? <p className="mt-1"><span className="text-neutral-500">CTA:</span> <Highlighted text={d.cta} flagged={flagged} /></p> : null}
         {d.hashtags?.length ? <p className="mt-1 text-neutral-500">{d.hashtags.join(" ")}</p> : null}
+        {d.slides?.length ? (
+          <ol className="mt-2 list-decimal space-y-1 pl-5">
+            {d.slides.map((sl, i) => (
+              <li key={i}><span className="font-medium text-neutral-100"><Highlighted text={sl.headline} flagged={flagged} /></span> <Highlighted text={sl.text} flagged={flagged} /></li>
+            ))}
+          </ol>
+        ) : null}
+        {d.script ? <p className="mt-2 whitespace-pre-wrap"><span className="text-neutral-500">Script:</span> <Highlighted text={d.script} flagged={flagged} /></p> : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         <OSButton variant={mode === "rework" ? "primary" : "secondary"} onClick={() => setMode(mode === "rework" ? "none" : "rework")} disabled={busy}>
@@ -389,8 +397,15 @@ function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: {
           <OSTextarea value={edit.body} onChange={(e) => setEdit({ ...edit, body: e.target.value })} aria-label="Text" rows={8} />
           <OSInput value={edit.cta} onChange={(e) => setEdit({ ...edit, cta: e.target.value })} aria-label="CTA" placeholder="CTA" />
           <OSInput value={edit.hashtags} onChange={(e) => setEdit({ ...edit, hashtags: e.target.value })} aria-label="Hashtags" placeholder="#hashtags" />
+          {d.slides?.length ? <OSTextarea value={edit.slides} onChange={(e) => setEdit({ ...edit, slides: e.target.value })} aria-label="Slides (one per line: headline | text)" rows={Math.min(10, (d.slides?.length ?? 0) + 1)} /> : null}
+          {d.script ? <OSTextarea value={edit.script} onChange={(e) => setEdit({ ...edit, script: e.target.value })} aria-label="Script" rows={5} /> : null}
           <p className="text-xs text-neutral-500">Approving sends your text on without the safety check (you are the reviewer). The visual agent then makes the image and the post comes back here for your final Yes.</p>
-          <OSButton onClick={() => onApprove({ ...edit, hashtags: edit.hashtags.split(/\s+/).filter(Boolean) })} disabled={busy || !edit.body.trim()}>
+          <OSButton onClick={() => onApprove({
+            title: edit.title, hook: edit.hook, body: edit.body, cta: edit.cta,
+            hashtags: edit.hashtags.split(/\s+/).filter(Boolean),
+            ...(d.slides?.length ? { slides: edit.slides.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [h, ...t] = l.split("|"); return { headline: h.trim(), text: t.join("|").trim() }; }) } : {}),
+            ...(d.script ? { script: edit.script, storyboard: d.storyboard } : {})
+          })} disabled={busy || !edit.body.trim()}>
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve my edited text
           </OSButton>
         </div>
