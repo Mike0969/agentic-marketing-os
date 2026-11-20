@@ -36,7 +36,8 @@ test("notifyOperator sends the same text to Telegram and Slack when both are con
   const slack = calls.find((c) => c.url.includes("slack.com/api/chat.postMessage"));
   assert.ok(slack);
   assert.equal(slack.body.channel, "C123");
-  assert.equal(slack.body.text, "📊 Weekly summary");
+  assert.equal(slack.body.text, "🤖 Agentic Marketing OS\n📊 Weekly summary");
+  assert.equal(calls[0].body.text, "🤖 Agentic Marketing OS\n📊 Weekly summary");
 });
 
 test("notifyOperator posts to Slack alone when Telegram is unset", async () => {
