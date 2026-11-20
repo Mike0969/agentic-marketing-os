@@ -111,9 +111,17 @@ export async function chargeModelCall(kind: string, agentId: string | null = nul
 }
 
 const USAGE_LIMIT = /usage[ _]limit|rate[ _]limit|\b429\b|too many requests/i;
+// Hermes's own "every provider failed" message (primary AND its fallback, e.g. DeepSeek), as opposed to
+// an answer that merely mentions a limit. Hermes falls back by itself; we stop only on a real failure.
+const HERMES_FAILED = /API call failed after \d+ retr|usage_limit_reached|Error code: 429|HTTP 429:/i;
 
 export function isUsageLimit(text: string | null | undefined) {
   return Boolean(text && USAGE_LIMIT.test(text));
+}
+
+/** True only when Hermes reports that it could not get an answer from any provider because of a limit. */
+export function isHermesLimitFailure(text: string | null | undefined) {
+  return Boolean(text && HERMES_FAILED.test(text) && USAGE_LIMIT.test(text));
 }
 
 /** When the provider says it resets: resets_at (unix seconds) or resets_in_sec; else one hour. */

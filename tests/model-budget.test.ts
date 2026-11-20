@@ -51,6 +51,19 @@ test("an HTTP 429 from Hermes trips the breaker too", async () => {
   assert.match(result.error!, /^Hermes limit reached, resets at \d\d:\d\d UTC\.$/);
 });
 
+test("a fallback answer that only mentions a limit is not a failure: no trip", async () => {
+  const db = seed();
+  const prose = "The primary model hit a rate limit earlier, so here is the brief from the fallback model without JSON.";
+  const hermes = fakeFetch(() => jsonResponse({ choices: [{ message: { content: prose } }] }));
+  const result = await withEnv(ENV, call, hermes.fn);
+  assert.equal(result.ok, false, "still not usable JSON");
+  assert.notEqual(result.rateLimited, true);
+  assert.match(result.error!, /^Hermes answered without JSON/);
+  assert.equal(db.rows("model_budget")[0].hermes_blocked_until, null, "breaker untouched");
+  const ok = await withEnv(ENV, call, fakeFetch(() => jsonResponse({ choices: [{ message: { content: '{"summary":"from DeepSeek"}' } }] })).fn);
+  assert.equal(ok.ok, true);
+});
+
 test("daily cap: calls are charged; at the cap the call is refused before Hermes", async () => {
   const today = new Date().toISOString();
   const db = seed({ per_day_max: 2 }, [{ id: 1, at: today, kind: "hermes" }]);

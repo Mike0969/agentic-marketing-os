@@ -1,6 +1,6 @@
 import { resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { agentMemoryFileName, buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
-import { chargeModelCall, isUsageLimit, tripUsageLimit } from "@/lib/budget/model-budget";
+import { chargeModelCall, isHermesLimitFailure, tripUsageLimit } from "@/lib/budget/model-budget";
 import { listIntegrationConfigs } from "@/lib/integration-store";
 
 /**
@@ -256,7 +256,7 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
 
       if (!response.ok) {
         const body = await response.text().catch(() => "");
-        if (response.status === 429 || isUsageLimit(body)) {
+        if (response.status === 429 || isHermesLimitFailure(body)) {
           const message = await tripUsageLimit(body || "HTTP 429");
           return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, status: 429, durationMs: Date.now() - startedAt, error: message, rateLimited: true };
         }
@@ -270,8 +270,9 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
       try {
         parsed = extractJsonContent(raw);
       } catch (parseError) {
-        // Hermes can answer 200 with the provider's error as text ("HTTP 429: The usage limit has been reached").
-        if (isUsageLimit(content)) {
+        // Hermes answers 200 with its failure text only when the primary AND its fallback failed
+        // ("API call failed after 3 retries. HTTP 429: …"). A fallback answer is trusted, never a trip.
+        if (isHermesLimitFailure(content)) {
           const message = await tripUsageLimit(content);
           return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, status: 429, durationMs: Date.now() - startedAt, error: message, rateLimited: true };
         }
