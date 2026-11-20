@@ -39,7 +39,25 @@ export async function listLearningItems(): Promise<LearningItem[]> {
   return (data ?? []) as LearningItem[];
 }
 
+/** Type from a dropped file: images by MIME, everything else is a document. */
+export function typeForFile(file: { type: string; name: string }): ItemType {
+  return file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(file.name) ? "image" : "document";
+}
+
+/** Type from a pasted link: YouTube, common podcast hosts, else a web link. */
+export function typeForUrl(url: string): ItemType {
+  if (/(youtube\.com|youtu\.be)\//i.test(url)) return "youtube";
+  if (/(podcasts\.apple\.com|open\.spotify\.com\/(episode|show)|anchor\.fm|podbean|buzzsprout|soundcloud\.com)/i.test(url)) return "podcast";
+  return "link";
+}
+
+const titleFromFile = (name: string) => name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim().slice(0, 200) || "Untitled file";
+
 export async function addLearningItem(input: { type: unknown; title: unknown; brandId?: unknown; tags?: unknown; url?: unknown; notes?: unknown; file?: File | null }): Promise<LearningItem> {
+  // Auto-detect: a dropped file needs no type or title; a pasted link picks YouTube / podcast / link.
+  if (!isItemType(input.type) && input.file && input.file.size > 0) input = { ...input, type: typeForFile(input.file) };
+  if (!isItemType(input.type) && typeof input.url === "string" && input.url.trim()) input = { ...input, type: typeForUrl(input.url.trim()) };
+  if ((typeof input.title !== "string" || !input.title.trim()) && input.file && input.file.size > 0) input = { ...input, title: titleFromFile(input.file.name) };
   if (!isItemType(input.type)) throw new Error("Choose a type: image, idea, podcast, YouTube, document or link.");
   const title = typeof input.title === "string" ? input.title.trim().slice(0, 200) : "";
   if (!title) throw new Error("Give it a title.");

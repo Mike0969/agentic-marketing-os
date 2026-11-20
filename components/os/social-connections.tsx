@@ -88,7 +88,7 @@ export async function SocialConnections({ oauthStatus = {} }: { oauthStatus?: OA
         <h2 className="text-lg font-semibold text-neutral-50">Social connections</h2>
         <OSBadge tone={posting ? "ok" : "off"}>{posting ? "Posting ENABLED" : "Posting off"}</OSBadge>
       </div>
-      <p className="mb-4 mt-1 text-sm text-neutral-500">Connect each brand&apos;s accounts. API keys live in <code className="text-neutral-400">.env.local</code> — here you just connect.</p>
+      <p className="mb-4 mt-1 text-sm text-neutral-500">Connect each brand&apos;s accounts with Connect / Reconnect. The status is checked live with each platform (hover it for details).</p>
       {platforms.map((platform) => {
         const message = messageFor(oauthStatus[platform.key], oauthStatus[`${platform.key}_detail`]);
         if (!message) return null;

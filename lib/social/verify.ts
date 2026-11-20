@@ -104,8 +104,9 @@ export function peekVerification(db: Db, brandId: string, platform: string, auth
 export function verifyLabel(v: VerifyResult | null | undefined): { text: string; tone: "ok" | "warn" | "danger" } | null {
   if (!v) return null;
   const at = new Date(v.checkedAt).toISOString().slice(11, 16);
-  if (v.state === "valid") return { text: `connected · verified ${at} UTC`, tone: "ok" };
-  if (v.state === "expired") return { text: v.detail.includes("refresh token") ? `expired (refresh untested) — Reconnect · checked ${at}` : "expired — Reconnect", tone: "warn" };
-  if (v.state === "revoked") return { text: "revoked — Reconnect", tone: "danger" };
-  return { text: `check failed: ${v.detail}`, tone: "warn" };
+  // One short line; the details are in the tooltip, the Reconnect button sits next to it.
+  if (v.state === "valid") return { text: `Connected · checked ${at}`, tone: "ok" };
+  if (v.state === "expired") return { text: `Expired · checked ${at}`, tone: "warn" };
+  if (v.state === "revoked") return { text: `Revoked · checked ${at}`, tone: "danger" };
+  return { text: `Check failed · ${at}`, tone: "warn" };
 }

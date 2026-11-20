@@ -21,10 +21,10 @@ test("provider answers map to valid / expired / revoked / error", () => {
 
 test("labels for Settings", () => {
   const at = "2026-11-20T09:05:00.000Z";
-  assert.equal(verifyLabel({ state: "valid", detail: "", checkedAt: at, account: null })!.text, "connected · verified 09:05 UTC");
-  assert.equal(verifyLabel({ state: "expired", detail: "rejected", checkedAt: at, account: null })!.text, "expired — Reconnect");
-  assert.equal(verifyLabel({ state: "expired", detail: "a refresh token is stored but is not tested", checkedAt: at, account: null })!.text, "expired (refresh untested) — Reconnect · checked 09:05");
-  assert.equal(verifyLabel({ state: "revoked", detail: "", checkedAt: at, account: null })!.text, "revoked — Reconnect");
+  assert.equal(verifyLabel({ state: "valid", detail: "", checkedAt: at, account: null })!.text, "Connected · checked 09:05");
+  assert.equal(verifyLabel({ state: "expired", detail: "rejected", checkedAt: at, account: null })!.text, "Expired · checked 09:05");
+  assert.equal(verifyLabel({ state: "expired", detail: "a refresh token is stored but is not tested", checkedAt: at, account: null })!.text, "Expired · checked 09:05");
+  assert.equal(verifyLabel({ state: "revoked", detail: "", checkedAt: at, account: null })!.text, "Revoked · checked 09:05");
 });
 
 test("Slack: a pasted '…' placeholder gives a readable error, not a ByteString crash", async () => {
