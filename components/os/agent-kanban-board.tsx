@@ -197,7 +197,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
       const response = await fetch(`/api/os/agents/${agentId}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, model })
+        body: JSON.stringify({ provider, model, source: "agents-board" })
       });
       const payload = (await response.json()) as { provider?: string; model?: string; error?: string };
       if (!response.ok || !payload.provider || !payload.model) throw new Error(payload.error ?? "Model switch failed.");

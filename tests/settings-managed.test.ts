@@ -221,3 +221,15 @@ test("inbox import: the folder decides the brand (gulf-el-nexride -> Gulf-EL, gr
     assert.match(r.skipped.join(" "), /no database id/);
   });
 });
+
+test("agent model: a change without the Agents board marker (a script) is refused and changes nothing", async () => {
+  const route = await import("../app/api/os/agents/[agentId]/config/route.ts");
+  const db = seed();
+  (db as unknown as { tables: Record<string, unknown[]> }).tables.agent_config ??= [];
+  await withEnv(ENV, async () => {
+    const res = await route.POST(new Request("https://os.example/api/os/agents/agent-crina/config", { method: "POST", body: JSON.stringify({ provider: "openai", model: "gpt-5-mini" }) }), { params: Promise.resolve({ agentId: "agent-crina" }) });
+    assert.equal(res.status, 403);
+    assert.match(((await res.json()) as { error: string }).error, /Agents board/);
+  });
+  assert.equal(db.rows("agent_config").length, 0);
+});
