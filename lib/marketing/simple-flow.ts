@@ -83,6 +83,43 @@ export function cleanPlatforms(value: unknown): string[] {
   return Array.isArray(value) ? Array.from(new Set(value.map((p) => allowed.get(String(p).toLowerCase())).filter((p): p is (typeof FLOW_PLATFORMS)[number] => Boolean(p)))) : [];
 }
 
+const lines = (v: string | null | undefined) => String(v ?? "").split(/\r?\n|;/).map((x) => x.replace(/^[-•*\d.)\s]+/, "").trim()).filter(Boolean);
+const firstLine = (v: string | null | undefined) => lines(v)[0] ?? "";
+
+/**
+ * The plan from the brand + its templates, with NO model call (Mihai 2026-11-20: "template some parts;
+ * only content and visual use imagination"). His idea + an optional note are passed to the writer as is.
+ * Pure (tested).
+ */
+export function templatePlan(args: { idea: string; brand: Brand | null; platforms: string[]; note?: string | null }): CampaignPlan {
+  const b = args.brand;
+  const idea = args.idea.trim();
+  const platforms = args.platforms.length ? args.platforms : ["Instagram"];
+  const keywords = String(b?.seo_targets ?? "").split(/[,;\n]/).map((k) => k.trim()).filter(Boolean).slice(0, 6);
+  const tagWords = String(b?.tpl_hashtags ?? "").split(/\s+/).filter((t) => t.startsWith("#"));
+  const hashtags = (tagWords.length ? tagWords : keywords.map((k) => `#${k.replace(/[^\p{L}\p{N}]+/gu, "")}`)).slice(0, 6);
+  const title = idea.split(/[.!?\n]/)[0].split(/\s+/).slice(0, 8).join(" ");
+  return {
+    title: title || "New campaign",
+    objective: idea.slice(0, 300),
+    target_audience: firstLine(b?.target_audience) || String(b?.target_audience ?? ""),
+    key_message: firstLine(b?.key_messages) || firstLine(b?.positioning),
+    platforms,
+    cta: firstLine(b?.ctas ?? b?.reusable_ctas) || "Follow us",
+    success_criteria: String(b?.tpl_success_criteria ?? "").trim() || "Every post approved by Mihai before it goes out.",
+    agent_tasks: {
+      content: `Write the ${platforms.join(" + ")} post(s) for: ${idea.slice(0, 200)}${args.note ? ` (Mihai's note: ${args.note})` : ""}`,
+      visual: "Create the image freely, on-brand, for the post.",
+      seo: keywords.join(", "),
+      analytics: lines(b?.tpl_measure).join("; ")
+    },
+    seo_keywords: keywords,
+    hashtags,
+    measure: lines(b?.tpl_measure).slice(0, 4),
+    summary: `From your idea and the ${b?.name ?? "brand"} templates: ${platforms.join(", ")}, CTA "${firstLine(b?.ctas ?? b?.reusable_ctas) || "Follow us"}". The writer and the visual agent take it from here.`
+  };
+}
+
 /** Crina turns Mihai's idea into a plan. `fixes` = Jev's doubts or Mihai's Rework reason. */
 export async function makePlan(args: { idea: string; brand: Brand | null; platforms: string[]; learning: string; fixes: string[]; previous: CampaignPlan | null }) {
   const run = await runMarketingAgentModel({

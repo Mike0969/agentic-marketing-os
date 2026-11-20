@@ -17,6 +17,13 @@ export type Brand = {
   reusable_ctas?: string | null;
   /** urn:li:organization:<id> — LinkedIn posts go out as this Company Page; empty = as the member. */
   linkedin_organization_urn?: string | null;
+  /** Campaign templates (migration 0046): the non-creative parts of every campaign, edited on Brands. */
+  tpl_success_criteria?: string | null;
+  tpl_measure?: string | null;
+  tpl_hashtags?: string | null;
+  tpl_posting_time?: string | null;
+  tpl_review_checklist?: string | null;
+  tpl_slide_footer?: string | null;
   active: boolean;
 };
 

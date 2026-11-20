@@ -62,3 +62,17 @@ test("site reader: text, same-site links only (subdomains included), robots rule
   assert.deepEqual(robotsDisallows("User-agent: *\nAllow: /\nUser-agent: GPTBot\nDisallow: /\n"), []);
   assert.deepEqual(robotsDisallows("User-agent: *\nDisallow: /admin\n"), ["/admin"]);
 });
+
+test("template plan: from the brand + templates, no model; his note goes to the writer", async () => {
+  const { templatePlan } = await import("../lib/marketing/simple-flow.ts");
+  const brand = { name: "Gulf-EL.com / NexRide", target_audience: "Investors and community members", key_messages: "- Fleet-led mobility\n- Community first", positioning: "x", ctas: "Follow Gulf-EL / NexRide\nVisit the site", seo_targets: "Gulf-EL mobility, NexRide, GCC EV", tpl_hashtags: "#NexRide #GulfEL", tpl_measure: "Followers gained\nLikes per post", tpl_success_criteria: "More followers" } as never;
+  const p = templatePlan({ idea: "Grow our Instagram followers this week. Show the community.", brand, platforms: [], note: "leave the drivers aside" });
+  assert.equal(p.title, "Grow our Instagram followers this week");
+  assert.deepEqual(p.platforms, ["Instagram"]);
+  assert.equal(p.key_message, "Fleet-led mobility");
+  assert.equal(p.cta, "Follow Gulf-EL / NexRide");
+  assert.deepEqual(p.hashtags, ["#NexRide", "#GulfEL"]);
+  assert.deepEqual(p.measure, ["Followers gained", "Likes per post"]);
+  assert.equal(p.success_criteria, "More followers");
+  assert.match(p.agent_tasks.content, /leave the drivers aside/);
+});

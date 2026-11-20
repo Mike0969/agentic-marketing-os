@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { makeActivity } from "@/lib/activity";
-import { preflight, withCampaignBudget, STEP_AGENTS } from "@/lib/budget/model-budget";
-import { cleanPlatforms, jevSummary, planWithJev } from "@/lib/marketing/simple-flow";
+import { preflight, STEP_AGENTS } from "@/lib/budget/model-budget";
+import { cleanPlatforms, jevSummary, templatePlan, type CampaignPlan } from "@/lib/marketing/simple-flow";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getJob, startCampaignJob } from "@/lib/marketing/campaign-jobs";
@@ -63,7 +63,9 @@ export async function POST(request: Request) {
   // Crina plans + Jev checks, then the plan is saved on the campaign (same steps in the background job).
   const db = createServiceClient() ?? supabase;
   const plan = async () => {
-    const outcome = await withCampaignBudget(campaign.id, () => planWithJev({ idea, brand, platforms, campaignId: campaign.id }));
+    // Template plan: from the brand + its templates, no model call (the writer and the visual stay creative).
+    const tplPlan = templatePlan({ idea, brand, platforms });
+    const outcome = { plan: tplPlan as CampaignPlan | null, stage: "plan_ready" as string, jev: null, doubts: null, error: null as string | null };
     const brief = {
       ...(campaign.idea_brief as Record<string, unknown>),
       stage: outcome.stage,

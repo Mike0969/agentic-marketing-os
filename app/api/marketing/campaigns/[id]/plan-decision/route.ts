@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
-import { preflight, withCampaignBudget, STEP_AGENTS } from "@/lib/budget/model-budget";
 import { defaultVault, recordLearning } from "@/lib/learning/vault";
-import { jevSummary, planWithJev, type CampaignPlan } from "@/lib/marketing/simple-flow";
+import { templatePlan, type CampaignPlan } from "@/lib/marketing/simple-flow";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign } from "@/lib/types";
 
@@ -42,14 +41,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({ stage: "plan_ready" });
   }
 
-  const refused = await preflight(id, STEP_AGENTS.plan);
-  if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   await recordLearning(vault, { kind: "rejected", part: "plan", campaign: plan.title, platform: plan.platforms.join(", "), agent: "Crina", reason, item: planText });
-  const outcome = await withCampaignBudget(id, () => planWithJev({ idea: String(brief.idea ?? campaign.objective), brand, platforms: plan.platforms, fixes: [`Mihai: ${reason}`], previous: plan, campaignId: id }));
+  // Template plan again, with his note: no model call. The note stays on the campaign and is a hard
+  // instruction for the writer and the review (plan_note).
+  const next = templatePlan({ idea: String(brief.idea ?? campaign.objective), brand, platforms: plan.platforms, note: reason });
   await supabase
     .from("campaigns")
-    .update({ idea_brief: { ...brief, stage: outcome.stage, plan: outcome.plan ?? plan, plan_jev: jevSummary(outcome.jev, outcome.doubts), plan_error: outcome.error } })
+    .update({ idea_brief: { ...brief, stage: "plan_ready", plan: next, plan_note: reason, plan_jev: null, plan_error: null } })
     .eq("id", id);
   revalidatePath("/marketing");
-  return NextResponse.json({ stage: outcome.stage, plan: outcome.plan, error: outcome.error });
+  return NextResponse.json({ stage: "plan_ready", plan: next, error: null });
 }

@@ -7,7 +7,6 @@ import { runMarketingAgentModel } from "@/lib/agents/marketing-runner";
 import { requireAgentAccess } from "@/lib/auth";
 import { sendCrinaReadyToPostPings } from "@/lib/marketing/crina-telegram";
 import { notifyOperator } from "@/lib/marketing/notify";
-import { runConversionAnalysis } from "@/lib/marketing/conversion-agent";
 import { defaultRegion, pickScheduledAt } from "@/lib/marketing/auto-schedule";
 import { conversionMemoryText, getConversionMemoryContext } from "@/lib/marketing/conversion-memory";
 import { getFeedbackMemoryContext, type FeedbackMemoryContext } from "@/lib/marketing/feedback-memory";
@@ -26,7 +25,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ProjectAsset, ReadyPackageAsset } from "@/lib/types";
 
-const VISUAL_MAX_ROUNDS = 2; // visual concept converges fast; keep the per-platform call budget bounded
+const VISUAL_MAX_ROUNDS = 1; // the visual is creative: one concept + one review (Mihai reviews the image)
 const MAX_PLATFORMS = 4; // bound per request to stay under serverless timeouts
 
 type VisualConcept = { concept: string; prompt: string };
@@ -149,7 +148,13 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     [campaign.title, campaign.objective, idea.idea, idea.angle, Array.isArray(idea.platforms) ? idea.platforms.join(" ") : ""].map((x) => (typeof x === "string" ? x : "")).join(" "),
     { part: "run", campaignId: campaign.id }
   );
-  const noteText = ownerNote ? `Mihai's note for this rework (follow it exactly): ${ownerNote}` : "";
+  const planNote = typeof idea.plan_note === "string" ? idea.plan_note : "";
+  const checklist = String(brand?.tpl_review_checklist ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const noteText = [
+    ownerNote ? `Mihai's note for this rework (follow it exactly): ${ownerNote}` : "",
+    planNote && planNote !== ownerNote ? `Mihai's note for this campaign (follow it exactly): ${planNote}` : "",
+    checklist.length ? `Review checklist (every post must pass):\n- ${checklist.join("\n- ")}` : ""
+  ].filter(Boolean).join("\n\n");
   const textNotes = [noteText, textLearning.text, library].filter(Boolean).join("\n\n");
   const visualNotes = [noteText, visualLearning.text, library].filter(Boolean).join("\n\n");
   const ownerIdea = String(idea.idea ?? campaign.objective ?? "");
@@ -175,7 +180,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     }
   }
   const schedule = (idea.schedule ?? {}) as { start?: string; from_hour?: string };
-  const scheduledAt = schedule.start ? `${schedule.start}T${schedule.from_hour || "09:00"}:00` : null;
+  const postingTime = /^\d{2}:\d{2}$/.test(String(brand?.tpl_posting_time ?? "")) ? String(brand?.tpl_posting_time) : "09:00";
+  const scheduledAt = schedule.start ? `${schedule.start}T${schedule.from_hour || postingTime}:00` : null;
   const { count: futureScheduledCount } = await supabase
     .from("content_items")
     .select("id", { count: "exact", head: true })
@@ -496,6 +502,14 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     } else if (plan.assetKind === "carousel") {
       const slides = draft.slides ?? [];
       const count = Math.min(Math.max(slides.length, plan.carouselCount, 3), 7);
+      // One creative hero image for the whole carousel (the slides are layouts over it), unless the
+      // campaign asks for a new image per slide. Saves ~4 image calls per carousel.
+      const uniqueImages = idea.unique_slide_images === true;
+      let hero: Awaited<ReturnType<typeof generateMarketingImage>> | null = null;
+      if (!uniqueImages) {
+        const heroPrompt = `Create a striking, on-brand Instagram carousel image for ${brand?.name ?? "the brand"}: ${draft.title}. ${draft.hook}. Context: ${draft.body.slice(0, 400)}. Be creative with the scene, light and composition; leave calm space for a headline overlay; no readable text in the image.`;
+        hero = await generateMarketingImage(heroPrompt, { contentItemId: item.id as string, position: 1, kind: "carousel_slide", aspect: "square" });
+      }
       for (let i = 0; i < count; i += 1) {
         const slide = slides[i];
         const prompt = [
@@ -507,7 +521,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         ]
           .filter(Boolean)
           .join(" ");
-        const img = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: i + 1, kind: "carousel_slide", aspect: "square" });
+        const img = hero ?? (await generateMarketingImage(prompt, { contentItemId: item.id as string, position: i + 1, kind: "carousel_slide", aspect: "square" }));
         const composedUrl = await composeCarouselSlide({
           backgroundUrl: img.url,
           contentItemId: item.id as string,
@@ -516,7 +530,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
           brandName: brand?.name,
           headline: slide?.headline || draft.hook || draft.title,
           text: slide?.text,
-          footer: draft.cta
+          footer: brand?.tpl_slide_footer || draft.cta
         });
         if (img.status !== "generated") assetFallback = true;
         imageProvider = img.provider;
@@ -562,7 +576,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       title: draft.title,
       text: draft.body,
       caption: draft.body,
-      hashtags: draft.hashtags,
+      hashtags: Array.isArray(planCore?.hashtags) && (planCore!.hashtags as string[]).length ? (planCore!.hashtags as string[]) : draft.hashtags,
       alt_text: `Visual for ${draft.title}`,
       scheduled_at: itemScheduledAt,
       crina_score: contentLoop.championScore,
@@ -632,12 +646,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     console.error("[campaigns/run] Crina pings failed (non-fatal):", error);
   }
 
-  // Close the loop: refresh conversion estimates + insights for the next run (best-effort).
-  try {
-    await runConversionAnalysis({ brandId: campaign.brand_id, campaignId: id });
-  } catch {
-    // never break the run on conversion-analysis failure
-  }
+  // The conversion analysis is no longer run after every campaign run (≈60K tokens each time); it
+  // stays available on the Agents board (Conversion Agent → Run).
 
   if (!requestedPlatform && created.length) {
     void notifyOperator(`🏁 Campaign "${campaign.title}" finished — ${created.length} package(s) ready to review:\n${created.map((c) => `• ${c.platform} ${c.score}/100${c.blocked ? " (blocked)" : ""}`).join("\n")}`);

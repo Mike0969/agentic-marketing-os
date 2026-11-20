@@ -137,22 +137,22 @@ const hermesPlan = fakeFetch(() =>
   })
 );
 
-test("new campaign: one idea -> campaign + Crina's plan (Jev not run without a key)", async () => {
+test("new campaign: one idea -> campaign + a template plan from the brand (no model call)", async () => {
   const db = seed();
-  const brainRoot = mkdtempSync(path.join(tmpdir(), "brain-"));
+  const hermes = fakeFetch(() => jsonResponse({ error: "no model call expected" }, 500));
   const res = await withEnv(
-    { ...SUPABASE_ENV, ADMIN_EMAIL: ADMIN, HERMES_AGENT_ENDPOINT: "http://hermes.test/v1/chat/completions", TYPESAFE_API_KEY: undefined, HERMES_WRITABLE_BRAIN_PATH: brainRoot },
-    () => newRoute.POST(new Request("https://os.example/api/marketing/campaigns/new", { method: "POST", body: JSON.stringify({ idea: "Show drivers in Dubai they keep the whole fare." }) })),
-    hermesPlan.fn
+    { ...SUPABASE_ENV, ADMIN_EMAIL: ADMIN, HERMES_AGENT_ENDPOINT: "http://hermes.test/v1/chat/completions", TYPESAFE_API_KEY: undefined },
+    () => newRoute.POST(new Request("https://os.example/api/marketing/campaigns/new", { method: "POST", body: JSON.stringify({ idea: "Show drivers in Dubai they keep the whole fare.", platforms: ["LinkedIn", "Myspace"] }) })),
+    hermes.fn
   );
   const body = await res.json();
   assert.equal(res.status, 201, JSON.stringify(body));
   assert.equal(body.stage, "plan_ready");
   assert.deepEqual(body.plan.platforms, ["LinkedIn"], "unknown platforms dropped");
+  assert.equal(hermes.calls.length, 0, "the plan is templated: no model call");
   const campaign = db.rows("campaigns")[0];
-  assert.equal(campaign.title, "Keep the whole fare");
+  assert.equal(campaign.title, "Show drivers in Dubai they keep the whole");
   assert.equal((campaign.idea_brief as Record<string, unknown>).flow, "simple");
-  assert.match(String(((campaign.idea_brief as Record<string, unknown>).plan_jev as Record<string, unknown>).note), /Jev not run/);
 });
 
 test("new campaign: an empty idea is refused", async () => {

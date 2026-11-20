@@ -22,7 +22,13 @@ const allowedFields = [
   "seo_targets",
   "approval_rules",
   "ctas",
-  "linkedin_organization_urn"
+  "linkedin_organization_urn",
+  "tpl_success_criteria",
+  "tpl_measure",
+  "tpl_hashtags",
+  "tpl_posting_time",
+  "tpl_review_checklist",
+  "tpl_slide_footer"
 ] as const;
 
 type BrandPatch = Pick<Brand, (typeof allowedFields)[number]>;

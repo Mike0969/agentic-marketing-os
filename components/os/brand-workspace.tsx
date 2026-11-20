@@ -30,7 +30,15 @@ const editableFields: Array<{ key: keyof Brand; label: string; type: "input" | "
     label: "LinkedIn Company Page",
     type: "input",
     hint: "urn:li:organization:12345 — LinkedIn posts go out as this page (reconnect LinkedIn after setting). Empty = post as the connected member."
-  }
+  },
+  // Campaign templates: the non-creative parts of every campaign (no model calls). The writer and the
+  // visual agent stay free; everything below is filled from here.
+  { key: "tpl_success_criteria", label: "Template: success criteria", type: "textarea", hint: "Every campaign's 'how we know it worked'." },
+  { key: "tpl_measure", label: "Template: what to measure", type: "textarea", hint: "One item per line (what and where)." },
+  { key: "tpl_hashtags", label: "Template: hashtags", type: "input", hint: "Added to every post, e.g. #NexRide #GulfEL. Empty = taken from SEO targets." },
+  { key: "tpl_posting_time", label: "Template: posting time", type: "input", hint: "HH:MM (UTC), e.g. 09:00." },
+  { key: "tpl_review_checklist", label: "Template: review checklist", type: "textarea", hint: "One item per line; Crina's review checks these." },
+  { key: "tpl_slide_footer", label: "Template: slide footer", type: "input", hint: "Bottom line on carousel slides. Empty = the post's CTA." }
 ];
 
 function asText(value: unknown) {

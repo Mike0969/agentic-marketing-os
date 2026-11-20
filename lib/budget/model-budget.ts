@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createServiceClient } from "@/lib/supabase/service";
 
-export const VISUAL_ROUNDS = 2;
+export const VISUAL_ROUNDS = 1;
 export const CONTENT_ROUNDS = 2; // 1 automatic rework; more only when Mihai presses Rework
 
 /**
@@ -39,10 +39,10 @@ export const DEFAULT_BUDGET: BudgetSettings = { perCampaignMax: 40, perDayMax: 1
  * the dollar preflight.
  */
 export const CALL_ESTIMATE = {
-  plan: 4, // Crina's plan + Jev, 1 automatic rework
+  plan: 0, // template plan: no model call
   prepare: 0, // SEO + measurement are part of the plan now
-  perPlatform: 2 * 2 + VISUAL_ROUNDS * 2, // writer + review (2 rounds max) + visual + review (2 rounds max)
-  runOverhead: 1, // conversion analysis after a run
+  perPlatform: 2 * 2 + VISUAL_ROUNDS * 2 + 1, // writer + review (2 rounds max) + visual concept + review + 1 image
+  runOverhead: 0, // no conversion analysis after a run
   rework: 3,
   // "Edit and approve": Mihai's text is used as is: only the visual + its review.
   approvedTextPlatform: VISUAL_ROUNDS * 2
@@ -51,9 +51,9 @@ export const CALL_ESTIMATE = {
 /** Which agent makes each call of a step (so the dollar estimate uses that agent's model price). */
 export type Step = { agentId: string; calls: number };
 export const STEP_AGENTS = {
-  plan: [{ agentId: "agent-crina", calls: 2 }, { agentId: "jev", calls: 2 }],
-  perPlatform: [{ agentId: "agent-content-creator", calls: 2 }, { agentId: "agent-crina", calls: 2 + VISUAL_ROUNDS }, { agentId: "agent-visual-video", calls: VISUAL_ROUNDS }],
-  runOverhead: [{ agentId: "agent-conversion", calls: 1 }],
+  plan: [] as Step[],
+  perPlatform: [{ agentId: "agent-content-creator", calls: 2 }, { agentId: "agent-crina", calls: 2 + VISUAL_ROUNDS }, { agentId: "agent-visual-video", calls: VISUAL_ROUNDS + 1 }],
+  runOverhead: [] as Step[],
   rework: [{ agentId: "agent-content-creator", calls: 1 }, { agentId: "agent-crina", calls: 1 }, { agentId: "agent-visual-video", calls: 1 }],
   approvedTextPlatform: [{ agentId: "agent-visual-video", calls: VISUAL_ROUNDS }, { agentId: "agent-crina", calls: VISUAL_ROUNDS }]
 } satisfies Record<string, Step[]>;
