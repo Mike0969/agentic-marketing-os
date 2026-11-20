@@ -86,6 +86,22 @@ export function IdeasBoard({ brands, campaigns }: { brands: Brand[]; campaigns: 
   const [showArchive, setShowArchive] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  async function setAutomation(c: Campaign, action: "pause" | "resume") {
+    setBusyId(c.id);
+    setMessage(null);
+    try {
+      const r = await fetch(`/api/marketing/campaigns/${c.id}/automation-state`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const p = (await r.json()) as { campaign?: Campaign; error?: string };
+      if (!r.ok || !p.campaign) throw new Error(p.error ?? "Could not change the campaign.");
+      setItems((current) => current.map((item) => (item.id === c.id ? p.campaign! : item)));
+      setMessage(action === "resume" ? `"${c.title}" resumed: the agents pick it up on the next automation run.` : `"${c.title}" paused.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not change the campaign.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const brand = brands.find((b) => b.id === brandId) ?? null;
   const ideas = items.filter((c) => c.status === "idea" && c.brand_id === brandId);
   const running = items.filter((c) => c.status === "active" && c.brand_id === brandId);
@@ -257,9 +273,19 @@ export function IdeasBoard({ brands, campaigns }: { brands: Brand[]; campaigns: 
               <div key={c.id} className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3">
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-neutral-100">{c.title}</div>
-                  <div className="mt-0.5 text-xs text-neutral-500">Crina and the agents are working — the final package will appear in Ready to Post.</div>
+                  <div className="mt-0.5 text-xs text-neutral-500">{c.automation_status === "paused" ? "Paused: the agents are not working on it. Resume to hand it back to them." : "Crina and the agents are working — the final package will appear in Ready to Post."}</div>
                 </div>
-                <OSBadge tone="ok">Working</OSBadge>
+                {c.automation_status === "paused" ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <OSBadge tone="warn">Paused</OSBadge>
+                    <OSButton variant="secondary" className="px-2 py-1 text-xs" disabled={busyId === c.id} onClick={() => setAutomation(c, "resume")}>
+                      {busyId === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                      Resume
+                    </OSButton>
+                  </div>
+                ) : (
+                  <OSBadge tone="ok">Working</OSBadge>
+                )}
               </div>
             ))}
           </div>
