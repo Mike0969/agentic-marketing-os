@@ -103,6 +103,10 @@ test("flow view: stage and who it waits for", () => {
   assert.equal(flowView(campaign("agents"), pending).step, 4);
   const approved = [{ campaign_id: "c1", approval_status: "approved" }] as never;
   assert.equal(flowView(campaign("agents"), approved).step, 5);
+  const blocked = { id: "c1", idea_brief: { flow: "simple", stage: "agents", blocked: { reason: "Blocked by safety check: brand details are still placeholder (score 26/100). Fill in Brands → NexRide." } } } as never;
+  assert.equal(flowView(blocked, []).needsMihai, true);
+  assert.match(flowView(blocked, []).label, /^Blocked by safety check/);
+  assert.equal(flowView(blocked, pending).step, 4, "a post waiting for review wins over an older block");
 });
 
 // ---------- routes ----------

@@ -19,6 +19,7 @@ export function CampaignReview(props: {
   plan: Plan | null;
   planJev: Jev;
   support: { seo: string | null; analytics: string | null };
+  blocked: string | null;
   pending: ContentItem[];
   others: ContentItem[];
 }) {
@@ -42,6 +43,17 @@ export function CampaignReview(props: {
     if (body.stage === "plan_ready") return runAgents();
     setMessage(body.stage === "plan_doubts" ? "Crina reworked the plan with your reason; Jev still has doubts. Have another look." : "Crina reworked the plan with your reason.");
     setPlanChoice({ decision: null, reason: "" });
+    router.refresh();
+  }
+
+  async function runAgainAfterBlock() {
+    setBusy("agents");
+    setMessage("Content and visual agents are running again (a few minutes).");
+    const res = await fetch(`/api/marketing/campaigns/${props.campaignId}/run`, { method: "POST" });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; posts?: Array<{ platform: string; title: string; blocked?: boolean }> };
+    setBusy(null);
+    if (!res.ok) return setMessage(body.error ?? "The run failed.");
+    setMessage((body.posts ?? []).map((p) => `${p.platform}: ${p.blocked ? "blocked again by the safety check" : `ready: ${p.title}`}`).join(" · ") || "No posts came back.");
     router.refresh();
   }
 
@@ -100,6 +112,23 @@ export function CampaignReview(props: {
           </OSButton>
         ) : null}
       </OSPanel>
+
+      {props.blocked && !props.pending.length ? (
+        <OSPanel className="border-amber-500/40">
+          <h2 className="text-lg font-semibold text-amber-100">Stopped by the safety check</h2>
+          <p className="mt-2 text-sm leading-6 text-amber-100">{props.blocked}</p>
+          <p className="mt-1 text-sm text-neutral-400">Nothing was packaged or posted. Fix the cause, then run the agents again.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {/Brands/.test(props.blocked) ? (
+              <Link href="/marketing/brands" className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-900">Open Brands</Link>
+            ) : null}
+            <OSButton onClick={runAgainAfterBlock} disabled={busy !== null}>
+              {busy === "agents" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Run the agents again
+            </OSButton>
+          </div>
+        </OSPanel>
+      ) : null}
 
       {props.pending.map((item) => (
         <PostReview key={item.id} item={item} onDone={(text) => { setMessage(text); router.refresh(); }} />

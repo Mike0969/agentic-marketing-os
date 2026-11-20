@@ -38,6 +38,8 @@ export function flowView(campaign: Campaign, items: ContentItem[]): FlowView {
   if (stage === "plan_doubts") return { ...base, step: 2, label: "Jev doubts the plan: your look", needsMihai: true };
   if (stage === "plan_ready") return { ...base, step: 3, label: "Plan cleared: start the agents", needsMihai: true };
   if (pendingPosts) return { ...base, step: 4, label: `${pendingPosts} post(s) ready for your review`, needsMihai: true };
+  const blocked = (brief.blocked ?? null) as { reason?: string } | null;
+  if (blocked?.reason) return { ...base, step: 3, label: blocked.reason, needsMihai: true };
   if (inRework) return { ...base, step: 3, label: `${inRework} post(s) back with the agents (rework)`, needsMihai: false };
   if (decided && decided === posts.length) return { ...base, step: 5, label: "All approved: in the schedule", needsMihai: false };
   return { ...base, step: 3, label: "Agents working", needsMihai: false };

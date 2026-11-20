@@ -25,6 +25,7 @@ export default async function CampaignReviewPage({ params }: { params: Promise<{
         plan={(brief.plan ?? null) as never}
         planJev={(brief.plan_jev ?? null) as never}
         support={{ seo: summaryOf(brief.seo), analytics: summaryOf(brief.analytics) }}
+        blocked={(brief.blocked as { reason?: string } | null)?.reason ?? null}
         pending={posts.filter((item) => item.approval_status === "pending")}
         others={posts.filter((item) => item.approval_status !== "pending")}
       />

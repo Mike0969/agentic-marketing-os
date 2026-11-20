@@ -98,7 +98,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .not("scheduled_at", "is", null)
     .gte("scheduled_at", new Date().toISOString());
 
-  await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running" }).eq("id", id);
+  await supabase.from("campaigns").update({ status: "active", selected_at: new Date().toISOString(), automation_status: "running", ...(idea.flow === "simple" ? { idea_brief: { ...idea, blocked: null } } : {}) }).eq("id", id);
+  // Simple flow: a safety stop is shown to Mihai on Review (with the reason), not left looking like "agents working".
+  const markBlocked = async (reason: string, platform: string) => {
+    if (idea.flow !== "simple") return;
+    await supabase.from("campaigns").update({ idea_brief: { ...idea, blocked: { reason, platform, at: new Date().toISOString() } } }).eq("id", id);
+  };
 
   // One receipt writer for the whole run; content_item_id is backfilled after each item is created.
   const recordReceipt = async (r: LoopReceipt) => {
@@ -229,6 +234,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (contentLoop.stopReason === "safety") {
       // A safety refusal is the gate working, not a failure: record it as "blocked" with a plain reason.
       const reason = safetyBlockReason("content", contentLoop.lastScore, brand);
+      await markBlocked(reason, platform);
       await recordAgentRun({
         agentName: "Campaign Run",
         agentId: "agent-crina",
@@ -360,6 +366,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       if (visualLoop.stopReason === "safety") {
         await supabase.from("loop_receipts").update({ content_item_id: item.id }).in("loop_id", loopIds);
         await supabase.from("content_items").update({ status: "draft", approval_status: "changes_requested", workflow_stage: "rework", current_owner: "Crina", next_owner: "Visual & Video Agent", visual_asset_status: "error", crina_review_notes: `${reviewChip} · VISUAL SAFETY-BLOCKED`, performance_summary: `BLOCKED: visual safety violation. ${visualLoop.lastJudgeNotes.slice(0, 160)}` }).eq("id", item.id);
+        await markBlocked(safetyBlockReason("visual", visualLoop.lastScore, brand), platform);
         await recordAgentRun({ agentName: "Campaign Run", agentId: "agent-crina", workflowName: "Run Campaign (per-platform)", provider: contentLoop.provider, status: "blocked", input: { campaignId: id, platform, brand: brand?.name ?? null, routeOrigin: "api.marketing.campaigns.run" }, output: { summary: safetyBlockReason("visual", visualLoop.lastScore, brand), platform, content_score: contentLoop.championScore, visual_stop: "safety", safety_score: visualLoop.lastScore, judge_notes: visualLoop.lastJudgeNotes, blocked: true }, error: null, model: contentLoop.model, durationMs: 0 });
         created.push({ platform, title: draft.title, loops: contentLoop.rounds, score: contentLoop.championScore, stop: "visual_safety", blocked: true, fallback: true });
         continue;
