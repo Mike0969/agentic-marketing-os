@@ -272,7 +272,17 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
   const pkg = item.ready_package;
   const asset = pkg?.assets?.[0];
   const hasImage = Boolean(item.visual_asset_url && asset?.status === "generated");
-  const ready = text.decision && visual.decision && (text.decision !== "rework" || text.reason.trim()) && (visual.decision !== "rework" || visual.reason.trim());
+  // One decided part is enough to send; a Rework needs its reason. Never a silent grey button.
+  const reasonMissing = (text.decision === "rework" && !text.reason.trim()) || (visual.decision === "rework" && !visual.reason.trim());
+  const ready = Boolean(text.decision || visual.decision) && !reasonMissing;
+  const hint = !text.decision && !visual.decision
+    ? "Choose Yes or Rework for the text or the visual."
+    : reasonMissing
+      ? "Write the reason for your Rework."
+      : !text.decision || !visual.decision
+        ? `${!text.decision ? "Text" : "Visual"} has no decision yet: it stays waiting for you.`
+        : null;
+  const images = (pkg?.assets ?? []).filter((a) => a.url && a.status === "generated");
 
   async function send() {
     setBusy(true);
@@ -282,10 +292,15 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, visual })
     });
-    const body = (await res.json().catch(() => ({}))) as { outcome?: string; parts?: string[]; error?: string };
+    const body = (await res.json().catch(() => ({}))) as { outcome?: string; parts?: string[]; error?: string; message?: string; background?: boolean };
     setBusy(false);
     if (!res.ok) return setError(body.error ?? "Could not save your review.");
-    onDone(body.outcome === "approved" ? `${item.platform}: Yes on everything. It is in the schedule (posting stays off on the test copy).` : `${item.platform}: sent back to the agents (${(body.parts ?? []).join(" + ")}) with your reason.`);
+    if (body.outcome === "partial") return onDone(body.message ?? "Saved.");
+    onDone(
+      body.outcome === "approved"
+        ? `${item.platform}: Yes on everything. It is in the schedule.`
+        : `${item.platform}: sent back to the agents (${(body.parts ?? []).join(" + ")}) with your note. They are working on it (about 2 minutes). You can leave this page; I'll notify you when it's ready.`
+    );
   }
 
   return (
@@ -317,8 +332,22 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
         <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Visual</h3>
           {hasImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={item.visual_asset_url!} alt={pkg?.alt_text ?? "Post visual"} className="mt-2 max-h-72 w-full rounded-md object-cover" />
+            <div className="mt-2">
+              {/* The whole image (no cropping), in its real shape; click to open it full size. */}
+              <div className={`grid gap-2 ${images.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
+                {(images.length ? images : [{ url: item.visual_asset_url!, position: 1 }]).map((img, index) => (
+                  <a key={`${img.url}-${index}`} href={img.url!} target="_blank" rel="noreferrer" className="block rounded-md border border-neutral-800 bg-neutral-900" title="Open full size">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url!} alt={`${pkg?.alt_text ?? "Post visual"}${images.length > 1 ? ` (slide ${index + 1})` : ""}`} className="h-auto w-full rounded-md object-contain" />
+                  </a>
+                ))}
+              </div>
+              <a href={item.visual_asset_url!} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-cyan-300 underline">Open image</a>
+              {images.length > 1 ? <span className="ml-2 text-xs text-neutral-500">{images.length} slides</span> : null}
+              {pkg?.content_type === "carousel" || images.length > 1 ? (
+                <p className="mt-1 text-xs text-neutral-500">The headline on each slide is the app&apos;s slide layout drawn over the picture; the picture itself is made without text.</p>
+              ) : null}
+            </div>
           ) : (
             <p className="mt-2 rounded-md border border-dashed border-neutral-700 p-3 text-sm text-neutral-400">No image rendered: image generation needs an image key (OPENAI_API_KEY, HUGGINGFACE_API_KEY or REPLICATE_API_TOKEN). Judge the concept below.</p>
           )}
@@ -328,10 +357,13 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
         </div>
       </div>
       {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
-      <OSButton className="mt-4" onClick={send} disabled={busy || !ready}>
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-        {text.decision === "yes" && visual.decision === "yes" ? "Yes on both: next" : "Send"}
-      </OSButton>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <OSButton onClick={send} disabled={busy || !ready}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+          {text.decision === "yes" && visual.decision === "yes" ? "Yes on both: next" : "Send"}
+        </OSButton>
+        {hint ? <span className="text-sm text-neutral-400" data-testid="send-hint">{hint}</span> : null}
+      </div>
     </OSPanel>
   );
 }

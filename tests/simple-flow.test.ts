@@ -181,11 +181,16 @@ test("review: Yes on both -> final approval (scheduled) and two good-example not
   assert.match(readFileSync(path.join(approvedDir, readdirSync(approvedDir)[0]), "utf8"), /Mihai said Yes/);
 });
 
-test("review: Rework without a reason, or no choice for the text, is refused and changes nothing", async () => {
+test("review: Rework without a reason or no choice at all is refused; one decided part is saved and the other stays waiting", async () => {
   const db = seed({ content_items: [{ ...ITEM }] });
   const env = { ...SUPABASE_ENV, ADMIN_EMAIL: ADMIN };
   assert.equal((await withEnv(env, () => review({ text: { decision: "rework" }, visual: { decision: "yes" } }))).status, 400);
-  assert.equal((await withEnv(env, () => review({ visual: { decision: "yes" } }))).status, 400);
+  assert.equal((await withEnv(env, () => review({}))).status, 400);
+  const partial = await withEnv(env, () => review({ visual: { decision: "yes" } }));
+  assert.equal(partial.status, 200);
+  const body = (await partial.json()) as { outcome: string; message: string };
+  assert.equal(body.outcome, "partial");
+  assert.match(body.message, /Choose Yes or Rework for Text/);
   assert.equal(db.rows("content_items")[0].approval_status, "pending");
 });
 

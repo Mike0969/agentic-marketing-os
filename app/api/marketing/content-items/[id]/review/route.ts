@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { startCampaignJob } from "@/lib/marketing/campaign-jobs";
 import { requireAdmin } from "@/lib/auth";
 import { preflight, withCampaignBudget, STEP_AGENTS } from "@/lib/budget/model-budget";
 import { defaultVault, recordLearning } from "@/lib/learning/vault";
@@ -46,8 +47,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
   const text = readPart(body?.text);
   const visual = readPart(body?.visual);
-  if (!text || text === "invalid" || visual === "invalid") {
-    return NextResponse.json({ error: "Choose Yes or Rework for each part, and give a reason for every Rework." }, { status: 400 });
+  // One decision is enough to send; an undecided part stays waiting for him.
+  if (text === "invalid" || visual === "invalid" || (!text && !visual)) {
+    return NextResponse.json({ error: "Choose Yes or Rework for at least one part, and give a reason for every Rework." }, { status: 400 });
   }
 
   if (!isSupabaseConfigured()) return NextResponse.json({ error: "Supabase is not configured." }, { status: 503 });
@@ -62,7 +64,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const { data: campaignRow } = item.campaign_id ? await supabase.from("campaigns").select("*").eq("id", item.campaign_id).maybeSingle() : { data: null };
   const campaign = campaignRow as Campaign | null;
 
-  if ((text.decision === "rework" || visual?.decision === "rework")) {
+  if (text?.decision === "rework" || visual?.decision === "rework") {
     const refused = await preflight(item.campaign_id ?? null, STEP_AGENTS.rework);
     if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   }
@@ -89,6 +91,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   const reworkParts = parts.filter(([, decision]) => decision?.decision === "rework").map(([part]) => part);
+  if (!reworkParts.length && (!text || !visual)) {
+    const missing = !text ? "Text" : "Visual";
+    return NextResponse.json({ outcome: "partial", notes, message: `Saved your Yes for ${missing === "Text" ? "Visual" : "Text"}. Choose Yes or Rework for ${missing} to finish this post.` });
+  }
   if (!reworkParts.length) {
     const res = await finalApproval(
       new Request(new URL(`/api/marketing/approvals/${id}`, request.url), { method: "POST", body: JSON.stringify({ decision: "approved", gate: "gate_2", feedback: "Yes on every part (Review screen)." }) }),
@@ -102,12 +108,32 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     .filter(([, decision]) => decision?.decision === "rework")
     .map(([part, decision]) => `${part === "text" ? "Text" : "Visual"}: ${decision!.reason}`)
     .join("\n");
-  const res = await withCampaignBudget(item.campaign_id ?? null, () =>
-    rework(
-      new Request(new URL(`/api/marketing/content-items/${id}/rework`, request.url), { method: "POST", headers: request.headers, body: JSON.stringify({ remark, parts: reworkParts }) }),
-      { params: Promise.resolve({ id }) }
-    )
-  );
+  // The rework runs on the server (background job): closing the page never stops it; Mihai is notified.
+  const callRework = () =>
+    withCampaignBudget(item.campaign_id ?? null, () =>
+      rework(
+        new Request(new URL(`/api/marketing/content-items/${id}/rework`, request.url), { method: "POST", headers: { authorization: `Bearer ${process.env.AGENT_TRIGGER_TOKEN ?? ""}`, "content-type": "application/json" }, body: JSON.stringify({ remark, parts: reworkParts }) }),
+        { params: Promise.resolve({ id }) }
+      )
+    );
+  if (item.campaign_id) {
+    const partsLabel = reworkParts.map((p) => (p === "text" ? "text" : "visual")).join(" + ");
+    const job = await startCampaignJob({
+      campaignId: item.campaign_id,
+      kind: "rework",
+      label: `Reworking the ${item.platform} ${partsLabel}`,
+      origin: request.url,
+      work: async () => {
+        const res = await callRework();
+        const payload = (await res.json().catch(() => ({}))) as { error?: string };
+        return res.ok
+          ? { state: "ready", summary: `${item.platform} ${partsLabel} reworked with your note: ready for your review again.` }
+          : { state: "error", summary: `the ${partsLabel} rework failed: ${payload.error ?? `HTTP ${res.status}`}. Press Rework again.` };
+      }
+    });
+    return NextResponse.json({ outcome: "rework", background: true, parts: reworkParts, notes, job }, { status: 202 });
+  }
+  const res = await callRework();
   const payload = await res.json().catch(() => ({}));
   return NextResponse.json({ outcome: res.ok ? "rework" : "error", parts: reworkParts, notes, ...(res.ok ? {} : { error: (payload as { error?: string }).error ?? "Rework failed." }) }, { status: res.ok ? 200 : res.status });
 }

@@ -5,6 +5,8 @@ type SlideText = {
   headline?: string | null;
   text?: string | null;
   brandName?: string | null;
+  /** Footer line (the post's CTA); empty = none. */
+  footer?: string | null;
   position: number;
   total: number;
   contentItemId: string;
@@ -40,9 +42,10 @@ function textBlock(value: string, x: number, y: number, size: number, weight: nu
 }
 
 function overlaySvg(args: SlideText) {
-  const headline = (args.headline || "Infrastructure readiness").trim();
+  const headline = (args.headline || "").trim();
   const body = (args.text || "").trim();
-  const brand = (args.brandName || "GridFactory.io").trim();
+  const brand = (args.brandName || "").trim();
+  const footer = (args.footer || "").trim().slice(0, 60);
   const cover = args.position === 1;
   const headlineSize = cover ? 74 : 58;
   const headlineLines = cover ? 4 : 3;
@@ -69,7 +72,7 @@ function overlaySvg(args: SlideText) {
   ${textBlock(headline, 132, cover ? 355 : 330, headlineSize, 850, cover ? 18 : 22, headlineLines, headlineSize + 14)}
   ${body ? textBlock(body, 132, bodyY, 32, 550, 42, 4, 46) : ""}
   <rect x="132" y="878" width="220" height="5" rx="2.5" fill="#22d3ee"/>
-  <text x="132" y="928" font-size="24" font-weight="700" fill="#f8fafc">Power readiness before the pitch.</text>
+  ${footer ? `<text x="132" y="928" font-size="24" font-weight="700" fill="#f8fafc">${escapeXml(footer)}</text>` : ""}
 </svg>`);
 }
 

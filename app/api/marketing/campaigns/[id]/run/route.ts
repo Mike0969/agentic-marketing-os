@@ -515,7 +515,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
           total: count,
           brandName: brand?.name,
           headline: slide?.headline || draft.hook || draft.title,
-          text: slide?.text
+          text: slide?.text,
+          footer: draft.cta
         });
         if (img.status !== "generated") assetFallback = true;
         imageProvider = img.provider;
