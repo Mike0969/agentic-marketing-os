@@ -186,7 +186,8 @@ test("review: Rework without a reason or no choice at all is refused; one decide
   const env = { ...SUPABASE_ENV, ADMIN_EMAIL: ADMIN };
   assert.equal((await withEnv(env, () => review({ text: { decision: "rework" }, visual: { decision: "yes" } }))).status, 400);
   assert.equal((await withEnv(env, () => review({}))).status, 400);
-  const partial = await withEnv(env, () => review({ visual: { decision: "yes" } }));
+  assert.equal((await withEnv(env, () => review({ text: { decision: null, reason: "" }, visual: { decision: null, reason: "" } }))).status, 400);
+  const partial = await withEnv(env, () => review({ text: { decision: null, reason: "" }, visual: { decision: "yes" } }));
   assert.equal(partial.status, 200);
   const body = (await partial.json()) as { outcome: string; message: string };
   assert.equal(body.outcome, "partial");

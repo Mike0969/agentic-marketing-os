@@ -18,6 +18,8 @@ function readPart(value: unknown): PartDecision | null | "invalid" {
   if (value === undefined || value === null) return null;
   if (typeof value !== "object") return "invalid";
   const raw = value as Record<string, unknown>;
+  // A part with no decision yet ({ decision: null }) is "not decided", not an error.
+  if (raw.decision === null || raw.decision === undefined) return null;
   if (raw.decision !== "yes" && raw.decision !== "rework") return "invalid";
   const reason = typeof raw.reason === "string" ? raw.reason.trim() : "";
   if (raw.decision === "rework" && !reason) return "invalid";

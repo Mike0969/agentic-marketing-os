@@ -290,7 +290,8 @@ function PostReview({ item, onDone }: { item: ContentItem; onDone: (message: str
     const res = await fetch(`/api/marketing/content-items/${item.id}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, visual })
+      // Only the parts he decided; an undecided part stays waiting.
+      body: JSON.stringify({ text: text.decision ? text : undefined, visual: visual.decision ? visual : undefined })
     });
     const body = (await res.json().catch(() => ({}))) as { outcome?: string; parts?: string[]; error?: string; message?: string; background?: boolean };
     setBusy(false);
