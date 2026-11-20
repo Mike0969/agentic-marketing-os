@@ -78,7 +78,7 @@ export function ModelBudgetPanel({ initial, campaignEstimateUsd, prices: initial
       </div>
 
       <h3 className="mt-6 text-sm font-semibold text-neutral-200">Model prices</h3>
-      <p className="mt-1 text-xs text-neutral-500">Dollars per 1M input / output tokens, plus a fixed price per call (Jev checks, images). Rows marked “estimate” are not verified: check your provider's price page and save the real numbers.</p>
+      <p className="mt-1 text-xs text-neutral-500">Dollars per 1M input / output tokens, plus a fixed price per call (Jev checks, images). Rows marked “estimate” are not verified: check your provider&apos;s price page and save the real numbers.</p>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="text-xs text-neutral-500">
