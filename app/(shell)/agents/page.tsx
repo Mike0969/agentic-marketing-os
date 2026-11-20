@@ -89,7 +89,8 @@ function runLog(run: AgentRun): AgentKanbanRun {
     summary: summaryFromRun(run) ?? "No output summary.",
     createdAt: run.created_at,
     durationMs: run.duration_ms ?? null,
-    error: run.error
+    error: run.error,
+    output: run.output ?? null
   };
 }
 

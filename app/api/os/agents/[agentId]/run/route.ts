@@ -92,6 +92,7 @@ export async function POST(_request: Request, context: { params: Promise<{ agent
     model: result.model,
     workflowName: task.task,
     outputSummary,
+    output,
     durationMs: result.latencyMs || Date.now() - startedAt,
     error: result.error
   });
