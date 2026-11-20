@@ -197,7 +197,12 @@ export function SocialAppKeys({ initialKeys, redirectUris, highlight, highlightF
               checked={editing === "instagram" ? false : Boolean(k.usesFacebook)}
               disabled={busy !== null}
               onChange={(e) => {
-                if (e.target.checked) void call("POST", "instagram", { useFacebook: true }, "Instagram now uses the Facebook keys.");
+                if (e.target.checked) {
+                  // Tick right away; the saved state replaces this when the server answers.
+                  setEditing(null);
+                  setKeys((ks) => ks.map((x) => (x.platform === "instagram" ? { ...x, usesFacebook: true } : x)));
+                  void call("POST", "instagram", { useFacebook: true }, "Instagram now uses the Facebook keys.");
+                }
                 else openEditor(k);
               }}
               aria-label="Use the same keys as Facebook"
