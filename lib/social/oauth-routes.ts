@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { publicUrl } from "@/lib/site-url";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { saveConnection } from "@/lib/social/connection-store";
@@ -147,7 +148,7 @@ export async function handleSocialOAuthCallback<Token extends { access_token: st
 ) {
   const url = new URL(request.url);
   const back = (status: string, detail?: string) => {
-    const target = new URL("/settings", url.origin);
+    const target = publicUrl("/settings", url);
     target.searchParams.set(options.platform, status);
     if (detail) target.searchParams.set(`${options.platform}_detail`, detail);
     const res = NextResponse.redirect(target);

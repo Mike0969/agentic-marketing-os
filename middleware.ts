@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import type { CookieOptions } from "@supabase/ssr";
 import { getSupabasePublicKey, getSupabaseUrl, isLocalModeAllowed, isSupabaseConfigured } from "@/lib/supabase/config";
+import { publicUrl } from "@/lib/site-url";
 
 const publicPaths = ["/login", "/forgot-password", "/reset-password", "/auth/callback"];
 
@@ -41,8 +42,8 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    // Public origin, not request.url (behind the Funnel that is 127.0.0.1:3470).
+    const loginUrl = publicUrl("/login", request.url);
     loginUrl.searchParams.set("next", `${request.nextUrl.pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);
   }
@@ -54,8 +55,7 @@ export async function middleware(request: NextRequest) {
     : await supabase.from("admin_users").select("email").ilike("email", user.email ?? "").maybeSingle();
 
   if (!adminRecord) {
-    const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    const loginUrl = publicUrl("/login", request.url);
     loginUrl.searchParams.set("admin", "required");
     return NextResponse.redirect(loginUrl);
   }

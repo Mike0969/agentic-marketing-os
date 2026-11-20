@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { exchangeCode, getMemberUrn } from "@/lib/social/linkedin";
 import { saveConnection } from "@/lib/social/connection-store";
+import { publicUrl } from "@/lib/site-url";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -9,7 +10,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const back = (path: string) => {
-    const res = NextResponse.redirect(new URL(path, url.origin));
+    const res = NextResponse.redirect(publicUrl(path, url));
     res.cookies.set("li_oauth_state", "", { maxAge: 0, path: "/" });
     return res;
   };
