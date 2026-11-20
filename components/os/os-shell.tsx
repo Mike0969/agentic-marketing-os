@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 import { ArrowLeft, BookOpen, Bot, Gauge, LogOut, Megaphone, Settings } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -31,7 +32,22 @@ export function parentPath(pathname: string) {
 type ShellAuth = { supabaseConfigured: boolean; email: string | null };
 type HermesStatus = { configured: boolean; connected: boolean };
 
-export function OsShell({ children, auth, hermes }: { children: React.ReactNode; auth: ShellAuth; hermes: HermesStatus }) {
+export function OsShell({ children, auth, hermes, brands = [], selectedBrandId = null }: { children: React.ReactNode; auth: ShellAuth; hermes: HermesStatus; brands?: Array<{ id: string; name: string }>; selectedBrandId?: string | null }) {
+  const [brandId, setBrandId] = useState(selectedBrandId ?? "");
+  const [switching, setSwitching] = useState(false);
+
+  // One brand for every page: remembered server-side (cookie), then the page re-renders with it first.
+  async function switchBrand(id: string) {
+    setBrandId(id);
+    setSwitching(true);
+    try {
+      await fetch("/api/os/brand-selection", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ brandId: id }) });
+      // Client components keep their own state; a full reload makes every picker start on the new brand.
+      window.location.reload();
+    } finally {
+      setSwitching(false);
+    }
+  }
   const pathname = usePathname();
   const router = useRouter();
 
@@ -97,6 +113,22 @@ export function OsShell({ children, auth, hermes }: { children: React.ReactNode;
               <span>{hermesLabel}</span>
             </div>
             <div className="flex items-center gap-3">
+              {brands.length ? (
+                <label className="flex items-center gap-2 text-xs text-neutral-500">
+                  Brand
+                  <select
+                    value={brandId}
+                    disabled={switching}
+                    onChange={(e) => void switchBrand(e.target.value)}
+                    aria-label="Brand for every page"
+                    className="h-9 rounded-md border border-neutral-700 bg-neutral-900 px-2 text-sm font-medium text-neutral-100"
+                  >
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               {auth.email ? <span className="hidden text-xs text-neutral-500 sm:inline">{auth.email}</span> : null}
               {auth.supabaseConfigured ? (
                 <button

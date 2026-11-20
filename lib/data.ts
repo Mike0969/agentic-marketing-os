@@ -1,5 +1,6 @@
 import { seedData } from "@/lib/seed";
 import { unstable_noStore as noStore } from "next/cache";
+import { orderBySelection, pickSelectedBrandId, selectedBrandCookie } from "@/lib/marketing/brand-selection";
 import type { AgentRun, DashboardData } from "@/lib/types";
 import { readLocalDashboardData } from "@/lib/local-store";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -38,8 +39,10 @@ export async function getDashboardData(): Promise<DashboardData> {
     return readLocalDashboardData();
   }
 
+  // The brand chosen in the header (or the default brand) comes first, so every page starts on it.
+  const ordered = orderBySelection(brands.data, pickSelectedBrandId(brands.data, await selectedBrandCookie()));
   return {
-    brands: brands.data ?? seedData.brands,
+    brands: ordered,
     agents: agents.data ?? seedData.agents,
     campaigns: campaigns.data ?? seedData.campaigns,
     contentItems: contentItems.data ?? seedData.contentItems,

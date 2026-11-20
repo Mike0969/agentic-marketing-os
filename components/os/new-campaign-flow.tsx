@@ -12,7 +12,7 @@ type StepState = "waiting" | "running" | "done" | "error" | "stopped";
 type Plan = { title: string; summary: string; key_message: string; platforms: string[]; cta: string; objective: string };
 type Jev = { ran: boolean; score: number | null; doubts: string | null; note: string | null } | null;
 
-export function NewCampaignFlow({ brandName }: { brandName: string | null }) {
+export function NewCampaignFlow({ brandName, brandId = null }: { brandName: string | null; brandId?: string | null }) {
   const [idea, setIdea] = useState("");
   const [platforms, setPlatforms] = useState<string[]>([]);
   const [start, setStart] = useState("");
@@ -39,7 +39,7 @@ export function NewCampaignFlow({ brandName }: { brandName: string | null }) {
       const res = await fetch("/api/marketing/campaigns/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idea, platforms, start_date: start || undefined, end_date: end || undefined })
+        body: JSON.stringify({ idea, platforms, brand_id: brandId ?? undefined, start_date: start || undefined, end_date: end || undefined })
       });
       const body = (await res.json()) as { campaign_id?: string; stage?: string; plan?: Plan | null; jev?: Jev; error?: string | null };
       if (!res.ok || !body.campaign_id) throw new Error(body.error ?? "The campaign was not created.");

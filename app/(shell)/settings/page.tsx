@@ -10,6 +10,8 @@ import { peekJevStatus } from "@/lib/jev/status";
 import { OSBadge, OSPanel } from "@/components/os/ui";
 import { SocialConnections } from "@/components/os/social-connections";
 import { PageHeading } from "@/components/os/ui";
+import { DefaultBrandSetting } from "@/components/os/default-brand-setting";
+import { createServiceClient } from "@/lib/supabase/service";
 import { PROVIDERS, isConfigured } from "@/lib/providers";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,11 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
         title="Settings"
         subtitle="AI providers, notifications, the model budget and social accounts. Keys you add here are stored encrypted and never shown again."
       />
+      {await (async () => {
+        const db = createServiceClient();
+        const rows = db ? (((await db.from("brands").select("id,name,is_default").order("name")).data ?? []) as Array<{ id: string; name: string; is_default: boolean }>) : [];
+        return <DefaultBrandSetting brands={rows.map(({ id, name }) => ({ id, name }))} defaultId={rows.find((r) => r.is_default)?.id ?? null} />;
+      })()}
       {await (async () => {
         const jev = peekJevStatus(); // never blocks the page
         const at = jev.checkedAt ? new Date(jev.checkedAt).toISOString().slice(11, 16) + " UTC" : null;

@@ -131,7 +131,7 @@ export function ReadyToPostWorkspace({ brands, campaigns, contentItems, assets, 
   const [tags, setTags] = useState<Record<string, string[]>>({});
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [selectedBrandId, setSelectedBrandId] = useState(() => contentItems[0]?.brand_id ?? brands[0]?.id ?? "all");
+  const [selectedBrandId, setSelectedBrandId] = useState(() => brands[0]?.id ?? contentItems[0]?.brand_id ?? "all");
   const [scheduleTimes, setScheduleTimes] = useState<Record<string, string>>(() =>
     Object.fromEntries(contentItems.map((item, index) => [item.id, toDateTimeLocal(item.scheduled_at) || defaultDateTimeLocal(index)]))
   );

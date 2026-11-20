@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function NewCampaignPage() {
   const [data, budget] = await Promise.all([getDashboardData(), getBudgetStatus()]);
   const estimate = CALL_ESTIMATE.plan + CALL_ESTIMATE.prepare + CALL_ESTIMATE.perPlatform + CALL_ESTIMATE.runOverhead;
+  // The brand chosen in the header (data.brands puts it first).
   const brand = data.brands.find((item) => item.active) ?? null;
   return (
     <>
@@ -19,7 +20,7 @@ export default async function NewCampaignPage() {
             : `Budget: ${budget.remainingToday} of ${budget.perDayMax} model calls left today. One single-platform campaign uses up to about ${estimate}.`}
         </p>
       ) : null}
-      <NewCampaignFlow brandName={brand?.name ?? null} />
+      <NewCampaignFlow brandName={brand?.name ?? null} brandId={brand?.id ?? null} />
     </>
   );
 }
