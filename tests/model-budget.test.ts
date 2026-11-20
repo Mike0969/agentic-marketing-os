@@ -11,6 +11,10 @@ const { runHermesAgent } = await import("../lib/agents/hermes-client.ts");
 const ENDPOINT = "http://hermes.test/p/crina/v1/chat/completions";
 const ENV = { ...SUPABASE_ENV, HERMES_AGENT_ENDPOINT: ENDPOINT, HERMES_AGENT_BACKUP_MODEL: undefined };
 const LIMIT_TEXT = "API call failed after 3 retries. HTTP 429: Error code: 429 - {'error': {'type': 'usage_limit_reached', 'message': 'The usage limit has been reached', 'resets_at': 1795164815}}";
+// Same shape with a reset time in the future, so the breaker is still active when the next call is made.
+const FUTURE_RESET = Math.floor(Date.now() / 1000) + 3600;
+const LIVE_LIMIT_TEXT = LIMIT_TEXT.replace("1795164815", String(FUTURE_RESET));
+const hhmm = (unix: number) => new Date(unix * 1000).toISOString().slice(11, 16);
 
 function seed(row: Record<string, unknown> = {}, calls: Array<Record<string, unknown>> = []) {
   const db = new FakeSupabase({ tables: { model_budget: [{ id: 1, per_campaign_max: 40, per_day_max: 150, hermes_blocked_until: null, ...row }], model_calls: calls, agent_config: [], agent_settings: [] } });
@@ -31,15 +35,15 @@ test("reset time: resets_at, resets_in_sec, else one hour; usage-limit text is r
 
 test("Hermes 429 text (HTTP 200) trips the breaker; the next call is refused without reaching Hermes", async () => {
   const db = seed();
-  const hermes = fakeFetch(() => jsonResponse({ choices: [{ message: { content: LIMIT_TEXT } }] }));
+  const hermes = fakeFetch(() => jsonResponse({ choices: [{ message: { content: LIVE_LIMIT_TEXT } }] }));
   const first = await withEnv(ENV, call, hermes.fn);
   assert.equal(first.ok, false);
   assert.equal(first.rateLimited, true);
-  assert.equal(first.error, "Hermes limit reached, resets at 08:53 UTC.");
-  assert.equal(db.rows("model_budget")[0].hermes_blocked_until, "2026-11-20T08:53:35.000Z");
+  assert.equal(first.error, `Hermes limit reached, resets at ${hhmm(FUTURE_RESET)} UTC.`);
+  assert.equal(db.rows("model_budget")[0].hermes_blocked_until, new Date(FUTURE_RESET * 1000).toISOString());
 
   const second = await withEnv(ENV, call, hermes.fn);
-  assert.equal(second.error, "Hermes limit reached, resets at 08:53 UTC.");
+  assert.equal(second.error, `Hermes limit reached, resets at ${hhmm(FUTURE_RESET)} UTC.`);
   assert.equal(hermes.calls.length, 1, "no second request to Hermes while the limit is active");
 });
 
