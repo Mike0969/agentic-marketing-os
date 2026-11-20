@@ -183,3 +183,41 @@ test("social app keys: Instagram uses the Facebook keys by default or when ticke
     assert.equal(appKeys.appKey("INSTAGRAM_CLIENT_ID"), undefined);
   });
 });
+
+test("inbox import: the folder decides the brand (gulf-el-nexride -> Gulf-EL, gridfactory -> GridFactory, all -> all brands); seed ids are refused", async () => {
+  const { mkdtemp, mkdir, writeFile, readdir } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const path = await import("node:path");
+  const { importInbox } = await import("../lib/learning/inbox.ts");
+  const GULF = "22222222-2222-4222-8222-222222222222", GRID = "11111111-1111-4111-8111-111111111111";
+  const brands = [{ id: GRID, name: "GridFactory.io" }, { id: GULF, name: "Gulf-EL.com / NexRide" }];
+  const root = await mkdtemp(path.join(tmpdir(), "inbox-"));
+  for (const [dir, file, text] of [
+    ["gulf-el-nexride", "ideas.md", "## Gulf idea\nDrivers keep the whole fare.\n"],
+    ["gridfactory", "links.txt", "GPU racks | https://example.com/gpu\n"],
+    ["all", "ideas.md", "## Shared idea\nFor every brand.\n"]
+  ]) {
+    await mkdir(path.join(root, dir), { recursive: true });
+    await writeFile(path.join(root, dir, file), text);
+  }
+  const db = seed();
+  await withEnv(ENV, async () => {
+    const r = await importInbox(brands, root);
+    assert.equal(r.added, 3, JSON.stringify(r.skipped));
+  });
+  const byTitle = new Map(db.rows("learning_items").map((row) => [row.title, row.brand_id]));
+  assert.equal(byTitle.get("Gulf idea"), GULF);
+  assert.equal(byTitle.get("GPU racks"), GRID);
+  assert.equal(byTitle.get("Shared idea"), null);
+  assert.deepEqual(await readdir(path.join(root, "gulf-el-nexride")), ["imported"]);
+
+  // Seed brands (no database id): refused, never imported as "all brands".
+  await mkdir(path.join(root, "gulf-el-nexride"), { recursive: true });
+  await writeFile(path.join(root, "gulf-el-nexride", "ideas.md"), "## Another\nText.\n");
+  seed();
+  await withEnv(ENV, async () => {
+    const r = await importInbox([{ id: "brand-gulf-el", name: "Gulf-EL.com / NexRide" }], root);
+    assert.equal(r.added, 0);
+    assert.match(r.skipped.join(" "), /no database id/);
+  });
+});

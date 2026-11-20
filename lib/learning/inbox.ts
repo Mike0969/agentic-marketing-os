@@ -11,6 +11,8 @@ import { projectFolderFor } from "@/lib/learning/vault";
  *   or just the url) · ideas.md -> one Idea per "## heading" section.
  */
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const DEFAULT_INBOX = process.env.LEARNING_INBOX_PATH || "/home/ubuntu/marketing-os/inbox";
 
 const MIME: Record<string, string> = {
@@ -71,6 +73,11 @@ export async function importInbox(brands: Array<{ id: string; name: string }>, r
     const brand = folder.name === "all" ? null : brands.find((b) => projectFolderFor(b.name) === folder.name) ?? null;
     if (folder.name !== "all" && !brand) {
       skipped.push(`${folder.name}/ (no brand matches this folder name)`);
+      continue;
+    }
+    // A brand folder must map to a real database brand; never fall back to "all brands" (NULL).
+    if (brand && !UUID_RE.test(brand.id)) {
+      skipped.push(`${folder.name}/ (brand "${brand.name}" has no database id; nothing imported)`);
       continue;
     }
     const dir = path.join(root, folder.name);
