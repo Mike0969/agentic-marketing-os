@@ -233,3 +233,15 @@ test("agent model: a change without the Agents board marker (a script) is refuse
   });
   assert.equal(db.rows("agent_config").length, 0);
 });
+
+test("Hermes image path guard: only png/jpg/webp files inside Hermes's home are read", async () => {
+  const { safeHermesImagePath } = await import("../lib/providers/image-generation.ts");
+  const home = "/home/ubuntu/.hermes";
+  assert.equal(safeHermesImagePath("/home/ubuntu/.hermes/profiles/crina/cache/generated/images/openai_codex_x.png", home), "/home/ubuntu/.hermes/profiles/crina/cache/generated/images/openai_codex_x.png");
+  assert.equal(safeHermesImagePath("file:///home/ubuntu/.hermes/cache/a.webp", home), "/home/ubuntu/.hermes/cache/a.webp");
+  assert.equal(safeHermesImagePath("/home/ubuntu/.hermes/../.config/marketing-os/app.env", home), null);
+  assert.equal(safeHermesImagePath("/home/ubuntu/.hermes/profiles/crina/.env", home), null);
+  assert.equal(safeHermesImagePath("/etc/passwd.png", home), null);
+  assert.equal(safeHermesImagePath("/home/ubuntu/.hermes-evil/x.png", home), null);
+  assert.equal(safeHermesImagePath(42, home), null);
+});

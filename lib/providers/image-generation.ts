@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { randomUUID } from "crypto";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
@@ -9,7 +11,7 @@ export type ImageGenerationResult = {
   ok: boolean;
   url: string | null;
   bytes: Buffer | null;
-  provider: "gpt-image" | "flux" | "stability" | "placeholder";
+  provider: "hermes" | "gpt-image" | "flux" | "stability" | "placeholder";
   model: string;
   fallbackUsed: boolean;
   status: "generated" | "placeholder" | "error";
@@ -152,6 +154,66 @@ async function generateReplicate(prompt: string, provider: "flux" | "stability",
   }
 }
 
+/** Where Hermes keeps generated images (each profile: <home>/cache/generated/images/). Files are read only from here. */
+const HERMES_HOME = process.env.HERMES_HOME_DIR || "/home/ubuntu/.hermes";
+
+/** Pure: the image path Hermes returned, if it is a png/jpg/webp file inside Hermes's home (no traversal). */
+export function safeHermesImagePath(candidate: unknown, home = HERMES_HOME): string | null {
+  if (typeof candidate !== "string" || !candidate.trim()) return null;
+  const resolved = path.resolve(candidate.trim().replace(/^file:\/\//, ""));
+  const root = path.resolve(home) + path.sep;
+  if (!resolved.startsWith(root)) return null;
+  return /\.(png|jpe?g|webp)$/i.test(resolved) ? resolved : null;
+}
+
+/**
+ * Image through Hermes (Mihai 2026-11-20): the crina profile's image tool on the ChatGPT plan
+ * (openai-codex, gpt-image-2-medium; $0 per image, counts against the plan). Hermes saves the file
+ * locally and returns its path; we read it only from Hermes's home. Never throws.
+ */
+async function generateHermesImage(prompt: string, options: ImageGenerationOptions = {}): Promise<ImageGenerationResult> {
+  const started = Date.now();
+  const endpoint = process.env.HERMES_AGENT_ENDPOINT;
+  const token = process.env.HERMES_AGENT_TOKEN;
+  const fail = (error: string, model = "crina"): ImageGenerationResult => ({ ok: false, url: null, bytes: null, provider: "hermes", model, fallbackUsed: true, status: "error", error, durationMs: Date.now() - started });
+  if (!endpoint || !token) return fail("Hermes is not configured.");
+  const { resolveAgentRuntimeConfig } = await import("@/lib/agents/agent-config-store");
+  const cfg = await resolveAgentRuntimeConfig("agent-visual-video", "crina").catch(() => ({ provider: "hermes", model: "crina" }));
+  const model = cfg.provider === "hermes" ? cfg.model : "crina";
+  const { refused, id: callId } = await beginModelCall("hermes", "agent-visual-video", model);
+  if (refused) return fail(refused, model);
+  const aspect = options.aspect === "landscape" ? "landscape (16:9)" : options.aspect === "vertical" ? "portrait (9:16)" : "square (1:1)";
+  const ask = `Generate exactly ONE image with your image generation tool. Aspect: ${aspect}. Do not add any text inside the image unless the prompt asks for it.\n\nImage prompt:\n${prompt.slice(0, 3500)}\n\nWhen the tool has saved the image, answer with JSON only: {"image_path": "<the absolute file path the tool returned>"}`;
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "user", content: ask }] }),
+      signal: AbortSignal.timeout(Number(process.env.HERMES_IMAGE_TIMEOUT_MS || 240000))
+    });
+    if (!res.ok) return fail(`Hermes returned HTTP ${res.status} for the image.`, model);
+    const raw = (await res.json()) as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string };
+    await finishModelCall(callId, { provider: "hermes", model, tokensIn: raw.usage?.prompt_tokens ?? null, tokensOut: raw.usage?.completion_tokens ?? null });
+    const content = raw.choices?.[0]?.message?.content ?? "";
+    const fromJson = (() => {
+      try {
+        return (JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, "")) as { image_path?: unknown }).image_path;
+      } catch {
+        return null;
+      }
+    })();
+    const fromText = content.match(/\/[^\s"'`)]+\.(?:png|jpe?g|webp)/i)?.[0] ?? null;
+    const file = safeHermesImagePath(fromJson) ?? safeHermesImagePath(fromText);
+    if (!file) return fail(`Hermes did not return an image file (${content.slice(0, 160)}).`, model);
+    const stat = await fs.stat(file);
+    if (stat.size > 20 * 1024 * 1024) return fail("The Hermes image is larger than 20 MB.", model);
+    const bytes = await fs.readFile(file);
+    return { ok: true, url: null, bytes, provider: "hermes", model: `${model} (gpt-image-2 via ChatGPT plan)`, fallbackUsed: false, status: "generated", error: null, durationMs: Date.now() - started };
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Hermes image failed.", model);
+  }
+}
+
 export async function uploadMarketingAsset(bytes: Buffer, contentItemId: string, position: number) {
   if (!isSupabaseConfigured()) return null;
   const supabase = createServiceClient();
@@ -170,14 +232,17 @@ export async function uploadMarketingAsset(bytes: Buffer, contentItemId: string,
 export async function generateMarketingImage(prompt: string, context: { contentItemId: string; position?: number; kind?: string } & ImageGenerationOptions): Promise<ImageGenerationResult> {
   const attempts: ImageGenerationResult[] = [];
   const options: ImageGenerationOptions = { aspect: context.aspect, size: context.size, quality: context.quality };
-  // Every generated image costs real money: charge it to the dollar budget (price per image in Settings).
-  const { refused, id: callId } = await beginModelCall("gpt-image", "agent-visual-video", GPT_IMAGE_MODEL);
-  if (refused) {
-    return { ok: false, url: null, bytes: null, provider: "placeholder", model: "draft-placeholder", fallbackUsed: true, status: "placeholder", error: refused, durationMs: 0 };
+  // 1) Hermes on the ChatGPT plan ($0 per image). 2) Fallback: the OpenAI image API, charged per image.
+  attempts.push(await generateHermesImage(prompt, options));
+  if (!attempts[0].ok) {
+    const { refused, id: callId } = await beginModelCall("gpt-image", "agent-visual-video", GPT_IMAGE_MODEL);
+    if (refused) {
+      return { ok: false, url: null, bytes: null, provider: "placeholder", model: "draft-placeholder", fallbackUsed: true, status: "placeholder", error: `${attempts[0].error ?? "Hermes image failed"}; ${refused}`, durationMs: 0 };
+    }
+    attempts.push(await generateGptImage(prompt, options));
+    if (!attempts[1].ok) await finishModelCall(callId, { provider: "gpt-image", model: "failed", tokensIn: 0, tokensOut: 0 });
   }
-  attempts.push(await generateGptImage(prompt, options));
-  if (!attempts[0].ok) await finishModelCall(callId, { provider: "gpt-image", model: "failed", tokensIn: 0, tokensOut: 0 });
-  if (!attempts[0].ok) attempts.push(await generateHuggingFace(prompt, "flux", FLUX_MODEL, options));
+  if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateHuggingFace(prompt, "flux", FLUX_MODEL, options));
   if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateReplicate(prompt, "flux", process.env.REPLICATE_FLUX_VERSION || FLUX_MODEL, options));
   if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateHuggingFace(prompt, "stability", STABILITY_MODEL, options));
 
