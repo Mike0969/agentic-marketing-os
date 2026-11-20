@@ -45,7 +45,8 @@ export function classify(platform: string, status: number, body: Record<string, 
     return result("error", `Meta answered HTTP ${status}${err.message ? `: ${String(err.message).slice(0, 120)}` : ""}.`);
   }
   if (status === 401) {
-    if (hasRefresh) return result("expired", "Access token expired; a refresh token is stored and the app renews it before posting.");
+    // A refresh token is stored, but testing it would rotate the tokens (a write), so it stays unverified.
+    if (hasRefresh) return result("expired", "Access token expired; a refresh token is stored but is not tested by this read-only check. Reconnect to be sure.");
     return result("expired", "The provider rejected the token (expired or revoked): reconnect.");
   }
   if (status === 403) return result("error", "Token accepted but missing the profile permission for this check.");
@@ -86,7 +87,7 @@ export function verifyLabel(v: VerifyResult | null | undefined): { text: string;
   if (!v) return null;
   const at = new Date(v.checkedAt).toISOString().slice(11, 16);
   if (v.state === "valid") return { text: `connected · verified ${at} UTC`, tone: "ok" };
-  if (v.state === "expired") return { text: v.detail.includes("refresh token") ? `access token expired · renews before posting (checked ${at})` : "expired — Reconnect", tone: "warn" };
+  if (v.state === "expired") return { text: v.detail.includes("refresh token") ? `expired (refresh untested) — Reconnect · checked ${at}` : "expired — Reconnect", tone: "warn" };
   if (v.state === "revoked") return { text: "revoked — Reconnect", tone: "danger" };
   return { text: `check failed: ${v.detail}`, tone: "warn" };
 }

@@ -12,7 +12,7 @@ test("provider answers map to valid / expired / revoked / error", () => {
   assert.equal(classify("x", 200, { data: { username: "nexride" } }, true).account, "nexride");
   const x401 = classify("x", 401, {}, true);
   assert.equal(x401.state, "expired");
-  assert.match(x401.detail, /refresh token is stored/);
+  assert.match(x401.detail, /refresh token is stored but is not tested/);
   assert.equal(classify("linkedin", 401, {}, false).state, "expired");
   assert.equal(classify("facebook", 400, { error: { code: 190, error_subcode: 463 } }, false).state, "expired");
   assert.equal(classify("instagram", 400, { error: { code: 190, error_subcode: 460 } }, false).state, "revoked");
@@ -23,7 +23,7 @@ test("labels for Settings", () => {
   const at = "2026-11-20T09:05:00.000Z";
   assert.equal(verifyLabel({ state: "valid", detail: "", checkedAt: at, account: null })!.text, "connected · verified 09:05 UTC");
   assert.equal(verifyLabel({ state: "expired", detail: "rejected", checkedAt: at, account: null })!.text, "expired — Reconnect");
-  assert.match(verifyLabel({ state: "expired", detail: "a refresh token is stored", checkedAt: at, account: null })!.text, /renews before posting/);
+  assert.equal(verifyLabel({ state: "expired", detail: "a refresh token is stored but is not tested", checkedAt: at, account: null })!.text, "expired (refresh untested) — Reconnect · checked 09:05");
   assert.equal(verifyLabel({ state: "revoked", detail: "", checkedAt: at, account: null })!.text, "revoked — Reconnect");
 });
 
