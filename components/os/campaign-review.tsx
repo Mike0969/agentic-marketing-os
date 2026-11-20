@@ -169,7 +169,17 @@ export function CampaignReview(props: {
         ) : (
           <p className="mt-3 text-sm text-neutral-400">No plan yet.</p>
         )}
-        {props.planJev?.doubts ? <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">{props.planJev.doubts}</p> : null}
+        {props.planJev?.doubts ? (
+          props.stage === "plan_doubts" ? (
+            <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100">{props.planJev.doubts}</p>
+          ) : (
+            // Past the plan stage this is history, not the current state: collapsed and labelled.
+            <details className="mt-3 rounded-md border border-neutral-800 bg-neutral-950/60 p-3 text-sm text-neutral-400">
+              <summary className="cursor-pointer text-neutral-300">Earlier plan check (before the posts were made)</summary>
+              <p className="mt-2">{props.planJev.doubts}</p>
+            </details>
+          )
+        ) : null}
 
         {props.stage === "plan_doubts" && props.plan ? (
           <div className="mt-4">

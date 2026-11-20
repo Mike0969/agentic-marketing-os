@@ -238,7 +238,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           total,
           brandName: brand?.name,
           headline: slide?.headline || draft?.hook || item.hook || item.title,
-          text: slide?.text
+          text: slide?.text,
+          footer: draft?.cta ?? item.CTA ?? null
         });
         assets.push({ kind: "carousel_slide", url: composedUrl ?? image.url, prompt, position: i + 1, model: image.model, provider: image.provider, status: image.status, error: image.error });
       }
