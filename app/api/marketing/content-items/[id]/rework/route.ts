@@ -124,7 +124,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (!access.ok) return access.response;
 
   const { id } = await context.params;
-  const body = (await request.json().catch(() => ({}))) as { remark?: string; tags?: string[] };
+  const body = (await request.json().catch(() => ({}))) as { remark?: string; tags?: string[]; parts?: unknown };
   const tags = Array.isArray(body.tags) ? body.tags.filter((t): t is string => typeof t === "string") : [];
   const remark = body.remark?.trim() || tags.join("; ");
   if (!remark) return NextResponse.json({ error: "A reason chip or remark is required so Crina knows what to fix." }, { status: 400 });
@@ -167,6 +167,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const fromTags = routeFromTags(tags);
     if (fromTags.visual || fromTags.content) route = fromTags;
   }
+  // Review screen: Mihai said Rework on a specific part (text and/or visual) — that is authoritative.
+  const parts = Array.isArray(body.parts) ? body.parts.filter((part): part is string => typeof part === "string") : [];
+  if (parts.includes("text") || parts.includes("visual")) route = { content: parts.includes("text"), visual: parts.includes("visual") };
   const memory = await getFeedbackMemoryContext({ brandId: item.brand_id, platform: item.platform });
   const plan = getPlatformPlan(item.platform);
   const routedTo: string[] = [];

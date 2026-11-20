@@ -17,6 +17,8 @@ import { createProjectAsset, findAssetCandidates, recordAssetUsage, resolveProje
 import { saveContentAssets } from "@/lib/marketing/ready-package";
 import { CONTENT_RUBRIC, HONEST_GRADER_PREAMBLE, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
+import { jevCheck, jevLoop, type JevResult } from "@/lib/jev/jev";
+import { defaultVault, learningContext } from "@/lib/learning/vault";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { Brand, Campaign, ProjectAsset, ReadyPackageAsset } from "@/lib/types";
@@ -71,6 +73,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const brand = brandRow as Brand | null;
 
   const idea = (campaign.idea_brief ?? {}) as Record<string, unknown>;
+  // Learning notes (Mihai's past Yes/Rework) that every maker, Crina's judge and Jev read before working.
+  const vault = defaultVault(brand?.name);
+  const textLearning = await learningContext(vault, { part: "text" });
+  const visualLearning = await learningContext(vault, { part: "visual" });
+  const ownerIdea = String(idea.idea ?? campaign.objective ?? "");
   // P4a — contract-first (Karpathy III): the judge grades against the campaign's agreed goal, not just
   // the generic rubric. Uses existing campaign data; Codex can add explicit done-criteria templates.
   const contract = String(idea.success_criteria ?? idea.primary_cta ?? campaign.objective ?? "").replace(/\s+/g, " ").slice(0, 300);
@@ -159,7 +166,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: `Judge ${artifactLabel}`,
-        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
+        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualLearning.text : textLearning.text}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
         outputSchema: judgeSchema,
         input: { brand, platform, [artifactLabel]: artifact, campaign_idea: idea, conversion_insights: conversion.insights },
         brainFiles: ["workflow-contract.md", "approval-rules.md", "grader-calibration.md"],
@@ -178,21 +185,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       };
     };
 
-    // 1) Content loop — Content Creator makes a PLATFORM-NATIVE package, Crina scores, keep champion.
-    const contentLoop = await runJudgedLoop<NativeDraft>({
-      loopType: "content",
-      agentId: "agent-content-creator",
-      inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
-      // Add-one-platform is interactive: keep it to a single round so it returns fast on a slow model.
-      maxRounds: requestedPlatform ? 1 : undefined,
-      recordReceipt,
-      make: async (_round, improvements, champion) => {
+    // Content Creator maker: used by Crina's loop and again by Jev's automatic rework.
+    const makeContent = async (improvements: string[], champion: NativeDraft | null) => {
         const content = await runMarketingAgentModel({
           agentId: "agent-content-creator",
           fallbackAgentName: "Content Creator Agent",
           fallbackRole: "Copy and Editorial",
           task: `Create ${plan.label} package`,
-          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
+          instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish.\n\nMemory:\n${memoryText(memory)}\n\n${textLearning.text}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
           outputSchema: plan.contentSchema,
           input: { brand, campaign_idea: idea, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -211,7 +211,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           tokensTotal: content.usage.tokensTotal,
           latencyMs: content.durationMs
         };
-      },
+      };
+
+    // 1) Content loop — Content Creator makes a PLATFORM-NATIVE package, Crina scores, keep champion.
+    const contentLoop = await runJudgedLoop<NativeDraft>({
+      loopType: "content",
+      agentId: "agent-content-creator",
+      inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
+      // Add-one-platform is interactive: keep it to a single round so it returns fast on a slow model.
+      maxRounds: requestedPlatform ? 1 : undefined,
+      recordReceipt,
+      make: async (_round, improvements, champion) => makeContent(improvements, champion),
       judge: async (candidate) => judgeWith(CONTENT_RUBRIC, "post", candidate)
     });
 
@@ -236,13 +246,27 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }
 
     const contentFallback = contentLoop.fallbackUsed || !contentLoop.champion;
-    const draft: NativeDraft = contentLoop.champion ?? {
+    let draft: NativeDraft = contentLoop.champion ?? {
       title: `${plan.label}: ${campaign.title}`,
       hook: String(idea.hook ?? ""),
       body: String(idea.summary ?? campaign.title),
       cta: String(idea.primary_cta ?? "Learn more"),
       hashtags: []
     };
+
+    // Jev checks the text before it can reach Mihai: below 0.85 -> automatic rework (max 2), then "Jev doubts".
+    let textJev: JevResult | null = null;
+    let textDoubts: string | null = null;
+    if (contentLoop.champion) {
+      const checked = await jevLoop<NativeDraft>(
+        draft,
+        (candidate) => jevCheck({ kind: "text", idea: ownerIdea, brand, learning: textLearning.text, subject: candidate, plan: idea.plan }),
+        async (candidate, doubts) => (await makeContent(doubts.map((doubt) => `Jev: ${doubt}`), candidate)).candidate
+      );
+      draft = checked.candidate;
+      textJev = checked.result;
+      textDoubts = checked.doubtsLabel;
+    }
 
     const contentType = plan.contentType;
     const reviewChip = `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
@@ -287,6 +311,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const assets: ReadyPackageAsset[] = [];
     let assetFallback = false;
     let imageProvider: string | null = null;
+    let visualJev: JevResult | null = null;
+    let visualDoubts: string | null = null;
 
     if (selectedAsset) {
       // Crina selected an existing library asset — Visual Agent skipped entirely.
@@ -299,19 +325,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       assets.push({ kind: assetKindLabel, url: selectedAsset.file_url, prompt: selectedAsset.description ?? selectedAsset.title, position: 1, status: selectedAsset.file_url ? "generated" : "placeholder", provider: `library:${selectedAsset.source_tool}` });
       await recordAssetUsage({ assetId: selectedAsset.id, contentItemId: item.id as string, campaignId: id, platform, reused: selectedAsset.used_count > 0 });
     } else if (plan.assetKind === "image") {
-      const visualLoop = await runJudgedLoop<VisualConcept>({
-        loopType: "visual",
-        agentId: "agent-visual-video",
-        inputSummary: `Visual for "${draft.title}" (${plan.label})`,
-        maxRounds: VISUAL_MAX_ROUNDS,
-        recordReceipt,
-        make: async (_round, improvements, champion) => {
+      // Visual maker: used by Crina's loop and again by Jev's automatic rework.
+      const makeVisual = async (improvements: string[], champion: VisualConcept | null) => {
           const v = await runMarketingAgentModel({
             agentId: "agent-visual-video",
             fallbackAgentName: "Visual & Video Agent",
             fallbackRole: "Visual Concepts",
             task: `Concept a ${plan.label} visual`,
-            instructions: `Propose ONE visual concept + an image-generation prompt for this approved ${plan.label} post. Match the brand and the post's message. Brand-safe; no text in the image; no real-person likeness; no unapproved logos.${improvements.length ? `\n\nCrina asked you to fix:\n- ${improvements.join("\n- ")}` : ""}`,
+            instructions: `Propose ONE visual concept + an image-generation prompt for this approved ${plan.label} post. Match the brand and the post's message. Brand-safe; no text in the image; no real-person likeness; no unapproved logos.\n\n${visualLearning.text}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
             outputSchema: visualSchema,
             input: { brand, platform, post: draft, previous: champion },
             brainFiles: ["content-formulas.md", "approval-rules.md"],
@@ -323,7 +344,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
           const prompt = typeof vj.prompt === "string" ? vj.prompt.trim() : typeof vj.image_prompt === "string" ? (vj.image_prompt as string).trim() : "";
           const candidate = prompt ? { concept, prompt } : null;
           return { candidate, outputSummary: (concept || prompt).slice(0, 180) || "no concept produced", provider: v.provider, model: v.modelUsed, fallbackUsed: !candidate || v.fallbackUsed, tokensPrompt: v.usage.tokensPrompt, tokensCompletion: v.usage.tokensCompletion, tokensTotal: v.usage.tokensTotal, latencyMs: v.durationMs };
-        },
+        };
+      const visualLoop = await runJudgedLoop<VisualConcept>({
+        loopType: "visual",
+        agentId: "agent-visual-video",
+        inputSummary: `Visual for "${draft.title}" (${plan.label})`,
+        maxRounds: VISUAL_MAX_ROUNDS,
+        recordReceipt,
+        make: async (_round, improvements, champion) => makeVisual(improvements, champion),
         judge: async (candidate) => judgeWith(VISUAL_RUBRIC, "visual", candidate)
       });
       loopIds.push(visualLoop.loopId);
@@ -337,8 +365,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         continue;
       }
 
-      const usingGeneric = !visualLoop.champion;
-      const prompt = visualLoop.champion ? visualLoop.champion.prompt : `Professional ${plan.label} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
+      let visualChampion = visualLoop.champion;
+      if (visualChampion) {
+        const checked = await jevLoop<VisualConcept>(
+          visualChampion,
+          (candidate) => jevCheck({ kind: "visual", idea: ownerIdea, brand, learning: visualLearning.text, subject: { ...candidate, post: { title: draft.title, hook: draft.hook } }, plan: idea.plan }),
+          async (candidate, doubts) => (await makeVisual(doubts.map((doubt) => `Jev: ${doubt}`), candidate)).candidate
+        );
+        visualChampion = checked.candidate;
+        visualJev = checked.result;
+        visualDoubts = checked.doubtsLabel;
+      }
+      const usingGeneric = !visualChampion;
+      const prompt = visualChampion ? visualChampion.prompt : `Professional ${plan.label} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
       const image = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: 1, kind: "image" });
       visualUrl = image.url;
       visualStatus = image.status;
@@ -431,7 +470,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       selected_asset_title: selectedAsset?.title ?? null,
       project_slug: projectSlug ?? null,
       reuse_allowed: selectedAsset?.reuse_allowed ?? null,
-      crina_route_notes: assetRouteNotes
+      crina_route_notes: assetRouteNotes,
+      jev: {
+        text: textJev ? { ran: textJev.ran, score: textJev.score, doubts: textDoubts, note: textJev.note } : null,
+        visual: visualJev ? { ran: visualJev.ran, score: visualJev.score, doubts: visualDoubts, note: visualJev.note } : null
+      }
     };
 
     await saveContentAssets(item.id as string, assets);
@@ -447,7 +490,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         visual_asset_url: visualUrl,
         visual_asset_status: visualStatus,
         ready_package: readyPackage,
-        performance_summary: `${fbNote}Crina ${reviewChip}. ${plan.contentType}. Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
+        performance_summary: `${[textDoubts, visualDoubts].filter(Boolean).map((d) => `${d}. `).join("")}${fbNote}Crina ${reviewChip}. ${plan.contentType}. Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
       })
       .eq("id", item.id);
 

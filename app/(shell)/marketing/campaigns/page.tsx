@@ -1,20 +1,32 @@
+import Link from "next/link";
 import { IdeasBoard } from "@/components/os/ideas-board";
-import { PageHeading } from "@/components/os/ui";
+import { OSBadge, PageHeading } from "@/components/os/ui";
 import { getDashboardData } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
-export default async function CampaignsPage() {
+const STATUSES = ["planning", "active", "paused", "completed"];
+
+export default async function CampaignsPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
+  const { status } = await searchParams;
+  const filter = status && STATUSES.includes(status) ? status : null;
   const data = await getDashboardData();
+  const campaigns = filter ? data.campaigns.filter((campaign) => campaign.status === filter) : data.campaigns;
 
   return (
     <>
       <PageHeading
         eyebrow="Marketing OS"
         title="Campaigns"
-        subtitle="Pick a brand, let Crina propose ideas, then refine and Run one. Crina runs the agent loop and the final package appears in Ready to Post for your approval. Nothing posts live."
+        subtitle="Every campaign. To start a new one, use Marketing → New campaign. Nothing posts live."
       />
-      <IdeasBoard brands={data.brands} campaigns={data.campaigns} />
+      {filter ? (
+        <div className="mb-4 flex items-center gap-2 text-sm text-neutral-400">
+          <OSBadge tone="info">Showing: {filter === "planning" ? "draft objectives (planning)" : filter}</OSBadge>
+          <Link href="/marketing/campaigns" className="text-cyan-300 underline">Show all</Link>
+        </div>
+      ) : null}
+      <IdeasBoard key={filter ?? "all"} brands={data.brands} campaigns={campaigns} />
     </>
   );
 }

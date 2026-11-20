@@ -1,25 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Bot, Brain, CandlestickChart, Gauge, LogOut, Megaphone, Settings, TrendingUp } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { ArrowLeft, Bot, Brain, Gauge, LogOut, Megaphone, Settings } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
   { href: "/", label: "Home", icon: Gauge },
   { href: "/marketing", label: "Marketing", icon: Megaphone },
-  { href: "/sales", label: "Sales", icon: TrendingUp },
+  // Sales and Trading are hidden from the menu (Mihai 2026-11-20); their pages still exist.
   { href: "/agents", label: "Agents", icon: Bot },
   { href: "/brain", label: "Brain", icon: Brain },
-  { href: "/trading", label: "Trading", icon: CandlestickChart },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
+
+/** Where Back goes when there is no in-app history (opened from a link or a new tab). */
+export function parentPath(pathname: string) {
+  const parts = pathname.split("/").filter(Boolean);
+  return parts.length > 1 ? `/${parts.slice(0, -1).join("/")}` : "/";
+}
 
 type ShellAuth = { supabaseConfigured: boolean; email: string | null };
 type HermesStatus = { configured: boolean; connected: boolean };
 
 export function OsShell({ children, auth, hermes }: { children: React.ReactNode; auth: ShellAuth; hermes: HermesStatus }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  function goBack() {
+    // Same-origin history -> real back; otherwise go one level up.
+    if (window.history.length > 1 && document.referrer.startsWith(window.location.origin)) router.back();
+    else router.push(parentPath(pathname));
+  }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -62,7 +74,17 @@ export function OsShell({ children, auth, hermes }: { children: React.ReactNode;
         {/* Top bar */}
         <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur">
           <div className="flex h-14 items-center justify-between gap-4 px-4 sm:px-6">
-            <div className="flex items-center gap-2 text-sm text-neutral-400">
+            <div className="flex items-center gap-3 text-sm text-neutral-400">
+              {pathname !== "/" ? (
+                <button
+                  type="button"
+                  onClick={goBack}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-md border border-neutral-800 px-3 text-sm font-medium text-neutral-200 hover:bg-neutral-900"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </button>
+              ) : null}
               <span className={clsx("h-2 w-2 rounded-full", hermesTone)} aria-hidden />
               <span>{hermesLabel}</span>
             </div>
