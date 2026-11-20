@@ -14,6 +14,14 @@ export function timeoutSignal(ms = DEFAULT_TIMEOUT_MS) {
   return AbortSignal.timeout(ms);
 }
 
+/** A readable error for env values that cannot go into an HTTP header (e.g. a pasted "…" placeholder). */
+export function nonAsciiProblem(values: Record<string, string | undefined>): string | null {
+  for (const [name, value] of Object.entries(values)) {
+    if (value && /[^\x20-\x7e]/.test(value)) return `${name} contains non-ASCII characters (looks like a placeholder such as "…"). Paste the real value.`;
+  }
+  return null;
+}
+
 export function missingHealth(detail = "API key is not configured."): ProviderHealth {
   return { status: "not_configured", configured: false, connected: false, detail };
 }

@@ -1,4 +1,4 @@
-import { connectedHealth, elapsed, errorHealth, failedTest, missingHealth, now, staticModels, timeoutSignal } from "@/lib/providers/utils";
+import { connectedHealth, elapsed, errorHealth, failedTest, missingHealth, nonAsciiProblem, now, staticModels, timeoutSignal } from "@/lib/providers/utils";
 
 const BASE_URL = "https://slack.com/api";
 
@@ -17,6 +17,8 @@ function headers() {
 export async function healthCheck() {
   if (!token()) return missingHealth("SLACK_BOT_TOKEN is not configured.");
   const startedAt = now();
+  const bad = nonAsciiProblem({ SLACK_BOT_TOKEN: token(), SLACK_CHANNEL_ID: defaultChannel() });
+  if (bad) return errorHealth(new Error(bad), startedAt);
   try {
     const response = await fetch(`${BASE_URL}/auth.test`, { method: "POST", headers: headers(), signal: timeoutSignal() });
     if (!response.ok) throw new Error(`Slack returned HTTP ${response.status}.`);
@@ -35,6 +37,8 @@ export async function listModels() {
 export async function send(channelId: string, text: string) {
   const startedAt = now();
   if (!token()) return { ok: false, response: "", latencyMs: elapsed(startedAt), error: "SLACK_BOT_TOKEN is not configured." };
+  const bad = nonAsciiProblem({ SLACK_BOT_TOKEN: token(), SLACK_CHANNEL_ID: channelId });
+  if (bad) return { ok: false, response: "", latencyMs: elapsed(startedAt), error: bad };
   try {
     const response = await fetch(`${BASE_URL}/chat.postMessage`, {
       method: "POST",
