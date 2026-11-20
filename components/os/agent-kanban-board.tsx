@@ -253,7 +253,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                       <div className="mt-2 text-xs text-neutral-500">
                         {providerLabels.get(card.provider as ProviderKey) ?? card.provider} / {card.model} · {card.lastRunAt ? new Date(card.lastRunAt).toLocaleString() : "Never run"}
                       </div>
-                      <div className="mt-2 line-clamp-3 text-sm leading-5 text-neutral-400">{card.lastRunSummary ?? "No run logged yet."}</div>
+                      <div className={`mt-2 text-sm leading-5 ${card.column === "blocked" ? "text-amber-200" : "line-clamp-3 text-neutral-400"}`}>{card.lastRunSummary ?? "No run logged yet."}</div>
 
                       <div className="mt-3">
                         <OSSelect value={`${card.provider}::${card.model}`} onChange={(event) => switchModel(card.agentId, event.target.value)} disabled={saving === card.agentId}>
