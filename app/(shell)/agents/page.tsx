@@ -65,6 +65,7 @@ function registryIdFor(agent: Agent, registryIds: string[], namesById: Map<strin
 
 function summaryFromRun(run: AgentRun | null) {
   if (!run) return null;
+  if (run.status === "blocked" && typeof run.output?.summary === "string") return run.output.summary.slice(0, 200);
   if (run.error) return run.error.slice(0, 100);
   const output = run.output;
   if (!output) return null;
@@ -76,6 +77,7 @@ function columnFromRun(status: AgentRunStatus | null): AgentKanbanCard["column"]
   if (!status) return "idle";
   if (status === "error") return "error";
   if (status === "needs_key") return "needs_key";
+  if (status === "blocked") return "blocked";
   return "done";
 }
 
@@ -170,10 +172,11 @@ export default async function AgentsKanbanPage() {
         title="Agents"
         subtitle="Cross-domain operating board. Run each agent job, switch model assignments, and inspect recent agent_runs without exposing provider secrets."
       />
-      <div className="mb-5 grid gap-4 md:grid-cols-5">
+      <div className="mb-5 grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <OSMetric label="Agents" value={cards.length} hint="Registry + Supabase roster" />
         <OSMetric label="Done" value={cards.filter((card) => card.column === "done").length} hint="Last run succeeded or fallback" />
         <OSMetric label="Needs key" value={cards.filter((card) => card.column === "needs_key").length} hint="Output ready; a provider key is missing" />
+        <OSMetric label="Blocked" value={cards.filter((card) => card.column === "blocked").length} hint="Stopped by a safety check" />
         <OSMetric label="Error" value={cards.filter((card) => card.column === "error").length} hint="Last run failed" />
         <OSMetric label="Model options" value={modelOptions.length} hint="Configured providers only" />
       </div>

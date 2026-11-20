@@ -6,7 +6,7 @@ import { OSBadge, OSButton, OSPanel, OSSelect } from "@/components/os/ui";
 import type { ProviderKey, ProviderMeta } from "@/lib/providers";
 import type { AgentRunStatus } from "@/lib/types";
 
-type ColumnKey = "idle" | "queued" | "running" | "done" | "needs_key" | "error";
+type ColumnKey = "idle" | "queued" | "running" | "done" | "needs_key" | "blocked" | "error";
 
 export type AgentKanbanRun = {
   id: string;
@@ -47,6 +47,7 @@ const columns: Array<{ key: ColumnKey; label: string }> = [
   { key: "running", label: "Running" },
   { key: "done", label: "Done" },
   { key: "needs_key", label: "Needs key" },
+  { key: "blocked", label: "Blocked" },
   { key: "error", label: "Error" }
 ];
 
@@ -54,7 +55,7 @@ function tone(column: ColumnKey, fallback = false): "ok" | "warn" | "danger" | "
   if (fallback) return "warn";
   if (column === "running" || column === "queued") return "info";
   if (column === "done") return "ok";
-  if (column === "needs_key") return "warn";
+  if (column === "needs_key" || column === "blocked") return "warn";
   if (column === "error") return "danger";
   return "off";
 }
@@ -113,7 +114,7 @@ function RunOutput({ run }: { run: AgentKanbanRun }) {
 
 function statusTone(status: AgentRunStatus): "ok" | "warn" | "danger" {
   if (status === "success") return "ok";
-  if (status === "fallback" || status === "rate_limited" || status === "needs_key") return "warn";
+  if (status === "fallback" || status === "rate_limited" || status === "needs_key" || status === "blocked") return "warn";
   return "danger";
 }
 
@@ -150,7 +151,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
       const payload = (await response.json()) as { ok: boolean; status: AgentRunStatus; provider: string; model: string; workflowName?: string; outputSummary: string; output?: Record<string, unknown> | null; durationMs: number; error?: string | null };
       if (!response.ok) throw new Error(payload.error ?? "Agent run failed.");
       updateCard(card.agentId, {
-        column: payload.status === "error" ? "error" : payload.status === "needs_key" ? "needs_key" : "done",
+        column: payload.status === "error" ? "error" : payload.status === "needs_key" ? "needs_key" : payload.status === "blocked" ? "blocked" : "done",
         provider: payload.provider,
         model: payload.model,
         lastRunAt: new Date().toISOString(),
@@ -246,7 +247,7 @@ export function AgentKanbanBoard({ initialCards, providers, modelOptions }: { in
                     <div key={card.agentId} className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="font-semibold text-neutral-100">{card.name}</h3>
-                        <OSBadge tone={isRateLimited ? "warn" : tone(card.column, isFallback)}>{isRateLimited ? "RATE LIMITED" : isFallback ? "FALLBACK" : card.column === "needs_key" ? "NEEDS KEY" : card.column}</OSBadge>
+                        <OSBadge tone={isRateLimited ? "warn" : tone(card.column, isFallback)}>{isRateLimited ? "RATE LIMITED" : isFallback ? "FALLBACK" : card.column === "needs_key" ? "NEEDS KEY" : card.column === "blocked" ? "BLOCKED" : card.column}</OSBadge>
                       </div>
 
                       <div className="mt-2 text-xs text-neutral-500">

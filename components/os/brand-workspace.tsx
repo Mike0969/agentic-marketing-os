@@ -3,7 +3,10 @@
 import { useMemo, useState, type ChangeEvent } from "react";
 import { BrainCircuit, Check, Loader2, Save } from "lucide-react";
 import { OSBadge, OSButton, OSField, OSInput, OSPanel, OSTextarea } from "@/components/os/ui";
+import { BRAND_CONTEXT_FIELDS, brandFieldState, brandGaps } from "@/lib/marketing/brand-placeholders";
 import type { Brand } from "@/lib/types";
+
+const contextKeys = new Map(BRAND_CONTEXT_FIELDS.map((field) => [field.keys[0], field.keys]));
 
 type BrandAnalysis = {
   positioningDiagnosis: string;
@@ -172,7 +175,14 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
                 <div className="text-lg font-semibold text-neutral-50">{brand.name}</div>
                 <div className="mt-1 text-sm text-neutral-500">{brand.website}</div>
               </div>
-              <OSBadge tone={brand.active ? "ok" : "off"}>{brand.active ? "Active" : "Inactive"}</OSBadge>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {(() => {
+                  const gaps = brandGaps(brand);
+                  const count = gaps.placeholder.length + gaps.empty.length;
+                  return count ? <OSBadge tone="warn">{count} to fill</OSBadge> : null;
+                })()}
+                <OSBadge tone={brand.active ? "ok" : "off"}>{brand.active ? "Active" : "Inactive"}</OSBadge>
+              </div>
             </div>
             <p className="mt-4 text-sm leading-6 text-neutral-300">{brand.positioning}</p>
             <div className="mt-4 grid gap-3">
@@ -213,16 +223,34 @@ export function BrandWorkspace({ brands }: { brands: Brand[] }) {
             </div>
           ) : null}
 
+          {(() => {
+            const gaps = brandGaps(draft);
+            if (!gaps.placeholder.length && !gaps.empty.length) return null;
+            return (
+              <div className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
+                <p className="font-medium">Fill these in so the agents can write real posts. Until then the safety check blocks campaign drafts.</p>
+                {gaps.placeholder.length ? <p>Placeholder text: {gaps.placeholder.join(", ")}.</p> : null}
+                {gaps.empty.length ? <p>Empty: {gaps.empty.join(", ")}.</p> : null}
+              </div>
+            );
+          })()}
+
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {editableFields.map((field) => (
-              <OSField key={String(field.key)} label={field.label} hint={field.hint}>
-                {field.type === "input" ? (
-                  <OSInput value={asText(draft[field.key])} onChange={(event) => updateField(event, field.key)} />
-                ) : (
-                  <OSTextarea value={asText(draft[field.key])} onChange={(event) => updateField(event, field.key)} />
-                )}
-              </OSField>
-            ))}
+            {editableFields.map((field) => {
+              const keys = contextKeys.get(field.key);
+              const state = keys ? brandFieldState(draft, keys) : "ok";
+              return (
+                <OSField key={String(field.key)} label={field.label} hint={field.hint}>
+                  {field.type === "input" ? (
+                    <OSInput value={asText(draft[field.key])} onChange={(event) => updateField(event, field.key)} className={state !== "ok" ? "border-amber-500/60" : undefined} />
+                  ) : (
+                    <OSTextarea value={asText(draft[field.key])} onChange={(event) => updateField(event, field.key)} className={state !== "ok" ? "border-amber-500/60" : undefined} />
+                  )}
+                  {state === "placeholder" ? <span className="mt-1 block text-xs text-amber-300">Placeholder text: replace with the real wording.</span> : null}
+                  {state === "empty" ? <span className="mt-1 block text-xs text-amber-300">Empty: the agents have nothing to go on here.</span> : null}
+                </OSField>
+              );
+            })}
           </div>
         </OSPanel>
 

@@ -262,7 +262,7 @@ export type IntegrationConfig = {
   last_checked_at: string | null;
 };
 
-export type AgentRunStatus = "success" | "fallback" | "error" | "rate_limited" | "needs_key";
+export type AgentRunStatus = "success" | "fallback" | "error" | "rate_limited" | "needs_key" | "blocked";
 
 export type AgentRun = {
   id: string;

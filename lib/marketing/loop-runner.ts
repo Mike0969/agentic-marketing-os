@@ -60,6 +60,8 @@ export type LoopResult<T> = {
   stopReason: LoopStopReason;
   passed: boolean;
   lastJudgeNotes: string;
+  /** Score of the last judged round (the safety-stopped round on a safety stop). */
+  lastScore: number;
   fallbackUsed: boolean;
   provider: string;
   model: string | null;
@@ -133,6 +135,7 @@ export async function runJudgedLoop<T>(args: RunJudgedLoopArgs<T>): Promise<Loop
   let noImprove = 0;
   let stopReason: LoopStopReason = "max_rounds";
   let lastJudgeNotes = "";
+  let lastScore = 0;
   let anyFallback = false;
   let provider = "";
   let model: string | null = null;
@@ -154,6 +157,7 @@ export async function runJudgedLoop<T>(args: RunJudgedLoopArgs<T>): Promise<Loop
 
     const judged = await args.judge(made.candidate, round);
     lastJudgeNotes = judged.judgeNotes;
+    lastScore = judged.score;
     if (judged.fallbackUsed) anyFallback = true;
 
     if (!judged.safetyPass) {
@@ -201,6 +205,7 @@ export async function runJudgedLoop<T>(args: RunJudgedLoopArgs<T>): Promise<Loop
     stopReason,
     passed: stopReason === "pass",
     lastJudgeNotes,
+    lastScore,
     fallbackUsed: anyFallback,
     provider,
     model
