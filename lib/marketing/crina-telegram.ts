@@ -1,3 +1,4 @@
+import { notifySlack } from "@/lib/marketing/notify";
 import { send as sendTelegram } from "@/lib/providers/telegram";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
@@ -116,7 +117,9 @@ export async function sendCrinaReadyToPostPings(args: {
   for (const [campaignId, campaignItems] of grouped) {
     const campaign = campaignMap.get(campaignId) ?? null;
     const brand = brandMap.get(campaignItems[0]?.brand_id ?? "") ?? null;
-    const result = await sendTelegram(chatId, campaignMessage({ brand, campaign, items: campaignItems, baseUrl: args.baseUrl }));
+    const message = campaignMessage({ brand, campaign, items: campaignItems, baseUrl: args.baseUrl });
+    const result = await sendTelegram(chatId, message);
+    await notifySlack(message);
     results.push({
       campaign_id: campaignId,
       campaign_title: campaign?.title ?? "Ready to Post",
