@@ -31,6 +31,13 @@ test("reason names the brand and the score when brand details are placeholder", 
   );
 });
 
+test("a visual block says the image concept failed, then points at the placeholder brand", () => {
+  assert.equal(
+    safetyBlockReason("visual", 57, testBrand),
+    "Blocked by safety check: the image concept failed the visual safety review (score 57/100). No image was made. Brand details are still placeholder too: fill in Brands → NexRide."
+  );
+});
+
 test("reason without placeholder fields does not blame the brand", () => {
   const real = { ...testBrand, website: "https://nexride.ae", positioning: "EV rides", target_audience: "Dubai commuters", tone_of_voice: "Plain, warm" };
   assert.match(safetyBlockReason("content", 30, real), /^Blocked by safety check: the draft made claims the reviewer could not verify \(score 30\/100\)/);

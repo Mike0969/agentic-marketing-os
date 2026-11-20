@@ -48,10 +48,12 @@ export function brandGaps(brand: Partial<Brand> | null | undefined) {
 export function safetyBlockReason(kind: "content" | "visual", score: number, brand: Partial<Brand> | null | undefined) {
   const { placeholder } = brandGaps(brand);
   const name = brand?.name ?? "the brand";
+  if (kind === "visual") {
+    const hint = placeholder.length ? ` Brand details are still placeholder too: fill in Brands → ${name}.` : "";
+    return `Blocked by safety check: the image concept failed the visual safety review (score ${score}/100). No image was made.${hint}`;
+  }
   if (placeholder.length) {
     return `Blocked by safety check: brand details are still placeholder (score ${score}/100). Fill in Brands → ${name}.`;
   }
-  return kind === "visual"
-    ? `Blocked by safety check: the image concept failed the visual safety review (score ${score}/100). No image was made.`
-    : `Blocked by safety check: the draft made claims the reviewer could not verify (score ${score}/100). Nothing was packaged.`;
+  return `Blocked by safety check: the draft made claims the reviewer could not verify (score ${score}/100). Nothing was packaged.`;
 }
