@@ -334,7 +334,7 @@ function SafetyBlock({ info, busy, running, onRework, onApprove, onRunAgain }: {
   const flagged = info.flagged ?? [];
   const [mode, setMode] = useState<"none" | "rework" | "edit">("none");
   const [note, setNote] = useState("");
-  const [edit, setEdit] = useState({ title: d.title ?? "", hook: d.hook ?? "", body: d.body ?? "", cta: d.cta ?? "", hashtags: (d.hashtags ?? []).join(" "), slides: (d.slides ?? []).map((sl) => `${sl.headline} | ${sl.text}`).join("\n"), script: d.script ?? "" });
+  const [edit, setEdit] = useState({ title: d.title ?? "", hook: d.hook ?? "", body: d.body ?? "", cta: d.cta ?? "", hashtags: (d.hashtags ?? []).join(" "), slides: (d.slides ?? []).map((sl) => `${sl.headline} | ${sl.text}`.replace(/\s*\n\s*/g, " ")).join("\n"), script: d.script ?? "" });
   return (
     <OSPanel className="border-amber-500/40">
       <div className="flex flex-wrap items-center gap-2">
