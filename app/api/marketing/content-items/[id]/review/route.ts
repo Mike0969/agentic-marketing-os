@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
-import { CALL_ESTIMATE, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
+import { preflight, withCampaignBudget, STEP_AGENTS } from "@/lib/budget/model-budget";
 import { defaultVault, recordLearning } from "@/lib/learning/vault";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -63,7 +63,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   const campaign = campaignRow as Campaign | null;
 
   if ((text.decision === "rework" || visual?.decision === "rework")) {
-    const refused = await preflight(item.campaign_id ?? null, CALL_ESTIMATE.rework);
+    const refused = await preflight(item.campaign_id ?? null, STEP_AGENTS.rework);
     if (refused) return NextResponse.json({ error: refused }, { status: 429 });
   }
 

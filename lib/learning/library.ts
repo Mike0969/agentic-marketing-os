@@ -125,8 +125,8 @@ export function libraryText(items: Array<Pick<LearningItem, "item_type" | "title
   ].join("\n");
 }
 
-export const LIBRARY_MAX_ITEMS = 10;
-export const LIBRARY_EXCERPT_CHARS = 1500;
+export const LIBRARY_MAX_ITEMS = 5; // prompt diet (lean pipeline)
+export const LIBRARY_EXCERPT_CHARS = 800;
 const STOP = new Set("the and for with from that this your our are was were will can not but all any its into about over more than then them they their there here what when who how why which a an to of in on at by is it be as or we you i".split(" "));
 
 /** Lowercase keywords (≥ 3 chars, no stop words, no pure numbers). Pure. */

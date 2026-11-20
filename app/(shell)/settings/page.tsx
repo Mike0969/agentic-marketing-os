@@ -5,7 +5,7 @@ import { listAppKeysPublic } from "@/lib/social/app-keys";
 import { ProvidersManager } from "@/components/os/providers-manager";
 import { listChannels } from "@/lib/notify/channels";
 import { listUserProviders } from "@/lib/providers/user-providers";
-import { CALL_ESTIMATE, getBudgetStatus } from "@/lib/budget/model-budget";
+import { STEP_AGENTS, estimateUsd, getBudgetStatus, listModelPrices } from "@/lib/budget/model-budget";
 import { peekJevStatus } from "@/lib/jev/status";
 import { OSBadge, OSPanel } from "@/components/os/ui";
 import { SocialConnections } from "@/components/os/social-connections";
@@ -66,7 +66,8 @@ export default async function Page({ searchParams }: { searchParams?: SearchPara
       })()}
       <ModelBudgetPanel
         initial={await getBudgetStatus()}
-        campaignEstimate={CALL_ESTIMATE.plan + CALL_ESTIMATE.prepare + CALL_ESTIMATE.perPlatform + CALL_ESTIMATE.runOverhead + 2 * CALL_ESTIMATE.rework}
+        campaignEstimateUsd={await estimateUsd([...STEP_AGENTS.plan, ...STEP_AGENTS.perPlatform, ...STEP_AGENTS.runOverhead]).catch(() => 0)}
+        prices={await listModelPrices(true).catch(() => [])}
       />
       {/* Hermes (the "brain" card) is not a provider Mihai adds keys for: not listed here, still an agent option. */}
       <ProvidersManager

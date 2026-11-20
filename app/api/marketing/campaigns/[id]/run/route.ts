@@ -17,8 +17,8 @@ import { createProjectAsset, findAssetCandidates, recordAssetUsage, resolveProje
 import { saveContentAssets } from "@/lib/marketing/ready-package";
 import { CONTENT_RUBRIC, HONEST_GRADER_PREAMBLE, VISUAL_RUBRIC } from "@/lib/marketing/rubrics";
 import { generateMarketingImage } from "@/lib/providers/image-generation";
-import { jevCheck, jevLoop, type JevResult } from "@/lib/jev/jev";
-import { CALL_ESTIMATE, getBudgetStatus, limitMessage, preflight, withCampaignBudget } from "@/lib/budget/model-budget";
+import { jevQuestions } from "@/lib/jev/jev";
+import { getBudgetStatus, limitMessage, preflight, withCampaignBudget, STEP_AGENTS, times, usd, estimateUsd, CONTENT_ROUNDS } from "@/lib/budget/model-budget";
 import { libraryContext } from "@/lib/learning/library";
 import { defaultVault, learningContext } from "@/lib/learning/vault";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -118,6 +118,16 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
   const textNotes = [noteText, textLearning.text, library].filter(Boolean).join("\n\n");
   const visualNotes = [noteText, visualLearning.text, library].filter(Boolean).join("\n\n");
   const ownerIdea = String(idea.idea ?? campaign.objective ?? "");
+  // Prompt diet: the agents get the idea + the agreed plan, not the whole brief (no blocked drafts,
+  // analytics notes or Jev records), and the brand's voice fields only.
+  const planCore = (idea.plan ?? null) as Record<string, unknown> | null;
+  const ideaSlim = {
+    idea: ownerIdea,
+    plan: planCore ? { objective: planCore.objective, target_audience: planCore.target_audience, key_message: planCore.key_message, cta: planCore.cta, success_criteria: planCore.success_criteria, seo_keywords: planCore.seo_keywords, hashtags: planCore.hashtags } : null,
+    primary_cta: idea.primary_cta ?? null,
+    success_criteria: idea.success_criteria ?? null
+  };
+  const brandVoice = brand ? { name: brand.name, positioning: brand.positioning, target_audience: brand.target_audience, tone_of_voice: brand.tone_of_voice, key_messages: brand.key_messages, proof_points: brand.proof_points, approval_rules: brand.approval_rules, ctas: brand.ctas ?? brand.reusable_ctas } : null;
   // P4a — contract-first (Karpathy III): the judge grades against the campaign's agreed goal, not just
   // the generic rubric. Uses existing campaign data; Codex can add explicit done-criteria templates.
   const contract = String(idea.success_criteria ?? idea.primary_cta ?? campaign.objective ?? "").replace(/\s+/g, " ").slice(0, 300);
@@ -144,10 +154,10 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     await supabase.from("campaigns").update({ idea_brief: { ...idea, last_rework_note: { note: ownerNote, platform: requestedPlatform, at: new Date().toISOString() } } }).eq("id", id);
     idea.last_rework_note = { note: ownerNote, platform: requestedPlatform, at: new Date().toISOString() };
   }
-  const estimate = approvedDraft ? CALL_ESTIMATE.approvedTextPlatform + CALL_ESTIMATE.runOverhead : CALL_ESTIMATE.perPlatform * platforms.length + CALL_ESTIMATE.runOverhead;
-  const refusedRun = await preflight(id, estimate);
+  const steps = approvedDraft ? [...STEP_AGENTS.approvedTextPlatform, ...STEP_AGENTS.runOverhead] : [...times(STEP_AGENTS.perPlatform, platforms.length), ...STEP_AGENTS.runOverhead];
+  const refusedRun = await preflight(id, steps);
   if (refusedRun) {
-    const hint = approvedDraft ? "" : ` Or use "Edit and approve" (it needs only about ${CALL_ESTIMATE.approvedTextPlatform + CALL_ESTIMATE.runOverhead} calls).`;
+    const hint = approvedDraft ? "" : ` Or use "Edit and approve" (about ${usd(await estimateUsd([...STEP_AGENTS.approvedTextPlatform, ...STEP_AGENTS.runOverhead]))}).`;
     return NextResponse.json({ error: `${refusedRun}${hint}${ownerNote ? " Your note is saved." : ""}`, budget: true }, { status: 429 });
   }
 
@@ -233,9 +243,9 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         fallbackAgentName: "Crina",
         fallbackRole: "Marketing CEO Agent",
         task: `Judge ${artifactLabel}`,
-        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Return the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), flagged_sentences (the EXACT sentences copied from the ${artifactLabel} that are unsafe or can't be verified; empty when none), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualNotes : textNotes}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
+        instructions: `${HONEST_GRADER_PREAMBLE}\n\n${rubric}${contract ? `\n\nCONTRACT — the ${artifactLabel} must advance the campaign's agreed goal: "${contract}". Dock points for anything that does not serve it.` : ""}\n\nYou are Crina, the CEO, scoring a specialist's ${artifactLabel} for ${platform}. Weigh the operator's past feedback and what converts. Also answer Jev's checks for this ${artifactLabel}; any that fails must lower the score below the pass mark and appear in improvements:\n${jevQuestions(artifactLabel === "visual" ? "visual" : "text").map((q) => `- ${q.text}`).join("\n")}\n\nReturn the rubric score (0-100), per-dimension scores, safety_pass (false on ANY safety/compliance issue), flagged_sentences (the EXACT sentences copied from the ${artifactLabel} that are unsafe or can't be verified; empty when none), concise judge_notes, and specific improvements the maker can apply next round.\n\nMemory:\n${memoryText(memory)}\n\n${artifactLabel === "visual" ? visualNotes : textNotes}\n\nWhat converts:\n${conversionMemoryText(conversion)}`,
         outputSchema: judgeSchema,
-        input: { brand, platform, [artifactLabel]: artifact, campaign_idea: idea, conversion_insights: conversion.insights },
+        input: { brand: brandVoice, platform, [artifactLabel]: artifact, campaign_idea: ideaSlim, conversion_insights: conversion.insights },
         brainFiles: ["workflow-contract.md", "approval-rules.md", "grader-calibration.md"],
         temperature: 0.2,
         routeOrigin: "api.marketing.campaigns.run"
@@ -263,7 +273,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
           task: `Create ${plan.label} package`,
           instructions: `${plan.contentInstructions}${assetCopyHint}\n\nUse the brand voice and the campaign idea. Address the operator's past feedback and what converts. Do not publish. Every field you return is PUBLIC copy readers will see: never put internal notes, approval caveats, questions for Mihai, "subject to confirmation" remarks or tracking instructions into it.\n\nMemory:\n${memoryText(memory)}\n\n${textNotes}\n\nWhat converts (bias toward these):\n${conversionMemoryText(conversion)}${improvements.length ? `\n\nFix these before anything else:\n- ${improvements.join("\n- ")}` : ""}`,
           outputSchema: plan.contentSchema,
-          input: { brand, campaign_idea: idea, platform, previous: champion, conversion_insights: conversion.insights },
+          input: { brand: brandVoice, campaign_idea: ideaSlim, platform, previous: champion, conversion_insights: conversion.insights },
           brainFiles: ["content-formulas.md", "approval-rules.md"],
           temperature: 0.5,
           routeOrigin: "api.marketing.campaigns.run"
@@ -292,7 +302,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       agentId: "agent-content-creator",
       inputSummary: `${plan.label} ${plan.contentType} for "${campaign.title}"`,
       // Add-one-platform is interactive: keep it to a single round so it returns fast on a slow model.
-      maxRounds: requestedPlatform ? 1 : undefined,
+      // At most one automatic rework (2 rounds); more only when Mihai presses Rework.
+      maxRounds: requestedPlatform && !ownerNote ? 1 : CONTENT_ROUNDS,
       recordReceipt,
       make: async (_round, improvements, champion) => makeContent(improvements, champion),
       judge: async (candidate) => judgeWith(CONTENT_RUBRIC, "post", candidate)
@@ -339,19 +350,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       hashtags: []
     };
 
-    // Jev checks the text before it can reach Mihai: below 0.85 -> automatic rework (max 2), then "Jev doubts".
-    let textJev: JevResult | null = null;
-    let textDoubts: string | null = null;
-    if (contentLoop.champion && !ownerApproved) {
-      const checked = await jevLoop<NativeDraft>(
-        draft,
-        (candidate) => jevCheck({ kind: "text", idea: ownerIdea, brand, learning: textNotes, subject: candidate, plan: idea.plan }),
-        async (candidate, doubts) => (await makeContent(doubts.map((doubt) => `Jev: ${doubt}`), candidate)).candidate
-      );
-      draft = checked.candidate;
-      textJev = checked.result;
-      textDoubts = checked.doubtsLabel;
-    }
+    // Lean pipeline: Jev's checks are inside Crina's single review above (no separate Jev loop).
 
     const contentType = plan.contentType;
     const reviewChip = ownerApproved ? "Text edited and approved by Mihai" : `${contentLoop.championScore}/100 · ${contentLoop.rounds} round(s) · ${contentLoop.stopReason}`;
@@ -396,8 +395,6 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
     const assets: ReadyPackageAsset[] = [];
     let assetFallback = false;
     let imageProvider: string | null = null;
-    let visualJev: JevResult | null = null;
-    let visualDoubts: string | null = null;
 
     if (selectedAsset) {
       // Crina selected an existing library asset — Visual Agent skipped entirely.
@@ -451,17 +448,8 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         continue;
       }
 
-      let visualChampion = visualLoop.champion;
-      if (visualChampion) {
-        const checked = await jevLoop<VisualConcept>(
-          visualChampion,
-          (candidate) => jevCheck({ kind: "visual", idea: ownerIdea, brand, learning: visualNotes, subject: { ...candidate, post: { title: draft.title, hook: draft.hook } }, plan: idea.plan }),
-          async (candidate, doubts) => (await makeVisual(doubts.map((doubt) => `Jev: ${doubt}`), candidate)).candidate
-        );
-        visualChampion = checked.candidate;
-        visualJev = checked.result;
-        visualDoubts = checked.doubtsLabel;
-      }
+      // Lean pipeline: Jev's visual checks are inside Crina's single visual review (no separate Jev loop).
+      const visualChampion = visualLoop.champion;
       const usingGeneric = !visualChampion;
       const prompt = visualChampion ? visualChampion.prompt : `Professional ${plan.label} visual for ${brand?.name ?? "the brand"}. Concept: ${draft.title}. ${draft.hook}. Clean, brand-safe, high detail, no text in the image.`;
       const image = await generateMarketingImage(prompt, { contentItemId: item.id as string, position: 1, kind: "image" });
@@ -557,10 +545,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
       project_slug: projectSlug ?? null,
       reuse_allowed: selectedAsset?.reuse_allowed ?? null,
       crina_route_notes: assetRouteNotes,
-      jev: {
-        text: textJev ? { ran: textJev.ran, score: textJev.score, doubts: textDoubts, note: textJev.note } : null,
-        visual: visualJev ? { ran: visualJev.ran, score: visualJev.score, doubts: visualDoubts, note: visualJev.note } : null
-      }
+      jev: { merged: "Jev's checks are part of Crina's single review of the text and of the visual." }
     };
 
     await saveContentAssets(item.id as string, assets);
@@ -576,7 +561,7 @@ async function runCampaign(request: Request, context: { params: Promise<{ id: st
         visual_asset_url: visualUrl,
         visual_asset_status: visualStatus,
         ready_package: readyPackage,
-        performance_summary: `${[textDoubts, visualDoubts].filter(Boolean).map((d) => `${d}. `).join("")}${fbNote}Crina ${reviewChip}. ${plan.contentType}. Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
+        performance_summary: `${fbNote}Crina ${reviewChip}. ${plan.contentType}. Provider ${contentLoop.provider}/${contentLoop.model ?? "default"}.`
       })
       .eq("id", item.id);
 

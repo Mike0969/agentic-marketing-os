@@ -1,6 +1,6 @@
 import { resolveAgentRuntimeConfig } from "@/lib/agents/agent-config-store";
 import { agentMemoryFileName, buildBrainContext, getHermesAgentProfile, type HermesAgentProfile } from "@/lib/agents/hermes-registry";
-import { chargeModelCall, isHermesLimitFailure, tripUsageLimit } from "@/lib/budget/model-budget";
+import { beginModelCall, finishModelCall, isHermesLimitFailure, tripUsageLimit } from "@/lib/budget/model-budget";
 import { listIntegrationConfigs } from "@/lib/integration-store";
 
 /**
@@ -246,7 +246,7 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
 
   for (const model of models) {
     // Hard budget + provider-limit breaker: refused calls never reach Hermes.
-    const refused = await chargeModelCall("hermes", options.agentId);
+    const { refused, id: callId } = await beginModelCall("hermes", options.agentId, model);
     if (refused) {
       return { ...base, profile, brainResourcesUsed: brain.resourcesUsed, status: 429, durationMs: Date.now() - startedAt, error: refused, rateLimited: true };
     }
@@ -279,6 +279,8 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
         throw parseError;
       }
       const { json, rawContent } = parsed;
+      const usage = parseUsage(raw);
+      await finishModelCall(callId, { provider: "hermes", model, tokensIn: usage.tokensPrompt, tokensOut: usage.tokensCompletion });
 
       return {
         ok: true,
@@ -287,7 +289,7 @@ export async function runHermesAgent(options: HermesAgentCallOptions): Promise<H
         status: response.status,
         modelUsed: model,
         backupModel,
-        usage: parseUsage(raw),
+        usage,
         durationMs: Date.now() - startedAt,
         brainResourcesUsed: brain.resourcesUsed,
         profile,

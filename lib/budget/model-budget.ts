@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { MAX_ROUNDS } from "@/lib/marketing/rubrics";
 import { createServiceClient } from "@/lib/supabase/service";
+
+export const VISUAL_ROUNDS = 2;
+export const CONTENT_ROUNDS = 2; // 1 automatic rework; more only when Mihai presses Rework
 
 /**
  * Hard model-call budget (migration 0038). Every model call (Hermes, other LLM
@@ -10,9 +12,16 @@ import { createServiceClient } from "@/lib/supabase/service";
  * breaker: no call is made until the limit resets.
  */
 
-export type BudgetSettings = { perCampaignMax: number; perDayMax: number };
+/** perDayUsd / perCampaignUsd: null = no limit (the default). Call counts are shown, never enforced. */
+export type BudgetSettings = { perCampaignMax: number; perDayMax: number; perDayUsd: number | null; perCampaignUsd: number | null };
 
 export type BudgetStatus = BudgetSettings & {
+  /** Dollars (the caps that are enforced; Hermes calls cost $0). */
+  usdToday: number;
+  usdCampaign: number | null;
+  remainingUsdToday: number | null;
+  remainingUsdCampaign: number | null;
+  /** Calls (shown, not enforced). */
   usedToday: number;
   remainingToday: number;
   usedCampaign: number | null;
@@ -21,20 +30,37 @@ export type BudgetStatus = BudgetSettings & {
   blockReason: string | null;
 };
 
-export const DEFAULT_BUDGET: BudgetSettings = { perCampaignMax: 40, perDayMax: 150 };
+export const DEFAULT_BUDGET: BudgetSettings = { perCampaignMax: 40, perDayMax: 150, perDayUsd: null, perCampaignUsd: null };
 
-/** Upper bounds per step, used to refuse a run up front. */
+/**
+ * Upper bounds per step (lean pipeline, Mihai 2026-11-20): one plan + one Jev review (1 automatic
+ * rework); per platform one writer + one review (1 automatic rework) and, unless a library image is
+ * used, one visual + one review (1 rework). Used for the call counts shown and, with STEP_AGENTS, for
+ * the dollar preflight.
+ */
 export const CALL_ESTIMATE = {
-  plan: 6, // Crina's plan + Jev, up to 2 reworks
-  prepare: 2, // SEO + Analytics
-  // content loop (maker + Crina's judge per round) + Jev on text (3 checks + 2 reworks)
-  // + visual loop (2 rounds) + Jev on visual (3 + 2)
-  perPlatform: MAX_ROUNDS * 2 + 5 + 2 * 2 + 5,
+  plan: 4, // Crina's plan + Jev, 1 automatic rework
+  prepare: 0, // SEO + measurement are part of the plan now
+  perPlatform: 2 * 2 + VISUAL_ROUNDS * 2, // writer + review (2 rounds max) + visual + review (2 rounds max)
   runOverhead: 1, // conversion analysis after a run
   rework: 3,
-  // "Edit and approve": Mihai's text is used as is (no content loop, no Jev on text): visual loop + Jev on visual.
-  approvedTextPlatform: 2 * 2 + 5
+  // "Edit and approve": Mihai's text is used as is: only the visual + its review.
+  approvedTextPlatform: VISUAL_ROUNDS * 2
 };
+
+/** Which agent makes each call of a step (so the dollar estimate uses that agent's model price). */
+export type Step = { agentId: string; calls: number };
+export const STEP_AGENTS = {
+  plan: [{ agentId: "agent-crina", calls: 2 }, { agentId: "jev", calls: 2 }],
+  perPlatform: [{ agentId: "agent-content-creator", calls: 2 }, { agentId: "agent-crina", calls: 2 + VISUAL_ROUNDS }, { agentId: "agent-visual-video", calls: VISUAL_ROUNDS }],
+  runOverhead: [{ agentId: "agent-conversion", calls: 1 }],
+  rework: [{ agentId: "agent-content-creator", calls: 1 }, { agentId: "agent-crina", calls: 1 }, { agentId: "agent-visual-video", calls: 1 }],
+  approvedTextPlatform: [{ agentId: "agent-visual-video", calls: VISUAL_ROUNDS }, { agentId: "agent-crina", calls: VISUAL_ROUNDS }]
+} satisfies Record<string, Step[]>;
+
+/** Rough tokens per call for the estimate (the prompt diet keeps calls near this). */
+export const EST_TOKENS_IN = 8000;
+export const EST_TOKENS_OUT = 1200;
 
 const scope = new AsyncLocalStorage<{ campaignId: string | null }>();
 
@@ -64,17 +90,28 @@ export async function getBudgetStatus(campaignId: string | null = null): Promise
   const { data: row } = await supabase.from("model_budget").select("*").eq("id", 1).maybeSingle();
   const settings: BudgetSettings = {
     perCampaignMax: Number(row?.per_campaign_max ?? DEFAULT_BUDGET.perCampaignMax),
-    perDayMax: Number(row?.per_day_max ?? DEFAULT_BUDGET.perDayMax)
+    perDayMax: Number(row?.per_day_max ?? DEFAULT_BUDGET.perDayMax),
+    perDayUsd: row?.per_day_usd === null || row?.per_day_usd === undefined ? null : Number(row.per_day_usd),
+    perCampaignUsd: row?.per_campaign_usd === null || row?.per_campaign_usd === undefined ? null : Number(row.per_campaign_usd)
   };
-  const { count: usedToday } = await supabase.from("model_calls").select("id", { count: "exact", head: true }).gte("at", dayStart());
+  const sum = (rows: Array<{ cost_usd?: number | string | null }> | null) => (rows ?? []).reduce((t, r) => t + Number(r.cost_usd ?? 0), 0);
+  const { data: todayRows } = await supabase.from("model_calls").select("cost_usd").gte("at", dayStart()).limit(10000);
+  const usedToday = todayRows?.length ?? 0;
+  const usdToday = sum(todayRows as never);
   let usedCampaign: number | null = null;
+  let usdCampaign: number | null = null;
   if (campaignId) {
-    const { count } = await supabase.from("model_calls").select("id", { count: "exact", head: true }).eq("campaign_id", campaignId);
-    usedCampaign = count ?? 0;
+    const { data } = await supabase.from("model_calls").select("cost_usd").eq("campaign_id", campaignId).limit(10000);
+    usedCampaign = data?.length ?? 0;
+    usdCampaign = sum(data as never);
   }
   const blockedUntil = row?.hermes_blocked_until && new Date(row.hermes_blocked_until).getTime() > Date.now() ? String(row.hermes_blocked_until) : null;
   return {
     ...settings,
+    usdToday,
+    usdCampaign,
+    remainingUsdToday: settings.perDayUsd === null ? null : Math.max(0, settings.perDayUsd - usdToday),
+    remainingUsdCampaign: usdCampaign === null || settings.perCampaignUsd === null ? null : Math.max(0, settings.perCampaignUsd - usdCampaign),
     usedToday: usedToday ?? 0,
     remainingToday: Math.max(0, settings.perDayMax - (usedToday ?? 0)),
     usedCampaign,
@@ -85,31 +122,104 @@ export async function getBudgetStatus(campaignId: string | null = null): Promise
 }
 
 /** Refuse a run up front if it could exceed the budget or a provider limit is active. Null = OK. */
-export async function preflight(campaignId: string | null, estimatedCalls: number): Promise<string | null> {
+export type ModelPrice = { provider: string; model: string; usd_per_m_in: number; usd_per_m_out: number; usd_per_call: number; verified: boolean; note: string };
+
+let priceCache: { at: number; rows: ModelPrice[] } | null = null;
+
+export async function listModelPrices(force = false): Promise<ModelPrice[]> {
+  if (!force && priceCache && Date.now() - priceCache.at < 60_000) return priceCache.rows;
+  const supabase = db();
+  const rows = supabase ? (((await supabase.from("model_prices").select("*")).data ?? []) as ModelPrice[]) : [];
+  priceCache = { at: Date.now(), rows: rows.map((r) => ({ ...r, usd_per_m_in: Number(r.usd_per_m_in), usd_per_m_out: Number(r.usd_per_m_out), usd_per_call: Number(r.usd_per_call) })) };
+  return priceCache.rows;
+}
+
+/** Pure: the price row for provider/model: exact model, else the provider's "*", else "*"/"*", else $0. */
+export function pickPrice(rows: ModelPrice[], provider: string, model: string | null | undefined): ModelPrice {
+  const p = provider.startsWith("custom:") ? provider : provider.toLowerCase();
+  return (
+    rows.find((r) => r.provider === p && r.model === model) ??
+    rows.find((r) => r.provider === p && r.model === "*") ??
+    rows.find((r) => r.provider === "*" && r.model === "*") ?? { provider: p, model: "*", usd_per_m_in: 0, usd_per_m_out: 0, usd_per_call: 0, verified: false, note: "" }
+  );
+}
+
+/** Pure: dollars for one call. */
+export function costOf(price: Pick<ModelPrice, "usd_per_m_in" | "usd_per_m_out" | "usd_per_call">, tokensIn: number, tokensOut: number) {
+  return price.usd_per_call + (Math.max(0, tokensIn) * price.usd_per_m_in + Math.max(0, tokensOut) * price.usd_per_m_out) / 1_000_000;
+}
+
+/** Dollars a step may cost: each call priced by the model its agent is set to (Agents board). */
+export async function estimateUsd(steps: Step[]): Promise<number> {
+  const prices = await listModelPrices();
+  const { resolveAgentRuntimeConfig } = await import("@/lib/agents/agent-config-store");
+  let total = 0;
+  for (const step of steps) {
+    const target = step.agentId === "jev" ? { provider: "jev", model: "*" } : await resolveAgentRuntimeConfig(step.agentId, "gpt-5.5").catch(() => ({ provider: "*", model: "*" }));
+    total += step.calls * costOf(pickPrice(prices, target.provider, target.model), EST_TOKENS_IN, EST_TOKENS_OUT);
+  }
+  return total;
+}
+
+export const usd = (n: number) => `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`;
+
+/** Refuse a step up front (plain words) when it could go over today's or this campaign's dollar budget. */
+export async function preflight(campaignId: string | null, steps: Step[]): Promise<string | null> {
   const status = await getBudgetStatus(campaignId);
   if (!status) return null;
   if (status.blockedUntil) return limitMessage(status.blockedUntil);
-  if (estimatedCalls > status.remainingToday) {
-    return `Model-call budget: this step can use up to ${estimatedCalls} calls but only ${status.remainingToday} of ${status.perDayMax} are left today (resets 00:00 UTC). Raise it in Settings or wait.`;
+  // No cap set (the default): never refuse; consumption is still counted and shown.
+  if (status.remainingUsdToday === null && status.remainingUsdCampaign === null) return null;
+  const need = await estimateUsd(steps);
+  if (status.remainingUsdToday !== null && status.perDayUsd !== null && need > status.remainingUsdToday) {
+    return `Model budget: this step may cost up to ${usd(need)} but only ${usd(status.remainingUsdToday)} of today's ${usd(status.perDayUsd)} cap is left (resets 00:00 UTC). Raise or clear the cap in Settings → Model budget, or wait.`;
   }
-  if (status.remainingCampaign !== null && estimatedCalls > status.remainingCampaign) {
-    return `Model-call budget: this campaign has ${status.remainingCampaign} of ${status.perCampaignMax} calls left and this step can use up to ${estimatedCalls}. Raise it in Settings.`;
+  if (status.remainingUsdCampaign !== null && status.perCampaignUsd !== null && need > status.remainingUsdCampaign) {
+    return `Model budget: this campaign has ${usd(status.remainingUsdCampaign)} of its ${usd(status.perCampaignUsd)} cap left and this step may cost up to ${usd(need)}. Raise or clear the cap in Settings → Model budget.`;
   }
   return null;
 }
 
-/** Charge one call before it is made. Returns an error message when it must not be made. */
-export async function chargeModelCall(kind: string, agentId: string | null = null): Promise<string | null> {
+/** Steps x count (e.g. per platform). */
+export function times(steps: Step[], n: number): Step[] {
+  return steps.map((step) => ({ ...step, calls: step.calls * n }));
+}
+
+/**
+ * Charge one call before it is made: refused when today's or this campaign's dollar budget is used up.
+ * Returns the row id so the caller can record the real tokens and cost afterwards (finishModelCall).
+ */
+export async function beginModelCall(kind: string, agentId: string | null = null, model: string | null = null): Promise<{ refused: string | null; id: string | null }> {
   const supabase = db();
-  if (!supabase) return null; // local mode: no shared budget store
+  if (!supabase) return { refused: null, id: null }; // local mode: no shared budget store
   const campaignId = scope.getStore()?.campaignId ?? null;
   const status = await getBudgetStatus(campaignId);
-  if (!status) return null;
-  if (status.blockedUntil) return limitMessage(status.blockedUntil);
-  if (status.remainingToday <= 0) return `Model-call budget for today is used up (${status.perDayMax}); resets 00:00 UTC.`;
-  if (status.remainingCampaign !== null && status.remainingCampaign <= 0) return `This campaign's model-call budget is used up (${status.perCampaignMax}).`;
-  await supabase.from("model_calls").insert({ at: new Date().toISOString(), campaign_id: campaignId, kind, agent_id: agentId });
-  return null;
+  if (!status) return { refused: null, id: null };
+  if (status.blockedUntil) return { refused: limitMessage(status.blockedUntil), id: null };
+  if (status.remainingUsdToday !== null && status.perDayUsd !== null && status.remainingUsdToday <= 0) return { refused: `Today's model budget cap (${usd(status.perDayUsd)}) is used up; resets 00:00 UTC. Raise or clear the cap in Settings → Model budget.`, id: null };
+  if (status.remainingUsdCampaign !== null && status.perCampaignUsd !== null && status.remainingUsdCampaign <= 0) return { refused: `This campaign's model budget cap (${usd(status.perCampaignUsd)}) is used up. Raise or clear the cap in Settings → Model budget.`, id: null };
+  const perCall = pickPrice(await listModelPrices(), kind, model).usd_per_call;
+  const { data } = await supabase.from("model_calls").insert({ at: new Date().toISOString(), campaign_id: campaignId, kind, agent_id: agentId, model, cost_usd: perCall }).select("id").single();
+  return { refused: null, id: (data as { id?: string } | null)?.id ?? null };
+}
+
+/** After the answer: the real model and tokens -> cost. Never throws. */
+export async function finishModelCall(id: string | null, usage: { provider: string; model: string | null; tokensIn: number | null; tokensOut: number | null }): Promise<void> {
+  if (!id) return;
+  try {
+    const supabase = db();
+    if (!supabase) return;
+    const price = pickPrice(await listModelPrices(), usage.provider, usage.model);
+    const cost = costOf(price, usage.tokensIn ?? 0, usage.tokensOut ?? 0);
+    await supabase.from("model_calls").update({ model: usage.model, tokens_in: usage.tokensIn, tokens_out: usage.tokensOut, cost_usd: cost }).eq("id", id);
+  } catch {
+    // accounting must never break a call
+  }
+}
+
+/** Compatibility: charge without recording usage afterwards. */
+export async function chargeModelCall(kind: string, agentId: string | null = null): Promise<string | null> {
+  return (await beginModelCall(kind, agentId)).refused;
 }
 
 const USAGE_LIMIT = /usage[ _]limit|rate[ _]limit|\b429\b|too many requests/i;
@@ -148,6 +258,6 @@ export async function tripUsageLimit(text: string): Promise<string> {
 export async function saveBudgetSettings(settings: BudgetSettings) {
   const supabase = db();
   if (!supabase) return null;
-  const { error } = await supabase.from("model_budget").upsert({ id: 1, per_campaign_max: settings.perCampaignMax, per_day_max: settings.perDayMax, updated_at: new Date().toISOString() });
+  const { error } = await supabase.from("model_budget").upsert({ id: 1, per_campaign_max: settings.perCampaignMax, per_day_max: settings.perDayMax, per_day_usd: settings.perDayUsd, per_campaign_usd: settings.perCampaignUsd, updated_at: new Date().toISOString() });
   return error ? error.message : null;
 }

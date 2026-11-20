@@ -17,7 +17,7 @@ const LIVE_LIMIT_TEXT = LIMIT_TEXT.replace("1795164815", String(FUTURE_RESET));
 const hhmm = (unix: number) => new Date(unix * 1000).toISOString().slice(11, 16);
 
 function seed(row: Record<string, unknown> = {}, calls: Array<Record<string, unknown>> = []) {
-  const db = new FakeSupabase({ tables: { model_budget: [{ id: 1, per_campaign_max: 40, per_day_max: 150, hermes_blocked_until: null, ...row }], model_calls: calls, agent_config: [], agent_settings: [] } });
+  const db = new FakeSupabase({ tables: { model_budget: [{ id: 1, per_campaign_max: 40, per_day_max: 150, per_day_usd: 2, per_campaign_usd: 0.5, hermes_blocked_until: null, ...row }], model_calls: calls, model_prices: [], agent_config: [], agent_settings: [] } });
   holder.db = db;
   return db;
 }
@@ -68,35 +68,73 @@ test("a fallback answer that only mentions a limit is not a failure: no trip", a
   assert.equal(ok.ok, true);
 });
 
-test("daily cap: calls are charged; at the cap the call is refused before Hermes", async () => {
-  const today = new Date().toISOString();
-  const db = seed({ per_day_max: 2 }, [{ id: 1, at: today, kind: "hermes" }]);
-  const hermes = fakeFetch(() => jsonResponse({ choices: [{ message: { content: '{"summary":"ok"}' } }] }));
+test("daily $ cap: each call records its model, tokens and cost; at the cap the next call is refused before Hermes", async () => {
+  const db = seed({ per_day_usd: 0.01 });
+  db.tables.model_prices = [{ provider: "hermes", model: "*", usd_per_m_in: 1000, usd_per_m_out: 0, usd_per_call: 0, verified: true, note: "" }];
+  await budget.listModelPrices(true);
+  const hermes = fakeFetch(() => jsonResponse({ choices: [{ message: { content: '{"summary":"ok"}' } }], usage: { prompt_tokens: 20, completion_tokens: 5 } }));
   const ok = await withEnv(ENV, call, hermes.fn);
   assert.equal(ok.ok, true);
-  assert.equal(db.rows("model_calls").length, 2);
+  const row = db.rows("model_calls")[0];
+  assert.equal(row.tokens_in, 20);
+  assert.equal(row.tokens_out, 5);
+  assert.ok(Math.abs(Number(row.cost_usd) - 0.02) < 1e-9);
   const refused = await withEnv(ENV, call, hermes.fn);
   assert.equal(refused.ok, false);
-  assert.match(refused.error!, /budget for today is used up \(2\)/);
+  assert.match(refused.error!, /Today's model budget cap \(\$0\.010\) is used up/);
   assert.equal(hermes.calls.length, 1);
 });
 
-test("campaign cap and preflight: a run that could exceed the budget is refused up front", async () => {
+test("campaign $ cap and preflight: a step that could go over the dollars left is refused up front, in plain words", async () => {
   const today = new Date().toISOString();
-  seed({ per_campaign_max: 10 }, Array.from({ length: 8 }, (_, i) => ({ id: i + 1, at: today, kind: "hermes", campaign_id: "c1" })));
+  const db = seed({ per_campaign_usd: 0.5, per_day_usd: 2 }, [{ id: 1, at: today, kind: "openai", campaign_id: "c1", cost_usd: 0.45 }]);
+  db.tables.model_prices = [{ provider: "*", model: "*", usd_per_m_in: 0, usd_per_m_out: 0, usd_per_call: 0.02, verified: false, note: "" }, { provider: "hermes", model: "*", usd_per_m_in: 0, usd_per_m_out: 0, usd_per_call: 0.02, verified: false, note: "" }];
+  await budget.listModelPrices(true);
   await withEnv(ENV, async () => {
-    assert.equal(await budget.preflight("c1", 2), null);
-    assert.match((await budget.preflight("c1", 3))!, /this campaign has 2 of 10 calls left/);
-    assert.match((await budget.preflight(null, 200))!, /only 142 of 150 are left today/);
+    assert.equal(await budget.preflight("c1", [{ agentId: "agent-seo", calls: 2 }]), null); // $0.04 <= $0.05 left
+    assert.match((await budget.preflight("c1", [{ agentId: "agent-seo", calls: 3 }]))!, /this campaign has \$0\.050 of its \$0\.50 cap left and this step may cost up to \$0\.060/);
+    assert.match((await budget.preflight(null, [{ agentId: "agent-seo", calls: 100 }]))!, /only \$1\.55 of today's \$2\.00 cap is left/);
     const status = await budget.getBudgetStatus("c1");
-    assert.equal(status!.remainingCampaign, 2);
+    assert.ok(Math.abs(status!.remainingUsdCampaign! - 0.05) < 1e-9);
   });
+});
+
+test("no limit (the default): nothing is refused, everything is still counted", async () => {
+  const today = new Date().toISOString();
+  const db = seed({ per_day_usd: null, per_campaign_usd: null }, [{ id: 1, at: today, kind: "openai", campaign_id: "c1", cost_usd: 999 }]);
+  db.tables.model_prices = [{ provider: "*", model: "*", usd_per_m_in: 0, usd_per_m_out: 0, usd_per_call: 5, verified: false, note: "" }];
+  await budget.listModelPrices(true);
+  const hermes = fakeFetch(() => jsonResponse({ choices: [{ message: { content: '{"summary":"ok"}' } }], usage: { prompt_tokens: 10, completion_tokens: 1 } }));
+  await withEnv(ENV, async () => {
+    assert.equal(await budget.preflight("c1", [{ agentId: "agent-seo", calls: 1000 }]), null);
+    const status = await budget.getBudgetStatus("c1");
+    assert.equal(status!.perDayUsd, null);
+    assert.equal(status!.remainingUsdCampaign, null);
+    assert.equal(status!.usdCampaign, 999);
+  });
+  const ok = await withEnv(ENV, () => budget.withCampaignBudget("c1", call), hermes.fn);
+  assert.equal(ok.ok, true);
+  assert.equal(db.rows("model_calls").length, 2);
+});
+
+test("prices: exact model, then the provider's *, then */*; cost = per call + tokens x price", () => {
+  const rows = [
+    { provider: "openai", model: "gpt-5-mini", usd_per_m_in: 0.25, usd_per_m_out: 2, usd_per_call: 0, verified: false, note: "" },
+    { provider: "openai", model: "*", usd_per_m_in: 1.25, usd_per_m_out: 10, usd_per_call: 0, verified: false, note: "" },
+    { provider: "hermes", model: "*", usd_per_m_in: 0, usd_per_m_out: 0, usd_per_call: 0, verified: true, note: "" },
+    { provider: "*", model: "*", usd_per_m_in: 9, usd_per_m_out: 9, usd_per_call: 0, verified: false, note: "" }
+  ];
+  assert.equal(budget.pickPrice(rows, "openai", "gpt-5-mini").usd_per_m_in, 0.25);
+  assert.equal(budget.pickPrice(rows, "OpenAI", "gpt-6.2-sol").usd_per_m_in, 1.25);
+  assert.equal(budget.pickPrice(rows, "glm", "glm-5.2").usd_per_m_in, 9);
+  assert.equal(budget.costOf(budget.pickPrice(rows, "hermes", "crina"), 40000, 1000), 0);
+  assert.ok(Math.abs(budget.costOf(budget.pickPrice(rows, "openai", "gpt-5-mini"), 8000, 1000) - 0.004) < 1e-12);
 });
 
 test("preflight says the Hermes limit while it is active", async () => {
   seed({ hermes_blocked_until: new Date(Date.now() + 3600_000).toISOString() });
   await withEnv(ENV, async () => {
-    assert.match((await budget.preflight(null, 1))!, /^Hermes limit reached, resets at/);
+    assert.match((await budget.preflight(null, [{ agentId: "agent-seo", calls: 1 }]))!, /^Hermes limit reached, resets at/);
   });
 });
 

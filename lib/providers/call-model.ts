@@ -1,5 +1,5 @@
 import { runHermesAgent, type HermesAgentCallOptions } from "@/lib/agents/hermes-client";
-import { chargeModelCall } from "@/lib/budget/model-budget";
+import { beginModelCall, finishModelCall } from "@/lib/budget/model-budget";
 import { chatWithUserProvider, resolveUserProvider, USER_PROVIDER_PREFIX } from "@/lib/providers/user-providers";
 import { getProvider, isProviderKey } from "@/lib/providers/registry";
 import type { ModelProviderModule, ProviderChatOptions, ProviderChatResult, ProviderKey } from "@/lib/providers/types";
@@ -36,10 +36,13 @@ export async function callModel(options: CallModelOptions): Promise<ProviderChat
   if (options.provider.startsWith(USER_PROVIDER_PREFIX) || ["openai", "deepseek", "anthropic"].includes(options.provider)) {
     const user = await userProviderFor(options.provider);
     if (user) {
-      const refused = await chargeModelCall(user.row.kind, options.agentId);
+      const { refused, id: callId } = await beginModelCall(user.row.kind, options.agentId, model);
       if (refused) return { ...failedChat(new Error(refused), now(), model, 429), rateLimited: true };
       const out = await chatWithUserProvider(options.provider, model, options);
-      if (out) return out.result;
+      if (out) {
+        await finishModelCall(callId, { provider: user.row.kind, model: out.result.model ?? model, tokensIn: out.result.usage?.promptTokens ?? null, tokensOut: out.result.usage?.completionTokens ?? null });
+        return out.result;
+      }
     } else if (options.provider.startsWith(USER_PROVIDER_PREFIX)) {
       return failedChat(new Error("This provider was removed or disabled in Settings. Pick another model for the agent."), now(), model);
     }
@@ -80,7 +83,9 @@ export async function callModel(options: CallModelOptions): Promise<ProviderChat
     return failedChat(new Error(`${provider} is not a model provider.`), now(), model);
   }
 
-  const refused = await chargeModelCall(provider, options.agentId);
+  const { refused, id: callId } = await beginModelCall(provider, options.agentId, model);
   if (refused) return { ...failedChat(new Error(refused), now(), model, 429), rateLimited: true };
-  return providerModule.chat(options);
+  const result = await providerModule.chat(options);
+  await finishModelCall(callId, { provider, model: result.model ?? model, tokensIn: result.usage?.promptTokens ?? null, tokensOut: result.usage?.completionTokens ?? null });
+  return result;
 }

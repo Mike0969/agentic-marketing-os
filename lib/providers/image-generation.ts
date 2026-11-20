@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { createServiceClient } from "@/lib/supabase/service";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { recordAgentRun } from "@/lib/agents/agent-runs";
+import { beginModelCall, finishModelCall } from "@/lib/budget/model-budget";
 
 export type ImageGenerationResult = {
   ok: boolean;
@@ -169,7 +170,13 @@ export async function uploadMarketingAsset(bytes: Buffer, contentItemId: string,
 export async function generateMarketingImage(prompt: string, context: { contentItemId: string; position?: number; kind?: string } & ImageGenerationOptions): Promise<ImageGenerationResult> {
   const attempts: ImageGenerationResult[] = [];
   const options: ImageGenerationOptions = { aspect: context.aspect, size: context.size, quality: context.quality };
+  // Every generated image costs real money: charge it to the dollar budget (price per image in Settings).
+  const { refused, id: callId } = await beginModelCall("gpt-image", "agent-visual-video", GPT_IMAGE_MODEL);
+  if (refused) {
+    return { ok: false, url: null, bytes: null, provider: "placeholder", model: "draft-placeholder", fallbackUsed: true, status: "placeholder", error: refused, durationMs: 0 };
+  }
   attempts.push(await generateGptImage(prompt, options));
+  if (!attempts[0].ok) await finishModelCall(callId, { provider: "gpt-image", model: "failed", tokensIn: 0, tokensOut: 0 });
   if (!attempts[0].ok) attempts.push(await generateHuggingFace(prompt, "flux", FLUX_MODEL, options));
   if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateReplicate(prompt, "flux", process.env.REPLICATE_FLUX_VERSION || FLUX_MODEL, options));
   if (!attempts.some((attempt) => attempt.ok)) attempts.push(await generateHuggingFace(prompt, "stability", STABILITY_MODEL, options));

@@ -8,17 +8,22 @@ export async function GET() {
   return NextResponse.json({ budget: await getBudgetStatus() });
 }
 
-/** Settings: { perCampaignMax, perDayMax } — whole numbers within the DB limits. */
+/** Settings: { perDayUsd, perCampaignUsd } in dollars (enforced) + the call counts kept for display. */
 export async function POST(request: Request) {
   const admin = await requireAdmin();
   if (!admin.ok) return admin.response;
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const perCampaignMax = Number(body?.perCampaignMax);
-  const perDayMax = Number(body?.perDayMax);
-  if (!Number.isInteger(perCampaignMax) || perCampaignMax < 1 || perCampaignMax > 10000 || !Number.isInteger(perDayMax) || perDayMax < 1 || perDayMax > 100000) {
-    return NextResponse.json({ error: "Use whole numbers: per campaign 1–10000, per day 1–100000." }, { status: 400 });
+  const current = await getBudgetStatus();
+  // Empty = no limit (the default). A number = an optional cap in dollars.
+  const cap = (v: unknown) => (v === null || v === undefined || (typeof v === "string" && !v.trim()) ? null : Number(v));
+  const perDayUsd = cap(body?.perDayUsd);
+  const perCampaignUsd = cap(body?.perCampaignUsd);
+  const bad = (n: number | null) => n !== null && (!Number.isFinite(n) || n <= 0 || n > 1000);
+  if (bad(perDayUsd) || bad(perCampaignUsd)) {
+    return NextResponse.json({ error: "Leave a field empty for no limit, or give a dollar amount above 0 (up to 1000)." }, { status: 400 });
   }
-  const error = await saveBudgetSettings({ perCampaignMax, perDayMax });
+  const round = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100);
+  const error = await saveBudgetSettings({ perCampaignMax: current?.perCampaignMax ?? 40, perDayMax: current?.perDayMax ?? 150, perDayUsd: round(perDayUsd), perCampaignUsd: round(perCampaignUsd) });
   if (error) return NextResponse.json({ error }, { status: 500 });
   return NextResponse.json({ budget: await getBudgetStatus() });
 }

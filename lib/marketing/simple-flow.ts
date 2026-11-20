@@ -15,6 +15,10 @@ export const FLOW_PLATFORMS = ["LinkedIn", "Instagram", "X", "Facebook", "TikTok
 export type FlowStage = "planning" | "plan_doubts" | "plan_ready" | "agents" | "review" | "done";
 
 export type CampaignPlan = {
+  /** Lean pipeline: SEO and measurement are part of the plan (no separate SEO/Analytics calls). */
+  seo_keywords?: string[];
+  hashtags?: string[];
+  measure?: string[];
   title: string;
   objective: string;
   target_audience: string;
@@ -35,8 +39,15 @@ const planSchema = {
   cta: "the single call to action",
   success_criteria: "how we will know it worked (no invented numbers)",
   agent_tasks: { content: "one concrete task", visual: "one concrete task", seo: "one concrete task", analytics: "one concrete task" },
+  seo_keywords: ["3-6 search keywords the posts should use (no invented search volumes)"],
+  hashtags: ["3-6 hashtags"],
+  measure: ["2-4 things to track and where, matching the success criteria (no invented numbers)"],
   summary: "two sentences Mihai can read in 10 seconds"
 };
+
+function list(value: unknown, max: number): string[] {
+  return Array.isArray(value) ? value.map((v) => String(v).trim()).filter(Boolean).slice(0, max) : [];
+}
 
 function str(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
@@ -59,6 +70,9 @@ export function normalizePlan(value: unknown, fallbackPlatforms: string[]): Camp
     cta: str(raw.cta),
     success_criteria: str(raw.success_criteria),
     agent_tasks: { content: str(tasks.content), visual: str(tasks.visual), seo: str(tasks.seo), analytics: str(tasks.analytics) },
+    seo_keywords: list(raw.seo_keywords, 6),
+    hashtags: list(raw.hashtags, 6),
+    measure: list(raw.measure, 4),
     summary: str(raw.summary)
   };
   return plan.title && plan.objective && plan.key_message ? plan : null;
@@ -76,9 +90,9 @@ export async function makePlan(args: { idea: string; brand: Brand | null; platfo
     fallbackAgentName: "Crina",
     fallbackRole: "Marketing CEO Agent",
     task: "Turn Mihai's idea into a campaign plan",
-    instructions: `Mihai wrote this campaign idea in his own words. Build ONE campaign plan that delivers exactly his idea, no more. Use the brand profile; never invent numbers or results. Give each working agent (content, visual, SEO, analytics) one concrete task.${args.platforms.length ? ` Use these platforms only: ${args.platforms.join(", ")}.` : " Pick at most 2 platforms that fit the idea."}\n\n${args.learning}${args.fixes.length ? `\n\nFix these before anything else:\n- ${args.fixes.join("\n- ")}` : ""}`,
+    instructions: `Mihai wrote this campaign idea in his own words. Build ONE campaign plan that delivers exactly his idea, no more. Use the brand profile; never invent numbers or results. Give each working agent (content, visual) one concrete task, and include the SEO keywords + hashtags the posts should use and what to measure (no invented numbers or search volumes).${args.platforms.length ? ` Use these platforms only: ${args.platforms.join(", ")}.` : " Pick at most 2 platforms that fit the idea."}\n\n${args.learning}${args.fixes.length ? `\n\nFix these before anything else:\n- ${args.fixes.join("\n- ")}` : ""}`,
     outputSchema: planSchema,
-    input: { idea: args.idea, brand: args.brand, previous_plan: args.previous },
+    input: { idea: args.idea, brand: brandVoice(args.brand), previous_plan: args.previous },
     brainFiles: ["workflow-contract.md", "approval-rules.md"],
     temperature: 0.4,
     routeOrigin: "api.marketing.campaigns.flow.plan"
@@ -95,7 +109,7 @@ export type PlanOutcome = {
   error: string | null;
 };
 
-/** Crina plans, Jev checks; below 0.85 Crina reworks (max 2), then it waits for Mihai with "Jev doubts". */
+/** Crina plans, Jev checks; below 0.85 Crina reworks once, then it waits for Mihai with "Jev doubts". */
 export async function planWithJev(args: { idea: string; brand: Brand | null; platforms: string[]; fixes?: string[]; previous?: CampaignPlan | null; campaignId?: string | null }): Promise<PlanOutcome> {
   const library = await libraryContext(args.brand?.id, `${args.idea} ${args.platforms.join(" ")}`, { part: "plan", campaignId: args.campaignId ?? null });
   const learning = [(await learningContext(defaultVault(args.brand?.name), { part: "plan" })).text, library].filter(Boolean).join("\n\n");
@@ -104,7 +118,8 @@ export async function planWithJev(args: { idea: string; brand: Brand | null; pla
   const checked = await jevLoop<CampaignPlan>(
     first.plan,
     (plan) => jevCheck({ kind: "plan", idea: args.idea, brand: args.brand, learning, subject: plan }),
-    async (plan, doubts) => (await makePlan({ idea: args.idea, brand: args.brand, platforms: args.platforms, learning, fixes: doubts.map((d) => `Jev: ${d}`), previous: plan })).plan
+    async (plan, doubts) => (await makePlan({ idea: args.idea, brand: args.brand, platforms: args.platforms, learning, fixes: doubts.map((d) => `Jev: ${d}`), previous: plan })).plan,
+    1 // at most one automatic rework; more only when Mihai presses Rework
   );
   return {
     plan: checked.candidate,
@@ -117,34 +132,24 @@ export async function planWithJev(args: { idea: string; brand: Brand | null; pla
 }
 
 /** SEO brief and analytics measurement note, run once the plan is cleared; stored in idea_brief for the makers. */
+/** The brand fields an agent needs to write in its voice (prompt diet: not the whole brand row). */
+export function brandVoice(brand: Brand | null) {
+  return brand
+    ? { name: brand.name, positioning: brand.positioning, target_audience: brand.target_audience, tone_of_voice: brand.tone_of_voice, key_messages: brand.key_messages ?? null, proof_points: brand.proof_points ?? null, approval_rules: brand.approval_rules ?? null, ctas: brand.ctas ?? brand.reusable_ctas ?? null }
+    : null;
+}
+
+/**
+ * After the plan is cleared. Lean pipeline: the SEO brief and the measurement note come from the plan
+ * itself (no model calls). The shape stays { seo, analytics } for Review and the run.
+ */
 export async function prepareSupportAgents(args: { idea: string; brand: Brand | null; plan: CampaignPlan }) {
-  const [seo, analytics] = await Promise.all([
-    runMarketingAgentModel({
-      agentId: "agent-seo",
-      fallbackAgentName: "SEO Agent",
-      fallbackRole: "Search",
-      task: "SEO brief for the campaign",
-      instructions: `Task from Crina's plan: ${args.plan.agent_tasks.seo || "give keywords and hashtags for the posts"}. Return search keywords and hashtags the posts should use, from the brand and the plan. No invented search volumes.`,
-      outputSchema: { summary: "one sentence", keywords: ["3-6 keywords"], hashtags: ["3-6 hashtags"] },
-      input: { idea: args.idea, plan: args.plan, brand: args.brand },
-      temperature: 0.3,
-      routeOrigin: "api.marketing.campaigns.flow.seo"
-    }),
-    runMarketingAgentModel({
-      agentId: "agent-analytics",
-      fallbackAgentName: "Analytics Agent",
-      fallbackRole: "Measurement",
-      task: "Measurement note for the campaign",
-      instructions: `Task from Crina's plan: ${args.plan.agent_tasks.analytics || "say what to measure"}. Say what to track for this campaign and where, matching the success criteria. No invented numbers or targets.`,
-      outputSchema: { summary: "one sentence", track: ["2-4 things to measure and where"] },
-      input: { idea: args.idea, plan: args.plan, brand: args.brand },
-      temperature: 0.3,
-      routeOrigin: "api.marketing.campaigns.flow.analytics"
-    })
-  ]);
+  const keywords = args.plan.seo_keywords ?? [];
+  const hashtags = args.plan.hashtags ?? [];
+  const track = args.plan.measure ?? [];
   return {
-    seo: seo.ok ? (seo.json as Record<string, unknown>) : { summary: `SEO brief failed: ${seo.error ?? "no output"}` },
-    analytics: analytics.ok ? (analytics.json as Record<string, unknown>) : { summary: `Measurement note failed: ${analytics.error ?? "no output"}` }
+    seo: { summary: keywords.length || hashtags.length ? `Keywords: ${keywords.join(", ") || "none"}. Hashtags: ${hashtags.join(" ") || "none"}.` : "No SEO keywords in the plan.", keywords, hashtags },
+    analytics: { summary: track.length ? `Track: ${track.join("; ")}.` : "Nothing to track named in the plan.", track }
   };
 }
 

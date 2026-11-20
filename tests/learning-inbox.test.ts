@@ -44,7 +44,7 @@ test("library ranking: keyword matches first, brand + text items next, at most 1
   ];
   assert.deepEqual(keywords("The Bangkok night launch, 2026!"), ["bangkok", "night", "launch"]);
   const picked = rankLibraryItems(items, "Bangkok night launch for drivers", "b1", LIBRARY_MAX_ITEMS, now);
-  assert.equal(picked.length, 10);
+  assert.equal(picked.length, LIBRARY_MAX_ITEMS);
   assert.equal(picked[0].id, "bkk");
   assert.equal(picked[1].id, "other");
   assert.equal(picked[2].id, "doc");
