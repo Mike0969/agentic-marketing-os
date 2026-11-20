@@ -49,6 +49,13 @@ async function readError(res: Response) {
   }
 }
 
+/** Does the provider accept this key? /models for most; OpenRouter's /models is public, so its /key. */
+export async function checkCompatKey(t: CompatTarget, fetchImpl: typeof fetch = fetch): Promise<void> {
+  if (t.kind !== "openrouter") return;
+  const res = await fetchImpl(`${t.baseUrl}/key`, { headers: headers(t), signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`Key rejected (${await readError(res)}).`);
+}
+
 export async function listCompatModels(t: CompatTarget, fetchImpl: typeof fetch = fetch): Promise<string[]> {
   const res = await fetchImpl(`${t.baseUrl}/models`, { headers: headers(t), signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`Models list failed (${await readError(res)}).`);

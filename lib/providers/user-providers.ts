@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { compatChat, baseUrlFor, isProviderKind, listCompatModels, PROVIDER_KINDS, type CompatTarget, type ProviderKind } from "@/lib/providers/compat";
+import { checkCompatKey, compatChat, baseUrlFor, isProviderKind, listCompatModels, PROVIDER_KINDS, type CompatTarget, type ProviderKind } from "@/lib/providers/compat";
 import { openToken, sealToken, tokenKey } from "@/lib/social/token-crypto";
 import { createServiceClient } from "@/lib/supabase/service";
 
@@ -134,6 +134,9 @@ export async function testUserProvider(id: string): Promise<{ ok: boolean; detai
   let detail = "";
   let models = 0;
   try {
+    const row = await getRow(id);
+    if (!row) throw new Error("Provider not found.");
+    await checkCompatKey(target(row));
     const list = await refreshUserProviderModels(id, true);
     models = list.length;
     ok = true;

@@ -89,6 +89,16 @@ test("custom:<id> routes to that provider; disabled -> clear error, no call", as
   assert.equal(f2.calls.length, 0);
 });
 
+test("OpenRouter key check uses /key (its /models is public)", async () => {
+  const { checkCompatKey } = await import("../lib/providers/compat.ts");
+  const bad = fakeFetch(() => jsonResponse({ error: { message: "No auth credentials found" } }, 401));
+  await assert.rejects(checkCompatKey({ kind: "openrouter", baseUrl: "https://openrouter.ai/api/v1", apiKey: "x" }, bad.fn), /Key rejected \(HTTP 401/);
+  assert.equal(bad.calls[0].url, "https://openrouter.ai/api/v1/key");
+  const none = fakeFetch(() => jsonResponse({}));
+  await checkCompatKey({ kind: "deepseek", baseUrl: "https://api.deepseek.com", apiKey: "x" }, none.fn);
+  assert.equal(none.calls.length, 0);
+});
+
 test("Settings provider API is admin only", async () => {
   seed("someone@example.com");
   const res = await withEnv(ENV, () => providersRoute.POST(new Request("https://os.example/api/os/model-providers", { method: "POST", body: JSON.stringify({ kind: "openai", apiKey: fakeKey("secret") }) })));
